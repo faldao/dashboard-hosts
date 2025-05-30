@@ -1,0 +1,25 @@
+# General
+node_modules/
+dist/
+.vscode/
+.env
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vercel build metadata
+.vercel/
+
+# Mac system files
+Icon?
+Thumbs.db
+
+# Windows system files
+*.log
+*.tmp
+
+# Firebase cache (opcional)
+.firebase/
