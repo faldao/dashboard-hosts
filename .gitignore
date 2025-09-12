@@ -1,12 +1,9 @@
 # General
-old/
 node_modules/
 dist/
 .vscode/
 .env
-.env.*
 .DS_Store
-*.local
 
 # Logs
 npm-debug.log*
@@ -26,4 +23,3 @@ Thumbs.db
 
 # Firebase cache (opcional)
 .firebase/
-.vercel
