@@ -3,7 +3,7 @@ import {
   collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
   query, orderBy, limit as qLimit, serverTimestamp
 } from "firebase/firestore";
-import { db } from "../hosts/firebasehosts";
+import { db } from "../firebasehosts";
 
 // Colecciones
 const diasCol = collection(db, "dias");
