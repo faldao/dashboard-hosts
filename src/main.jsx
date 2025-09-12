@@ -2,9 +2,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import HostsLayout from './hosts/HostsLayout';
-import PlanillasList from './hosts/PlanillasList';
-import PlanillaEditor from './hosts/PlanillaEditor';
+import HostsLayout from './HostsLayout';
+import PlanillasList from './PlanillasList';
+import PlanillaEditor from './PlanillaEditor';
 import './App.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
