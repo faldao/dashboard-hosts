@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { listDias, upsertDia } from '../services/HostsApi';
+import { listDias, upsertDia } from './services/HostsApi';
 
 export default function PlanillasList() {
   const [items, setItems] = useState([]);
