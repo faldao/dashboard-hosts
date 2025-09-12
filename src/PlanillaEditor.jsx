@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getDia, upsertDia, addReserva } from '../services/HostsApi';
+import { getDia, upsertDia, addReserva } from './services/HostsApi';
 
 export default function PlanillaEditor({ mode }) {
   const { fecha: fechaParam } = useParams();
