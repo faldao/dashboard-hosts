@@ -1,7 +1,24 @@
 {
-  "functions": {
-    "api/**/*.js": {
-      "runtime": "@vercel/node@3.0.0" 
+  "version": 2,
+  "engines": {
+    "node": "18.x"
+  },
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
     }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "features": {
+    "fluid": false
   }
-  }
+}
