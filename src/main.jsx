@@ -1,21 +1,15 @@
 // src/main.jsx
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import HostsLayout from './HostsLayout';
-import PlanillasList from './PlanillasList';
-import PlanillaEditor from './PlanillaEditor';
-import './App.css';
+import React from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App.jsx";
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+// CSS global de Tailwind y utilitarios de la app
+import "./tw.css";
+
+
+// Monta la app en #root (definido en index.html)
+createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <BrowserRouter>
-  {/* Sección anfitriones */}
-  <Route path="/hosts" element={<HostsLayout />}>
-    <Route index element={<PlanillasList />} />           {/* /hosts */}
-    <Route path="new" element={<PlanillaEditor mode="new" />} />   {/* /hosts/new */}
-    <Route path=":fecha" element={<PlanillaEditor />} />           {/* /hosts/2025-08-16 */}
-  </Route>
-    </BrowserRouter>
+    <App />
   </React.StrictMode>
-);  
+);

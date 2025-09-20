@@ -1,0 +1,14 @@
+/* src/index.css — Tailwind v4 */
+@import "tailwindcss";
+
+/* Importá tus utilidades para que Tailwind procese @apply, si las usás */
+@import "./App.css";
+
+/* (Opcional) variables/estilos globales */
+:root {
+  --checkin: #38bdf8;
+  --contacted: #fde68a;
+  --paid: #86efac;
+  --partial: #fcd34d;
+  --unpaid: #fecaca;
+}
