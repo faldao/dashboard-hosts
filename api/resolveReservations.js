@@ -1,28 +1,48 @@
 // /api/resolveReservations.js
+// OBJETIVO: resolver una lista de IDs de 'Reservas' y devolver sus documentos.
+// BLINDAJE: excluir canceladas.
+
 import { firestore } from '../lib/firebaseAdmin.js';
 
-export default async function handler(req, res) {
-  try {
-    const ids = req.method === 'POST' ? (req.body?.ids || []) : [];
-    if (!Array.isArray(ids) || !ids.length) {
-      return res.status(400).json({ error: 'ids requerido' });
-    }
+function ok(res, data) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return res.status(200).json(data);
+}
+function bad(res, code, error) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return res.status(code).json({ error });
+}
 
-    // Batches de 10 para Firestore getAll-like
+export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') return ok(res, { ok: true });
+  if (req.method !== 'POST') return bad(res, 405, 'Método no permitido');
+
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.slice(0, 300) : [];
+    if (!ids.length) return ok(res, { items: [] });
+
     const chunks = [];
     for (let i = 0; i < ids.length; i += 10) chunks.push(ids.slice(i, i + 10));
 
-    const out = [];
-    for (const chunk of chunks) {
-      const snaps = await Promise.all(
-        chunk.map(id => firestore.collection('Reservas').doc(id).get())
-      );
-      snaps.forEach(s => s.exists && out.push({ id: s.id, ...s.data() }));
+    const items = [];
+    for (const c of chunks) {
+      const snaps = await firestore.getAll(...c.map(id => firestore.collection('Reservas').doc(id)));
+      snaps.forEach((s) => {
+        if (!s.exists) return;
+        const d = s.data();
+        // Filtro canceladas
+        if (d?.is_cancelled === true) return;
+        if ((d?.status || '').toLowerCase() === 'cancelled') return;
+        items.push({ id: s.id, ...d });
+      });
     }
 
-    return res.status(200).json({ ok: true, items: out });
+    return ok(res, { items });
   } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: e.message || 'Error resolving reservations' });
+    return bad(res, 500, e.message || 'Error');
   }
 }

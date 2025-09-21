@@ -7,6 +7,7 @@
 // - Para CONSISTENCIA con el enriquecedor y con otros importadores, todos los timestamps y filtros locales
 //   usan Luxon con TZ fija 'America/Argentina/Buenos_Aires' y Firestore `serverTimestamp()`.
 // - Se agrega `propiedad_id` al contexto de historial para facilitar auditoría multi-propiedad.
+// - ⚠️ Se EXCLUYEN reservas canceladas (status/flags) antes de persistir.
 
 import axios from 'axios';
 import qs from 'qs';
@@ -74,6 +75,16 @@ const diffDocs = (oldDoc = {}, newDoc = {}) => {
   return diff;
 };
 
+// ===================== Canceladas: normalización y detección =====================
+const normalizeStatus = (s) => String(s || 'unknown').toLowerCase().replace(/\s+/g, '_');
+const isCancelledReservation = (r) => {
+  const s = normalizeStatus(r?.status || r?.state || r?.reservation_status);
+  if (s.includes('cancel')) return true;
+  if (r?.is_cancelled === true || r?.cancelled === true) return true;
+  if (normalizeStatus(r?.cancellation?.status).includes('cancel')) return true;
+  return false;
+};
+
 // ===================== Firestore: propiedades y mapeo de rooms =====================
 async function getPropertiesAndRoomMaps(propertyIds) {
   const propsCol = firestore.collection('propiedades');
@@ -133,12 +144,15 @@ export default async function handler(req, res) {
         log('WuBook API Error en fetch_today_reservations:', error.response ? error.response.data : error.message);
       }
 
-      log('Reservas encontradas con fetch_today_reservations', { propId: prop.id, total: reservas.length });
+      // Filtramos canceladas desde ya
+      const totalRaw = reservas.length;
+      reservas = reservas.filter(r => !isCancelledReservation(r));
+      log('Reservas encontradas (filtradas canceladas)', { propId: prop.id, total: reservas.length, skipped_cancelled: totalRaw - reservas.length });
 
       // DRY RUN: no escribe, solo informa
       if (dryRun) {
         const sample_ids = reservas.slice(0, 5).map(r => r.id_human);
-        summary.push({ propiedad: { id: prop.id, nombre: prop.nombre }, found_today: reservas.length, dryRun: true, sample_ids });
+        summary.push({ propiedad: { id: prop.id, nombre: prop.nombre }, found_today: reservas.length, skipped_cancelled: totalRaw - reservas.length, dryRun: true, sample_ids });
         log('DRY RUN: Finalizando después de la consulta.', summary[summary.length - 1]);
         continue;
       }
@@ -163,9 +177,11 @@ export default async function handler(req, res) {
 
       // Usamos serverTimestamp() para consistencia global
       const now = FieldValue.serverTimestamp();
-      let upserts = 0; let skipped = 0; let unchanged = 0;
+      let upserts = 0; let skipped = 0; let unchanged = 0; let skipped_cancelled = 0;
 
       for (const r of reservas) {
+        if (isCancelledReservation(r)) { skipped_cancelled++; continue; }
+
         const fullName = `${r?.customer?.name || ''} ${r?.customer?.surname || ''}`.trim() || String(r?.booker) || 'N/D';
         let sourceChannel = r?.origin?.channel && r.origin.channel !== '--' ? r.origin.channel : (r?.channel_name || 'Directo/WuBook');
 
@@ -198,7 +214,8 @@ export default async function handler(req, res) {
             departure_iso: euToISO(departureEU),
             adults: room?.occupancy?.adults ?? r?.adults ?? null,
             children: room?.occupancy?.children ?? r?.children ?? 0,
-            status: r?.status || 'unknown',
+            status: normalizeStatus(r?.status || 'unknown'),
+            is_cancelled: false, // pasó filtro
           };
 
           // Leer existente y comparar
@@ -255,13 +272,18 @@ export default async function handler(req, res) {
       }
 
       if (ops > 0) {
-        log('BATCH COMMIT', { propId: prop.id, upserts, skipped, unchanged });
+        log('BATCH COMMIT', { propId: prop.id, upserts, skipped, skipped_cancelled, unchanged });
         await flush();
       } else {
-        log('Sin cambios para commitear', { propId: prop.id, upserts, skipped, unchanged });
+        log('Sin cambios para commitear', { propId: prop.id, upserts, skipped, skipped_cancelled, unchanged });
       }
 
-      summary.push({ propiedad: { id: prop.id, nombre: prop.nombre }, found_today: reservas.length, upserts, skipped, unchanged, dryRun: false });
+      summary.push({
+        propiedad: { id: prop.id, nombre: prop.nombre },
+        found_today: reservas.length,
+        upserts, skipped, skipped_cancelled, unchanged,
+        dryRun: false
+      });
       log('PROP DONE', summary[summary.length - 1]);
     }
 
@@ -272,5 +294,6 @@ export default async function handler(req, res) {
     return bad(res, 500, err?.message || 'Error interno');
   }
 }
+
 
 

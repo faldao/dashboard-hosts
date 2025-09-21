@@ -9,6 +9,7 @@
 // - Al guardar, usamos Firestore `serverTimestamp()` para created/updated/historial.
 // - NO se pisa `enrichmentStatus` en updates (solo se setea 'pending' al crear).
 // - Se agrega `propiedad_id` al contexto del historial.
+// - ⚠️ Se EXCLUYEN reservas canceladas (status/flags) antes de persistir.
 
 import axios from 'axios';
 import qs from 'qs';
@@ -76,6 +77,16 @@ const diffDocs = (oldDoc = {}, newDoc = {}) => {
   return diff;
 };
 
+// ===================== Canceladas: normalización y detección =====================
+const normalizeStatus = (s) => String(s || 'unknown').toLowerCase().replace(/\s+/g, '_');
+const isCancelledReservation = (r) => {
+  const s = normalizeStatus(r?.status || r?.state || r?.reservation_status);
+  if (s.includes('cancel')) return true;
+  if (r?.is_cancelled === true || r?.cancelled === true) return true;
+  if (normalizeStatus(r?.cancellation?.status).includes('cancel')) return true;
+  return false;
+};
+
 // ===================== WuBook: fetch con paginación =====================
 async function fetchReservationsByFilter({ apiKey, filters }) {
   const headers = { 'x-api-key': apiKey, 'Content-Type': 'application/x-www-form-urlencoded' };
@@ -96,8 +107,10 @@ async function fetchReservationsByFilter({ apiKey, filters }) {
       hasMore = false;
     }
   }
-  log(`Fetch finalizado. Total de reservas encontradas: ${allReservations.length}`);
-  return allReservations;
+  const before = allReservations.length;
+  const filtered = allReservations.filter(r => !isCancelledReservation(r));
+  log(`Fetch finalizado. Total: ${before}, canceladas filtradas: ${before - filtered.length}`);
+  return filtered;
 }
 
 // ===================== Firestore: propiedades y mapeo de rooms =====================
@@ -132,7 +145,7 @@ async function getPropertiesAndRoomMaps(propertyIds) {
 
 // ===================== Guardar lote con DIFF + historial =====================
 async function processAndSaveReservations(reservas, prop, dryRun, meta = { source: 'wubookImportByArrival', context: {} }) {
-  if (!reservas || reservas.length === 0) return { upserts: 0, skipped: 0, unchanged: 0 };
+  if (!reservas || reservas.length === 0) return { upserts: 0, skipped: 0, skipped_cancelled: 0, unchanged: 0 };
 
   log(`Procesando ${reservas.length} reservas para la propiedad ${prop.id}`);
 
@@ -155,9 +168,11 @@ async function processAndSaveReservations(reservas, prop, dryRun, meta = { sourc
 
   // Usamos serverTimestamp() para consistencia global
   const now = FieldValue.serverTimestamp();
-  let upserts = 0, skipped = 0, unchanged = 0;
+  let upserts = 0, skipped = 0, skipped_cancelled = 0, unchanged = 0;
 
   for (const r of reservas) {
+    if (isCancelledReservation(r)) { skipped_cancelled++; continue; }
+
     const fullName = `${r?.customer?.name || ''} ${r?.customer?.surname || ''}`.trim() || String(r?.booker) || 'N/D';
     let sourceChannel = r?.origin?.channel && r.origin.channel !== '--' ? r.origin.channel : (r?.channel_name || 'Directo/WuBook');
 
@@ -190,7 +205,8 @@ async function processAndSaveReservations(reservas, prop, dryRun, meta = { sourc
         departure_iso: euToISO(departureEU),
         adults: room?.occupancy?.adults ?? r?.adults ?? null,
         children: room?.occupancy?.children ?? r?.children ?? 0,
-        status: r?.status || 'unknown',
+        status: normalizeStatus(r?.status || 'unknown'),
+        is_cancelled: false, // pasó los filtros de cancelación
         // ⚠️ NO poner enrichmentStatus aquí: solo al crear (ver más abajo)
       };
 
@@ -250,13 +266,13 @@ async function processAndSaveReservations(reservas, prop, dryRun, meta = { sourc
   }
 
   if (!dryRun && ops > 0) {
-    log('BATCH COMMIT', { propId: prop.id, upserts, skipped, unchanged });
+    log('BATCH COMMIT', { propId: prop.id, upserts, skipped, skipped_cancelled, unchanged });
     await flush();
   } else {
-    log('DRY RUN o sin cambios', { propId: prop.id, upserts, skipped, unchanged, dryRun });
+    log('DRY RUN o sin cambios', { propId: prop.id, upserts, skipped, skipped_cancelled, unchanged, dryRun });
   }
 
-  return { upserts, skipped, unchanged };
+  return { upserts, skipped, skipped_cancelled, unchanged };
 }
 
 // ===================== HANDLER PRINCIPAL =====================
@@ -323,4 +339,5 @@ export default async function handler(req, res) {
     return bad(res, 500, err?.message || 'Error interno');
   }
 }
+
 

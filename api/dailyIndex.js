@@ -26,6 +26,7 @@
 //   Campos: arrival_iso Asc, departure_iso Asc
 //
 // - No duplica información de Reservas: solo guarda arrays de IDs.
+// - Se EXCLUYEN reservas canceladas (status / flags).
 //
 // - El handler siempre responde con el documento GLOBAL del día, para tu front.
 //
@@ -35,12 +36,35 @@ import { DateTime } from 'luxon';
 
 const TZ = 'America/Argentina/Buenos_Aires';
 
-const ok = (res, data) => res.status(200).json(data);
-const bad = (res, code, error) => res.status(code).json({ error });
+const ok = (res, data) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return res.status(200).json(data);
+};
+const bad = (res, code, error) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return res.status(code).json({ error });
+};
 
 // Helpers utilitarios
 const toISODateAR = (dateLike) =>
   (dateLike ? DateTime.fromISO(String(dateLike), { zone: TZ }) : DateTime.now().setZone(TZ)).toISODate();
+
+/** Normaliza y detecta canceladas en un doc de Reservas */
+const normalizeStatus = (s) => String(s || 'unknown').toLowerCase().replace(/\s+/g, '_');
+function isCancelledDoc(data) {
+  const s =
+    normalizeStatus(data?.status) ||
+    normalizeStatus(data?.state) ||
+    normalizeStatus(data?.reservation_status);
+  if (s.includes('cancel')) return true;
+  if (data?.is_cancelled === true || data?.cancelled === true) return true;
+  if (normalizeStatus(data?.cancellation?.status).includes('cancel')) return true;
+  return false;
+}
 
 /** Agrupa un array de docs de Reservas en mapas por prop y por depto */
 function groupByPropAndDept(docsByBucket) {
@@ -87,6 +111,9 @@ function groupByPropAndDept(docsByBucket) {
 
 export default async function handler(req, res) {
   try {
+    if (req.method === 'OPTIONS') return ok(res, { ok: true });
+    if (req.method !== 'GET') return bad(res, 405, 'Método no permitido');
+
     const dateParam = (req.query.date || req.body?.date || '').trim();
     const rebuild = (req.query.rebuild || req.body?.rebuild || '') === '1';
     const dateISO = dateParam ? toISODateAR(dateParam) : DateTime.now().setZone(TZ).toISODate();
@@ -103,7 +130,7 @@ export default async function handler(req, res) {
 
     // --- Construcción del día (3 consultas) ---
     // 1) Llegan hoy
-    const [checkInsSnap, checkOutsSnap, staysSnap] = await Promise.all([
+    const [checkInsSnapRaw, checkOutsSnapRaw, staysSnapRaw] = await Promise.all([
       firestore.collection('Reservas').where('arrival_iso', '==', dateISO).get(),
       firestore.collection('Reservas').where('departure_iso', '==', dateISO).get(),
       firestore.collection('Reservas')
@@ -112,9 +139,25 @@ export default async function handler(req, res) {
         .get(), // requiere índice compuesto
     ]);
 
+    // --- Filtrado de canceladas ---
+    const checkInsSnap = {
+      docs: checkInsSnapRaw.docs.filter(d => !isCancelledDoc(d.data()))
+    };
+    const checkOutsSnap = {
+      docs: checkOutsSnapRaw.docs.filter(d => !isCancelledDoc(d.data()))
+    };
+    let staysDocsFiltered = staysSnapRaw.docs.filter(d => !isCancelledDoc(d.data()));
+
+    // --- Deduplicación entre buckets ---
+    // Prioridad: checkins > checkouts > stays
+    const setCheckins = new Set(checkInsSnap.docs.map(d => d.id));
+    const setCheckouts = new Set(checkOutsSnap.docs.map(d => d.id));
+    staysDocsFiltered = staysDocsFiltered.filter(d => !setCheckins.has(d.id) && !setCheckouts.has(d.id));
+
+    // IDs finales por bucket
     const checkinsIds = checkInsSnap.docs.map(d => d.id);
     const checkoutsIds = checkOutsSnap.docs.map(d => d.id);
-    const staysIds = staysSnap.docs.map(d => d.id);
+    const staysIds = staysDocsFiltered.map(d => d.id);
 
     // --- Payload GLOBAL ---
     const globalPayload = {
@@ -133,7 +176,7 @@ export default async function handler(req, res) {
     // --- Agrupación por PROPIEDAD y DEPARTAMENTO ---
     const docsByBucket = {
       checkins: checkInsSnap.docs,
-      stays: staysSnap.docs,
+      stays: staysDocsFiltered,
       checkouts: checkOutsSnap.docs
     };
     const { byProp, byPropDept } = groupByPropAndDept(docsByBucket);
@@ -197,4 +240,5 @@ export default async function handler(req, res) {
     return bad(res, 500, e.message || 'Error building daily index');
   }
 }
+
 
