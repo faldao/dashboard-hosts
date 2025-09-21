@@ -1,3 +1,63 @@
+/* === TOKENS === */
+:root{
+  --checkin:#38bdf8;     /* celeste */
+  --contacted:#fde68a;   /* amarillo */
+  --paid:#86efac;        /* verde */
+  --partial:#fcd34d;     /* ámbar */
+  --unpaid:#fecaca;      /* rojo claro */
+}
+
+/* ==== LAYOUT GLOBAL ==== */
+.app { @apply h-screen flex flex-col; }
+.header { @apply p-3 border-b; }
+.header__bar { @apply flex items-center justify-between; }
+.header__title { @apply text-xl font-semibold; }
+.header__date { @apply text-gray-500; }
+.header__actions { @apply flex items-center gap-2; }
+.btn { @apply inline-flex items-center justify-center px-2 py-1 border rounded; }
+.input--date { @apply border rounded p-1; }
+
+.main { @apply flex-1 grid grid-rows-[auto,auto,1fr] p-3 gap-3; }
+.main__top { @apply flex items-center justify-between; }
+.loader { @apply text-gray-500; }
+.empty { @apply text-gray-500; }
+
+/* ==== TABS ==== */
+.tabs { @apply flex items-center gap-3; }
+.tabs__btn { @apply px-6 py-3 rounded-full border text-base bg-white text-gray-800; }
+.tabs__btn--active { @apply bg-black text-white; }
+
+/* ==== PAGINADOR ==== */
+.pager { @apply flex items-center gap-2; }
+.pager__btn { @apply px-2 py-1 border rounded disabled:opacity-40; }
+.pager__label { @apply text-sm text-gray-600; }
+
+/* ==== LISTA SUPERIOR ==== */
+.list { @apply overflow-auto; }
+.list__grid { @apply grid gap-3; }
+
+/* ==== CARD DE RESERVA ==== */
+.res-card { @apply border rounded-lg p-3 hover:bg-gray-50 cursor-pointer; }
+.res-card__row { @apply flex items-start gap-3 justify-between; }
+.res-card__left { @apply flex items-start gap-3; }
+.res-card__bar { @apply w-2 rounded bg-gray-300; }
+.res-card__bar--checkin { background: var(--checkin); }
+.res-card__block { @apply flex flex-col; }
+
+.res-card__line1 { @apply flex flex-wrap items-center gap-2; }
+.badge-depto { @apply px-2 py-0.5 text-xs rounded-md bg-gray-100 text-gray-700; }
+.name { @apply font-medium; }
+.name--contacted { background: var(--contacted); @apply px-1 rounded; }
+.meta { @apply text-sm text-gray-600; }
+.flag { @apply text-sm; }
+
+.res-card__line2 { @apply text-xs text-gray-600 mt-1; }
+.res-card__line3 { @apply text-xs text-gray-500 mt-1; }
+
+/* === BARRA DE ESTADO (derecha) === */
+.status { @apply flex items-center gap-2 flex-row-reverse; }
+.status__open { @apply text-sm px-3 py-1 rounded bg-black text-white; }
+
 /* Badges reutilizables (así no repetís clases en JSX) */
 .badge { @apply px-2 py-0.5 text-xs rounded-md; }
 .badge--canal { @apply bg-gray-100 text-gray-700; }
@@ -5,14 +65,35 @@
 .badge--partial { @apply text-gray-900; background: var(--partial); }
 .badge--unpaid { @apply text-gray-900; background: var(--unpaid); }
 
-/* Píldora celeste para check-in hecho (la barrita vertical) */
-.pill-checkin { background: var(--checkin); }
+/* Chips on/off con borde */
+.chip { @apply px-2 py-0.5 text-xs rounded-md border; }
+.chip--off { @apply bg-white border-gray-300 text-gray-700; }
+.chip--sky { @apply bg-sky-100 border-sky-500 text-sky-800; }
+.chip--amber { @apply bg-yellow-100 border-yellow-500 text-yellow-800; }
 
-/* Resaltado amarillo cuando ya fue contactado */
-.name-contacted { background: var(--contacted); @apply px-1 rounded; }
+/* ==== TABLA INFERIOR ==== */
+.bottom { @apply h-[30%] p-3; }
+.tablewrap { @apply h-full overflow-auto border-t; }
+.table { @apply w-full text-sm; }
+.table thead { @apply sticky top-0 bg-white shadow; }
+.th { @apply text-left p-2; }
+.td { @apply p-2; }
+.tr { @apply border-b hover:bg-gray-50; }
 
-/* Modal overlay simple (por si querés extra contraste) */
+/* ==== MODAL ==== */
 .modal-overlay { @apply fixed inset-0 bg-black/40 flex items-center justify-center z-50; }
+.modal { @apply bg-white rounded-xl w-full max-w-2xl p-5 shadow-xl; }
+.modal__header { @apply flex items-center justify-between mb-3; }
+.modal__title { @apply text-lg font-semibold; }
+.modal__close { @apply text-gray-500; }
+.modal__grid { @apply grid grid-cols-2 gap-4; }
+.modal__hint { @apply text-sm text-gray-600; }
+.modal__actions { @apply flex gap-2; }
+.modal__btn { @apply flex-1 px-3 py-2 rounded text-white; }
+.modal__btn--in { @apply bg-sky-600; }
+.modal__btn--contact { @apply bg-amber-600; }
+.modal__field { @apply w-full border rounded p-2; }
+.modal__footer { @apply mt-4 text-right; }
 
-/* Card de reserva: hover sutil */
-.res-card { @apply border rounded-lg p-3 hover:bg-gray-50 cursor-pointer; }
+/* ==== UTILIDADES MÍNIMAS === */
+.hidden { display:none; }

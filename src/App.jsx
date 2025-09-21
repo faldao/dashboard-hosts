@@ -4,120 +4,200 @@ import { DateTime } from "luxon";
 
 const TZ = "America/Argentina/Buenos_Aires";
 
-const badge = (label, cls) => (
-  <span className={`px-2 py-0.5 text-xs rounded-md ${cls}`}>{label}</span>
-);
+/* ===== Helpers ===== */
+const fmtDate = (iso) => (iso ? DateTime.fromISO(iso, { zone: TZ }).toISODate() : "");
+const cls = (...xs) => xs.filter(Boolean).join(" ");
+const toFlag = (cc) => {
+  if (!cc || typeof cc !== "string" || cc.length !== 2) return null;
+  const A = 127397;
+  const up = cc.toUpperCase();
+  return String.fromCodePoint(...[...up].map((c) => c.charCodeAt(0) + A));
+};
+
+const Chip = ({ label, active, tone = "sky" }) => {
+  const onClass = tone === "amber" ? "chip--amber" : "chip--sky";
+  return <span className={cls("chip", active ? onClass : "chip--off")}>{label}</span>;
+};
 
 function useDaily(dateISO) {
   const [loading, setLoading] = useState(true);
   const [idx, setIdx] = useState(null);
   const [items, setItems] = useState([]);
   const [tab, setTab] = useState("checkins"); // 'checkins' | 'stays' | 'checkouts'
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+
+  const fetchTab = async (t, indexDoc) => {
+    const ids = indexDoc?.[t] || [];
+    if (!ids?.length) return setItems([]);
+    const { data } = await axios.post("/api/resolveReservations", { ids });
+    setItems(data.items || []);
+  };
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      // 1) obtener índice (ids)
-      const { data: indexRes } = await axios.get(`/api/dailyIndex?date=${dateISO}`);
-      setIdx(indexRes);
-
-      // 2) resolver reservas del tab inicial
-      const ids = (indexRes?.[tab] || []);
-      const { data: resolved } = await axios.post(`/api/resolveReservations`, { ids });
-      setItems(resolved.items || []);
-      setLoading(false);
+      try {
+        const { data } = await axios.get(`/api/dailyIndex?date=${dateISO}`);
+        setIdx(data);
+        await fetchTab(tab, data);
+      } finally {
+        setLoading(false);
+      }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateISO]);
 
   const setActiveTab = async (t) => {
     setTab(t);
-    if (!idx) return;
-    const ids = idx?.[t] || [];
-    const { data: resolved } = await axios.post(`/api/resolveReservations`, { ids });
-    setItems(resolved.items || []);
+    setPage(1);
+    await fetchTab(t, idx);
   };
 
-  return { loading, idx, items, tab, setActiveTab };
+  const paged = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page]);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  return { loading, idx, items: paged, counts: idx?.counts || {}, tab, setActiveTab, page, setPage, totalPages };
 }
 
-function RowItem({ r, onOpen }) {
-  // Colores/estados
-  const isCheckedIn = !!r.checkin_at; // celeste
-  const contacted = !!r.contacted_at; // amarillo
-  const pay = r.payment_status;       // red/green/amber
+/* ===== UI ===== */
+
+function Tabs({ tab, onChange, counts }) {
+  const Btn = ({ t, label }) => (
+    <button
+      onClick={() => onChange(t)}
+      className={cls("tabs__btn", tab === t && "tabs__btn--active")}
+    >
+      {label} <span className="ml-2 opacity-70 text-sm">({counts?.[t] ?? 0})</span>
+    </button>
+  );
+  return (
+    <div className="tabs">
+      <Btn t="checkins" label="Check-ins" />
+      <Btn t="stays" label="Stays" />
+      <Btn t="checkouts" label="Check-outs" />
+    </div>
+  );
+}
+
+function Paginator({ page, totalPages, onPage }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="pager">
+      <button className="pager__btn" onClick={() => onPage(Math.max(1, page - 1))} disabled={page <= 1}>←</button>
+      <span className="pager__label">Página {page} / {totalPages}</span>
+      <button className="pager__btn" onClick={() => onPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages}>→</button>
+    </div>
+  );
+}
+
+function StatusBar({ r, onOpen }) {
+  const pay =
+    r.payment_status === "paid"
+      ? <span className="badge badge--paid">Pago</span>
+      : r.payment_status === "partial"
+      ? <span className="badge badge--partial">Parcial</span>
+      : <span className="badge badge--unpaid">Impago</span>;
 
   return (
-    <div
-      className="flex items-center justify-between border rounded-lg p-3 hover:bg-gray-50 cursor-pointer"
-      onClick={() => onOpen(r)}
-    >
-      <div className="flex items-center gap-3">
-        <div className={`w-2 h-6 rounded ${isCheckedIn ? "bg-sky-400" : "bg-gray-300"}`} />
-        <div className="flex flex-col">
-          <div className="font-medium">
-            <span className={`${contacted ? "bg-yellow-200 px-1 rounded" : ""}`}>
-              {r.nombre_huesped || "Sin nombre"}
-            </span>{" "}
-            {badge(r.source || "Canal", "bg-gray-100")}
-          </div>
-          <div className="text-xs text-gray-500">
-            {r.codigo_depto} · In: {r.arrival_iso} · Out: {r.departure_iso}
+    <div className="status">
+      <button onClick={() => onOpen?.(r)} className="status__open">Abrir</button>
+      {pay}
+      <Chip label="Check-out" active={!!r.checkout_at} />
+      <Chip label="Check-in" active={!!r.checkin_at} />
+      <Chip label="Contactado" active={!!r.contacted_at} tone="amber" />
+    </div>
+  );
+}
+
+function ReservationCard({ r, onOpen }) {
+  const depto = r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—";
+  const phone = r.customer_phone || r.telefono || "";
+  const email = r.customer_email || "";
+  const flag = toFlag(r.customer_country);
+  const inDt = fmtDate(r.arrival_iso);
+  const outDt = fmtDate(r.departure_iso);
+  const channel = r.source || r.channel_name || "—";
+
+  return (
+    <div className="res-card">
+      <div className="res-card__row">
+        <div className="res-card__left">
+          <div className={cls("res-card__bar", r.checkin_at && "res-card__bar--checkin")} />
+          <div className="res-card__block">
+            <div className="res-card__line1">
+              <span className="badge-depto">{depto}</span>
+              <span className={cls("name", r.contacted_at && "name--contacted")}>
+                {r.nombre_huesped || "Sin nombre"}
+              </span>
+              {phone && <span className="meta">· {phone}</span>}
+              {email && <span className="meta">· {email}</span>}
+              {flag && <span className="flag">{flag}</span>}
+            </div>
+
+            <div className="res-card__line2">
+              <span className="font-medium">Rcode:</span> {r.id_human || "—"} · In: {inDt} · Out: {outDt}
+            </div>
+
+            <div className="res-card__line3">{channel}</div>
           </div>
         </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {pay === "paid" && badge("Pago", "bg-green-200")}
-        {pay === "partial" && badge("Parcial", "bg-amber-200")}
-        {(!pay || pay === "unpaid") && badge("Impago", "bg-rose-200")}
-        <button className="text-sm px-3 py-1 rounded bg-black text-white">Abrir</button>
+
+        <StatusBar r={r} onOpen={onOpen} />
       </div>
     </div>
   );
 }
 
-function BottomSheet({ items, onOpen }) {
+function BottomTable({ items, onOpen }) {
   return (
-    <div className="h-full overflow-auto border-t">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-white shadow">
+    <div className="tablewrap">
+      <table className="table">
+        <thead>
           <tr>
-            <th className="text-left p-2">Depto</th>
-            <th className="text-left p-2">PAX</th>
-            <th className="text-left p-2">Hora in/out</th>
-            <th className="text-left p-2">Nombre</th>
-            <th className="text-left p-2">Teléfono</th>
-            <th className="text-left p-2">A pagar</th>
-            <th className="text-left p-2">Moneda</th>
-            <th className="text-left p-2">IN/OUT</th>
-            <th className="text-left p-2">Extras</th>
-            <th className="text-left p-2">Agencia</th>
-            <th className="text-left p-2">Notas/Pagos</th>
+            <th className="th">RCode</th>
+            <th className="th">Depto</th>
+            <th className="th">PAX</th>
+            <th className="th">Hora in/out</th>
+            <th className="th">Nombre</th>
+            <th className="th">Teléfono</th>
+            <th className="th">Email</th>
+            <th className="th">A pagar</th>
+            <th className="th">Moneda</th>
+            <th className="th">IN/OUT</th>
+            <th className="th">Extras</th>
+            <th className="th">Agencia</th>
+            <th className="th">Notas/Pagos</th>
           </tr>
         </thead>
         <tbody>
-          {items.map(r => (
-            <tr key={r.id} className="border-b hover:bg-gray-50">
-              <td className="p-2">{r.codigo_depto}</td>
-              <td className="p-2">{r.adults ?? "-"}</td>
-              <td className="p-2">{r.checkin_at ? "check-in" : ""}</td>
-              <td className="p-2">
-                <span className={`${r.contacted_at ? "bg-yellow-200 px-1 rounded" : ""}`}>
-                  {r.nombre_huesped}
-                </span>
-              </td>
-              <td className="p-2">{r.customer_phone || "-"}</td>
-              <td className="p-2">{r.toPay ?? "-"}</td>
-              <td className="p-2">{r.currency || "-"}</td>
-              <td className="p-2">
-                {r.arrival_iso === r.departure_iso ? "DayUse" : r.arrival_iso ? "IN" : "OUT"}
-              </td>
-              <td className="p-2 text-gray-500">{r.extras || "-"}</td>
-              <td className="p-2">{r.source || "-"}</td>
-              <td className="p-2">
-                <button onClick={() => onOpen(r)} className="text-blue-600 underline">Ver</button>
-              </td>
-            </tr>
-          ))}
+          {items.map((r) => {
+            const depto = r.depto_nombre || r.nombre_depto || r.codigo_depto || "—";
+            const phone = r.customer_phone || "";
+            const email = r.customer_email || "";
+            return (
+              <tr key={r.id} className="tr">
+                <td className="td">{r.id_human || "—"}</td>
+                <td className="td">{depto}</td>
+                <td className="td">{r.adults ?? "-"}</td>
+                <td className="td">{r.checkin_at ? "check-in" : ""}</td>
+                <td className="td">{r.nombre_huesped || "-"}</td>
+                <td className="td">{phone || "-"}</td>
+                <td className="td">{email || "-"}</td>
+                <td className="td">{r.toPay ?? "-"}</td>
+                <td className="td">{r.currency || "-"}</td>
+                <td className="td">{r.arrival_iso ? "IN" : "OUT"}</td>
+                <td className="td">{r.extras || "-"}</td>
+                <td className="td">{r.source || "-"}</td>
+                <td className="td">
+                  <button onClick={() => onOpen(r)} className="text-blue-600 underline">Ver</button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -133,44 +213,37 @@ function Modal({ open, onClose, r, onAction }) {
 
   const act = async (action, payload) => {
     await axios.post("/api/reservationMutations", { id: r.id, action, payload, user: "host" });
-    onAction?.(); onClose();
+    onAction?.();
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl w-full max-w-2xl p-5 shadow-xl">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold">
-            {r.nombre_huesped} · {r.codigo_depto}
+    <div className="modal-overlay">
+      <div className="modal">
+        <div className="modal__header">
+          <h3 className="modal__title">
+            {r.nombre_huesped} · {r.depto_nombre || r.nombre_depto || r.codigo_depto}
           </h3>
-          <button onClick={onClose} className="text-gray-500">✕</button>
+          <button onClick={onClose} className="modal__close">✕</button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="modal__grid">
           <div className="space-y-2">
-            <div className="text-sm text-gray-600">
-              In: {r.arrival_iso} · Out: {r.departure_iso}
+            <div className="modal__hint">
+              Rcode: {r.id_human || "—"} · In: {fmtDate(r.arrival_iso)} · Out: {fmtDate(r.departure_iso)}
             </div>
-            <button
-              onClick={() => act("checkin", { when: null })}
-              className="w-full px-3 py-2 rounded bg-sky-600 text-white"
-            >
-              Marcar Check-in (ahora)
-            </button>
-            <button
-              onClick={() => act("contact", { when: null })}
-              className="w-full px-3 py-2 rounded bg-amber-600 text-white"
-            >
-              Marcar Contactado (ahora)
-            </button>
+            <div className="modal__actions">
+              <button onClick={() => act("checkin", { when: null })} className={cls("modal__btn","modal__btn--in")}>
+                Marcar Check-in (ahora)
+              </button>
+              <button onClick={() => act("contact", { when: null })} className={cls("modal__btn","modal__btn--contact")}>
+                Marcar Contactado (ahora)
+              </button>
+            </div>
             <div className="space-y-1">
               <label className="text-sm">Nueva nota</label>
-              <textarea value={note} onChange={e=>setNote(e.target.value)} className="w-full border rounded p-2 h-20" />
-              <button
-                disabled={!note.trim()}
-                onClick={() => act("addNote", { text: note })}
-                className="px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-40"
-              >
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} className="modal__field h-20" />
+              <button disabled={!note.trim()} onClick={() => act("addNote", { text: note })} className="px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-40">
                 Guardar nota
               </button>
             </div>
@@ -178,31 +251,26 @@ function Modal({ open, onClose, r, onAction }) {
 
           <div className="space-y-2">
             <label className="text-sm">Nuevo pago</label>
-            <input
-              placeholder="Monto"
-              value={amount}
-              onChange={e=>setAmount(e.target.value)}
-              className="w-full border rounded p-2"
-            />
+            <input placeholder="Monto" value={amount} onChange={(e) => setAmount(e.target.value)} className="modal__field" />
             <div className="flex gap-2">
-              <select value={method} onChange={e=>setMethod(e.target.value)} className="border rounded p-2 w-1/2">
-                <option>Efectivo</option><option>Stripe</option><option>Transferencia</option>
+              <select value={method} onChange={(e) => setMethod(e.target.value)} className="modal__field w-1/2">
+                <option>Efectivo</option>
+                <option>Stripe</option>
+                <option>Transferencia</option>
               </select>
-              <select value={currency} onChange={e=>setCurrency(e.target.value)} className="border rounded p-2 w-1/2">
-                <option>ARS</option><option>USD</option>
+              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="modal__field w-1/2">
+                <option>ARS</option>
+                <option>USD</option>
               </select>
             </div>
-            <button
-              onClick={() => act("addPayment", { amount, method, currency })}
-              className="w-full px-3 py-2 rounded bg-green-700 text-white"
-            >
+            <button onClick={() => act("addPayment", { amount, method, currency })} className="w-full px-3 py-2 rounded bg-green-700 text-white">
               Registrar pago
             </button>
           </div>
         </div>
 
-        <div className="mt-4 text-right">
-          <button onClick={onClose} className="px-3 py-2 rounded border">Cerrar</button>
+        <div className="modal__footer">
+          <button onClick={onClose} className="btn">Cerrar</button>
         </div>
       </div>
     </div>
@@ -212,77 +280,58 @@ function Modal({ open, onClose, r, onAction }) {
 export default function App() {
   const today = DateTime.now().setZone(TZ).toISODate();
   const [dateISO, setDateISO] = useState(today);
-  const { loading, idx, items, tab, setActiveTab } = useDaily(dateISO);
+  const { loading, items, counts, tab, setActiveTab, page, setPage, totalPages } = useDaily(dateISO);
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState(null);
 
   const openModal = (r) => { setCurrent(r); setOpen(true); };
-  const onActionDone = async () => {
-    // refetch current tab quickly
-    const ids = idx?.[tab] || [];
-    const { data: resolved } = await axios.post(`/api/resolveReservations`, { ids });
-    // naive refresh: replace current only
-    // (para hacerlo fino, deberías levantar estado al hook)
-    setCurrent(null);
-  };
-
+  const onActionDone = () => setCurrent(null);
   const goto = (offsetDays) => {
     const d = DateTime.fromISO(dateISO, { zone: TZ }).plus({ days: offsetDays }).toISODate();
     setDateISO(d);
   };
 
   return (
-    <div className="h-screen flex flex-col">
-      {/* Header */}
-      <div className="p-3 border-b flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold">Planilla de Hosts</h1>
-          <span className="text-gray-500">({dateISO})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={()=>goto(-1)} className="px-2 py-1 border rounded">← Ayer</button>
-          <button onClick={()=>setDateISO(DateTime.now().setZone(TZ).toISODate())} className="px-2 py-1 border rounded">Hoy</button>
-          <button onClick={()=>goto(1)} className="px-2 py-1 border rounded">Mañana →</button>
-          <input
-            type="date"
-            value={dateISO}
-            onChange={e=>setDateISO(e.target.value)}
-            className="border rounded p-1"
-          />
-        </div>
-      </div>
-
-      {/* Top 70% */}
-      <div className="flex-1 grid grid-rows-[auto,1fr] p-3 gap-3">
-        {/* Tabs */}
-        <div className="flex gap-2">
-          {["checkins","stays","checkouts"].map(t => (
-            <button
-              key={t}
-              onClick={()=>setActiveTab(t)}
-              className={`px-3 py-2 rounded-full border ${tab===t?"bg-black text-white":"bg-white"}`}
-            >
-              {t==="checkins" && "Check-ins"}{t==="stays" && "Stays"}{t==="checkouts" && "Check-outs"}
-              {idx?.counts?.[t] !== undefined && <span className="ml-2 text-xs opacity-70">({idx.counts[t]})</span>}
-            </button>
-          ))}
-        </div>
-        {/* List */}
-        <div className="overflow-auto">
-          {loading && <div className="text-gray-500">Cargando…</div>}
-          {!loading && items.length === 0 && <div className="text-gray-500">Sin reservas</div>}
-          <div className="grid gap-2">
-            {items.map(r => <RowItem key={r.id} r={r} onOpen={openModal} />)}
+    <div className="app">
+      <header className="header">
+        <div className="header__bar">
+          <div className="flex items-center gap-2">
+            <h1 className="header__title">Planilla de Hosts</h1>
+            <span className="header__date">({dateISO})</span>
+          </div>
+          <div className="header__actions">
+            <button className="btn" onClick={() => goto(-1)}>← Ayer</button>
+            <button className="btn" onClick={() => setDateISO(DateTime.now().setZone(TZ).toISODate())}>Hoy</button>
+            <button className="btn" onClick={() => goto(1)}>Mañana →</button>
+            <input className="input--date" type="date" value={dateISO} onChange={(e)=>setDateISO(e.target.value)} />
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Bottom 30% */}
-      <div className="h-[30%] p-3">
-        <BottomSheet items={items} onOpen={openModal} />
-      </div>
+      <main className="main">
+        <div className="main__top">
+          <Tabs tab={tab} onChange={setActiveTab} counts={counts} />
+          <Paginator page={page} totalPages={totalPages} onPage={setPage} />
+        </div>
+
+        {loading && <div className="loader">Cargando…</div>}
+
+        {!loading && (
+          <div className="list">
+            {items.length === 0 && <div className="empty">Sin reservas</div>}
+            <div className="list__grid">
+              {items.map((r) => <ReservationCard key={r.id} r={r} onOpen={openModal} />)}
+            </div>
+          </div>
+        )}
+      </main>
+
+      <section className="bottom">
+        <BottomTable items={items} onOpen={openModal} />
+      </section>
 
       <Modal open={open} onClose={()=>setOpen(false)} r={current} onAction={onActionDone} />
     </div>
   );
 }
+
