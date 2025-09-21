@@ -4,7 +4,7 @@ import { DateTime } from "luxon";
 
 const TZ = "America/Argentina/Buenos_Aires";
 
-/* ===== Helpers ===== */
+/* Helpers */
 const fmtDate = (iso) => (iso ? DateTime.fromISO(iso, { zone: TZ }).toISODate() : "");
 const cls = (...xs) => xs.filter(Boolean).join(" ");
 const toFlag = (cc) => {
@@ -23,7 +23,7 @@ function useDaily(dateISO) {
   const [loading, setLoading] = useState(true);
   const [idx, setIdx] = useState(null);
   const [items, setItems] = useState([]);
-  const [tab, setTab] = useState("checkins"); // 'checkins' | 'stays' | 'checkouts'
+  const [tab, setTab] = useState("checkins");
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
@@ -122,27 +122,35 @@ function ReservationCard({ r, onOpen }) {
   const outDt = fmtDate(r.departure_iso);
   const channel = r.source || r.channel_name || "—";
 
+  const deptoTagClass = cls("tag", "tag--depto", r.checkout_at && "tag--depto--out");
+
   return (
     <div className="res-card">
       <div className="res-card__row">
         <div className="res-card__left">
           <div className={cls("res-card__bar", r.checkin_at && "res-card__bar--checkin")} />
           <div className="res-card__block">
+            {/* 1ª línea: Depto + Nombre + Tel + Email + Bandera */}
             <div className="res-card__line1">
-              <span className="badge-depto">{depto}</span>
+              <span className={deptoTagClass}>{depto}</span>
               <span className={cls("name", r.contacted_at && "name--contacted")}>
                 {r.nombre_huesped || "Sin nombre"}
               </span>
-              {phone && <span className="meta">· {phone}</span>}
-              {email && <span className="meta">· {email}</span>}
-              {flag && <span className="flag">{flag}</span>}
+              {phone && <span className="text-sm text-gray-600">· {phone}</span>}
+              {email && <span className="text-sm text-gray-600">· {email}</span>}
+              {flag && <span className="text-sm">{flag}</span>}
             </div>
 
-            <div className="res-card__line2">
-              <span className="font-medium">Rcode:</span> {r.id_human || "—"} · In: {inDt} · Out: {outDt}
+            {/* 2ª línea: RCode (solo el código en recuadro) + Fechas */}
+            <div className="res-card__line2 flex items-center gap-2">
+              {r.id_human && <span className="tag tag--rcode">{r.id_human}</span>}
+              <span>In: {inDt} · Out: {outDt}</span>
             </div>
 
-            <div className="res-card__line3">{channel}</div>
+            {/* 3ª línea: Canal (recuadro negro, letras blancas) */}
+            <div className="res-card__line3">
+              <span className="tag--channel">{channel}</span>
+            </div>
           </div>
         </div>
 
@@ -178,20 +186,35 @@ function BottomTable({ items, onOpen }) {
             const depto = r.depto_nombre || r.nombre_depto || r.codigo_depto || "—";
             const phone = r.customer_phone || "";
             const email = r.customer_email || "";
+            const contacted = !!r.contacted_at;
+
+            // Depto: GRIS por defecto; CELESTE cuando hay check-in
+            const deptoClass = cls("td__depto-tag", r.checkin_at && "td__depto-tag--in");
+
             return (
               <tr key={r.id} className="tr">
-                <td className="td">{r.id_human || "—"}</td>
-                <td className="td">{depto}</td>
+                <td className="td">
+                  {r.id_human ? <span className="tag tag--rcode">{r.id_human}</span> : "—"}
+                </td>
+                <td className="td">
+                  <span className={deptoClass}>{depto}</span>
+                </td>
                 <td className="td">{r.adults ?? "-"}</td>
                 <td className="td">{r.checkin_at ? "check-in" : ""}</td>
-                <td className="td">{r.nombre_huesped || "-"}</td>
+                <td className="td">
+                  <span className={cls("td__name", contacted && "name--contacted")}>
+                    {r.nombre_huesped || "-"}
+                  </span>
+                </td>
                 <td className="td">{phone || "-"}</td>
                 <td className="td">{email || "-"}</td>
                 <td className="td">{r.toPay ?? "-"}</td>
                 <td className="td">{r.currency || "-"}</td>
                 <td className="td">{r.arrival_iso ? "IN" : "OUT"}</td>
                 <td className="td">{r.extras || "-"}</td>
-                <td className="td">{r.source || "-"}</td>
+                <td className="td">
+                  <span className="tag--channel">{r.source || "-"}</span>
+                </td>
                 <td className="td">
                   <button onClick={() => onOpen(r)} className="text-blue-600 underline">Ver</button>
                 </td>
@@ -230,7 +253,8 @@ function Modal({ open, onClose, r, onAction }) {
         <div className="modal__grid">
           <div className="space-y-2">
             <div className="modal__hint">
-              Rcode: {r.id_human || "—"} · In: {fmtDate(r.arrival_iso)} · Out: {fmtDate(r.departure_iso)}
+              {r.id_human && <span className="tag tag--rcode mr-2">{r.id_human}</span>}
+              In: {fmtDate(r.arrival_iso)} · Out: {fmtDate(r.departure_iso)}
             </div>
             <div className="modal__actions">
               <button onClick={() => act("checkin", { when: null })} className={cls("modal__btn","modal__btn--in")}>
@@ -334,4 +358,5 @@ export default function App() {
     </div>
   );
 }
+
 

@@ -7,7 +7,27 @@
   --unpaid:#fecaca;      /* rojo claro */
 }
 
-/* ==== LAYOUT GLOBAL ==== */
+/* ===== TAGS / PASTILLAS SEMÁNTICAS ===== */
+.tag { @apply px-2 py-0.5 text-xs rounded-md border; }
+
+/* RCode: sin título, borde negro, fondo blanco */
+.tag--rcode { @apply bg-white text-gray-800 border-black; }
+
+/* Depto en CARD: borde negro, gris por defecto; celeste si hay check-out */
+.tag--depto { @apply bg-gray-100 text-gray-900 border-black; }
+.tag--depto--out { @apply bg-sky-200 text-gray-900 border-black; }
+
+/* Canal: recuadro negro, letras blancas */
+.tag--channel { @apply px-2 py-0.5 text-xs rounded-md bg-black text-white; }
+
+/* Nombre contactado (card + tabla) */
+.name--contacted { background: var(--contacted); @apply px-1 rounded; }
+
+/* Píldora vertical (check-in hecho) */
+.res-card__bar { @apply w-2 rounded bg-gray-300; }
+.res-card__bar--checkin { background: var(--checkin); }
+
+/* ===== LAYOUT GLOBAL ===== */
 .app { @apply h-screen flex flex-col; }
 .header { @apply p-3 border-b; }
 .header__bar { @apply flex items-center justify-between; }
@@ -22,56 +42,45 @@
 .loader { @apply text-gray-500; }
 .empty { @apply text-gray-500; }
 
-/* ==== TABS ==== */
+/* ===== TABS ===== */
 .tabs { @apply flex items-center gap-3; }
 .tabs__btn { @apply px-6 py-3 rounded-full border text-base bg-white text-gray-800; }
 .tabs__btn--active { @apply bg-black text-white; }
 
-/* ==== PAGINADOR ==== */
+/* ===== PAGINADOR ===== */
 .pager { @apply flex items-center gap-2; }
 .pager__btn { @apply px-2 py-1 border rounded disabled:opacity-40; }
 .pager__label { @apply text-sm text-gray-600; }
 
-/* ==== LISTA SUPERIOR ==== */
+/* ===== LISTA SUPERIOR ===== */
 .list { @apply overflow-auto; }
 .list__grid { @apply grid gap-3; }
 
-/* ==== CARD DE RESERVA ==== */
 .res-card { @apply border rounded-lg p-3 hover:bg-gray-50 cursor-pointer; }
 .res-card__row { @apply flex items-start gap-3 justify-between; }
 .res-card__left { @apply flex items-start gap-3; }
-.res-card__bar { @apply w-2 rounded bg-gray-300; }
-.res-card__bar--checkin { background: var(--checkin); }
 .res-card__block { @apply flex flex-col; }
-
 .res-card__line1 { @apply flex flex-wrap items-center gap-2; }
-.badge-depto { @apply px-2 py-0.5 text-xs rounded-md bg-gray-100 text-gray-700; }
-.name { @apply font-medium; }
-.name--contacted { background: var(--contacted); @apply px-1 rounded; }
-.meta { @apply text-sm text-gray-600; }
-.flag { @apply text-sm; }
-
 .res-card__line2 { @apply text-xs text-gray-600 mt-1; }
 .res-card__line3 { @apply text-xs text-gray-500 mt-1; }
 
-/* === BARRA DE ESTADO (derecha) === */
+/* ===== BARRA ESTADO DERECHA ===== */
 .status { @apply flex items-center gap-2 flex-row-reverse; }
 .status__open { @apply text-sm px-3 py-1 rounded bg-black text-white; }
 
-/* Badges reutilizables (así no repetís clases en JSX) */
+/* Badges de pago */
 .badge { @apply px-2 py-0.5 text-xs rounded-md; }
-.badge--canal { @apply bg-gray-100 text-gray-700; }
-.badge--paid  { @apply text-gray-900; background: var(--paid); }
+.badge--paid    { @apply text-gray-900; background: var(--paid); }
 .badge--partial { @apply text-gray-900; background: var(--partial); }
-.badge--unpaid { @apply text-gray-900; background: var(--unpaid); }
+.badge--unpaid  { @apply text-gray-900; background: var(--unpaid); }
 
 /* Chips on/off con borde */
 .chip { @apply px-2 py-0.5 text-xs rounded-md border; }
-.chip--off { @apply bg-white border-gray-300 text-gray-700; }
-.chip--sky { @apply bg-sky-100 border-sky-500 text-sky-800; }
-.chip--amber { @apply bg-yellow-100 border-yellow-500 text-yellow-800; }
+.chip--off  { @apply bg-white border-gray-300 text-gray-700; }
+.chip--sky  { @apply bg-sky-100 border-sky-500 text-sky-800; }
+.chip--amber{ @apply bg-yellow-100 border-yellow-500 text-yellow-800; }
 
-/* ==== TABLA INFERIOR ==== */
+/* ===== TABLA INFERIOR ===== */
 .bottom { @apply h-[30%] p-3; }
 .tablewrap { @apply h-full overflow-auto border-t; }
 .table { @apply w-full text-sm; }
@@ -80,7 +89,12 @@
 .td { @apply p-2; }
 .tr { @apply border-b hover:bg-gray-50; }
 
-/* ==== MODAL ==== */
+/* Tabla: depto GRIS por defecto; CELESTE cuando hay check-in */
+.td__depto-tag { @apply inline-block px-2 py-0.5 rounded-md bg-gray-100 text-gray-900 border border-black; }
+.td__depto-tag--in { @apply bg-sky-200; }
+.td__name { @apply rounded px-1; }
+
+/* ===== MODAL ===== */
 .modal-overlay { @apply fixed inset-0 bg-black/40 flex items-center justify-center z-50; }
 .modal { @apply bg-white rounded-xl w-full max-w-2xl p-5 shadow-xl; }
 .modal__header { @apply flex items-center justify-between mb-3; }
@@ -95,5 +109,3 @@
 .modal__field { @apply w-full border rounded p-2; }
 .modal__footer { @apply mt-4 text-right; }
 
-/* ==== UTILIDADES MÍNIMAS === */
-.hidden { display:none; }
