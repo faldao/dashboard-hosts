@@ -66,19 +66,27 @@ function useDaily(dateISO) {
 /* ===== UI ===== */
 
 function Tabs({ tab, onChange, counts }) {
-  const Btn = ({ t, label }) => (
-    <button
-      onClick={() => onChange(t)}
-      className={cls("tabs__btn", tab === t && "tabs__btn--active")}
-    >
-      {label} <span className="ml-2 opacity-70 text-sm">({counts?.[t] ?? 0})</span>
-    </button>
-  );
+  const Btn = ({ id, label }) => {
+    const isActive = tab === id;
+    return (
+      <button
+        type="button"
+        role="tab"
+        aria-selected={isActive}
+        className={cls("tab", isActive && "tab--active")}
+        onClick={() => onChange(id)}
+      >
+        <span>{label}</span>
+        <span className="tab__count">{counts?.[id] ?? 0}</span>
+      </button>
+    );
+  };
+
   return (
-    <div className="tabs">
-      <Btn t="checkins" label="Check-ins" />
-      <Btn t="stays" label="Stays" />
-      <Btn t="checkouts" label="Check-outs" />
+    <div role="tablist" aria-label="Reservas" className="tabsbar">
+      <Btn id="checkins"  label="Check-ins" />
+      <Btn id="stays"     label="Stays" />
+      <Btn id="checkouts" label="Check-outs" />
     </div>
   );
 }

@@ -42,10 +42,42 @@
 .loader { @apply text-gray-500; }
 .empty { @apply text-gray-500; }
 
-/* ===== TABS ===== */
-.tabs { @apply flex items-center gap-3; }
-.tabs__btn { @apply px-6 py-3 rounded-full border text-base bg-white text-gray-800; }
-.tabs__btn--active { @apply bg-black text-white; }
+/* ===== TABS (estilo navegador) ===== */
+/* Contenedor con borde inferior (como la barra de pestañas) */
+.tabsbar { @apply relative flex items-end gap-0 border-b bg-gray-100 px-2; }
+
+/* La “pestaña” base: levemente curvada arriba, sin fondo fuerte */
+.tab {
+  @apply relative select-none;
+  @apply px-4 py-2 text-sm text-gray-700;
+  @apply border border-b-0 rounded-t-xl;
+  @apply bg-gray-50;
+  @apply -mb-px;                /* se superpone al borde inferior del bar */
+  @apply mr-1;                  /* pequeño gap entre pestañas */
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+
+/* Borde compartido entre tabs para que no se vean dobles */
+.tab + .tab { @apply -ml-px; }
+
+/* Hover sutil como en Chrome */
+.tab:hover { @apply bg-white; }
+
+/* Estado ACTIVO: fondo blanco, sombra leve, “corta” el borde inferior del bar */
+.tab--active {
+  @apply bg-white text-gray-900;
+  box-shadow: 0 1px 0 0 #ffffff inset, 0 -1px 0 0 #ffffff inset, 0 1px 3px rgba(0,0,0,.06);
+  position: relative;
+  z-index: 1;
+}
+
+/* Contador (el número entre paréntesis) como burbuja sutil */
+.tab__count {
+  @apply ml-2 inline-flex items-center justify-center;
+  @apply h-5 min-w-[20px] px-1 text-[11px] font-medium;
+  @apply rounded-full bg-gray-200 text-gray-700;
+}
+
 
 /* ===== PAGINADOR ===== */
 .pager { @apply flex items-center gap-2; }
