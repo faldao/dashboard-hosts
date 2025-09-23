@@ -338,20 +338,28 @@ function ReservationCard({ r, onRefresh }) {
       <div className="res-cell">
         <div className="notes-wrap">
           <div className="notes-list">
-            {(Array.isArray(r.host_notes) && r.host_notes.length > 0) ? (
-              r.host_notes.slice().reverse().map((n, i) => (
-                <div key={i} className="note-item">
-                  <div className="note-head">
-                    <span className="note-meta">{fmtTS(n.ts)}{n.by ? ` · ${n.by}` : ""}</span>
-                  </div>
-                  <div className="note-body">{n.text}</div>
-                  {i < r.host_notes.length - 1 && <div className="note-sep" />}
-                </div>
-              ))
-            ) : (
-              <div className="notes-empty">Sin notas</div>
-            )}
+  {(() => {
+    const list = getNotes(r).slice().reverse(); // más recientes arriba
+    return list.length ? (
+      list.map((n, i) => (
+        <div key={i} className="note-item">
+          <div className="note-head">
+            <span className="note-meta">
+              {fmtTS(n.ts)}{n.by ? ` · ${n.by}` : ""}
+            </span>
+            <span className={cls("note-badge", n.source === "wubook" ? "note-badge--w" : "note-badge--h")}>
+              {n.source === "wubook" ? "WuBook" : "Host"}
+            </span>
           </div>
+          <div className="note-body">{n.text}</div>
+          {i < list.length - 1 && <div className="note-sep" />}
+        </div>
+      ))
+    ) : (
+      <div className="notes-empty">Sin notas</div>
+    );
+  })()}
+</div>
 
           {/* Botón flotante para agregar nota */}
           <NoteAddButton r={r} onDone={() => onRefresh?.()} />
