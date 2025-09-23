@@ -190,32 +190,34 @@
 .notes-box, .payments-box {
   @apply text-sm text-gray-500 h-full flex items-center justify-center;
 }
-
 /* ===== CELDA 4: stack fijo de estados superpuestos ===== */
-.status-stack {
+.status-stack{
   position: relative;
-  width: 120px;      /* ancho fijo */
-  height: 80px;      /* alto fijo */
-  display: block;
+  width: 120px;          /* ancho fijo */
+  height: 80px;          /* alto fijo */
 }
 
-.pill-fixed {
+/* Base: GRIS por defecto */
+.pill-fixed{
   position: absolute;
-  right: 8px;
-  left: 8px;         /* para que las tres tengan el mismo ancho */
-  height: 24px;      /* alto fijo */
-  @apply px-2 text-xs rounded border flex items-center justify-center bg-white;
-  line-height: 1;    /* evita que crezca con la fuente */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  z-index: 0;        /* base */
+  right: 8px; left: 8px; /* mismo ancho para todas */
+  height: 24px;          /* alto fijo */
+  line-height: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  @apply px-2 text-xs rounded border flex items-center justify-center;
+  @apply bg-gray-100 border-gray-300 text-gray-600;  /* << gris por defecto */
+  z-index: 0;
 }
 
-/* posiciones (superpuestas verticalmente) */
-.pill--contact { top: 8px;  @apply border-amber-400 text-amber-800 bg-yellow-100; z-index: 3; }
-.pill--checkin { top: 30px; @apply border-sky-400   text-sky-800   bg-sky-100;   z-index: 2; }
-.pill--checkout{ top: 52px; @apply border-gray-400  text-gray-800  bg-gray-100;  z-index: 1; }
+/* Posiciones (superpuestas) */
+.pill--pos-contact { top: 8px;  z-index: 3; }
+.pill--pos-checkin { top: 30px; z-index: 2; }
+.pill--pos-checkout{ top: 52px; z-index: 1; }
+
+/* Estados ACTIVOS: coloreados al 100% */
+.pill--active-contact { @apply bg-yellow-100 border-amber-400 text-amber-800; }
+.pill--active-checkin { @apply bg-sky-100    border-sky-400   text-sky-800; }
+.pill--active-checkout{ @apply bg-gray-200   border-gray-500  text-gray-800; }
 
 /* Badges de pago (reuso) */
 .badge { @apply px-2 py-0.5 text-xs rounded-md; }

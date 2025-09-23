@@ -194,28 +194,34 @@ function ReservationCard({ r, onOpen }) {
         <div className="payments-box">{payBadge}</div>
       </div>
 
-           {/* CELDA 4: Stack fijo de estados superpuestos */}
+            {/* CELDA 4: Stack fijo de estados superpuestos (gris -> color cuando activo) */}
       <div className="res-cell" onClick={(e) => e.stopPropagation()}>
         <div className="status-stack">
-          <div className={cls(
-            "pill-fixed",
-            "pill--contact",
-            r.contacted_at ? "" : "opacity-60"
-          )}>
+          <div
+            className={cls(
+              "pill-fixed",
+              "pill--pos-contact",
+              r.contacted_at && "pill--active-contact"
+            )}
+          >
             Contactado
           </div>
-          <div className={cls(
-            "pill-fixed",
-            "pill--checkin",
-            r.checkin_at ? "" : "opacity-60"
-          )}>
+          <div
+            className={cls(
+              "pill-fixed",
+              "pill--pos-checkin",
+              r.checkin_at && "pill--active-checkin"
+            )}
+          >
             Check-in
           </div>
-          <div className={cls(
-            "pill-fixed",
-            "pill--checkout",
-            r.checkout_at ? "" : "opacity-60"
-          )}>
+          <div
+            className={cls(
+              "pill-fixed",
+              "pill--pos-checkout",
+              r.checkout_at && "pill--active-checkout"
+            )}
+          >
             Check-out
           </div>
         </div>
