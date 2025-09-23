@@ -93,6 +93,25 @@
 .modal-overlay { @apply hidden; }
 .modal { @apply hidden; }
 
+/* ===== NOTAS (celda 2) ===== */
+.notes-wrap { @apply relative h-full; } /* contenedor relativo para botón + y popover */
+.notes-list { @apply h-full text-sm text-gray-700 overflow-auto pr-2; max-height: 100px; } /* scroll si hace falta */
+.notes-empty { @apply text-gray-400 italic; }
+
+/* Item de nota */
+.note-item { @apply pb-2; }
+.note-head { @apply flex items-center justify-between; }
+.note-meta { @apply text-[11px] text-gray-500; }
+.note-body { @apply whitespace-pre-wrap break-words; }
+.note-sep { @apply my-2 border-t; border-color:#e5e7eb; }
+
+/* Botón flotante “+” */
+.notes-addwrap { @apply absolute right-2 bottom-2; }
+.notes-addbtn { @apply w-7 h-7 rounded-full border bg-white text-gray-700 leading-none flex items-center justify-center shadow hover:bg-gray-50; }
+
+/* Popover de nota: ajusto posición para que no tape la lista */
+.notes-pop { right: .5rem; bottom: 2.5rem; top: auto; }
+
 /* ====== CARD 4 CELDAS ====== */
 .res-card4 { @apply relative border rounded-lg p-3 bg-white hover:bg-gray-50; display: grid; grid-template-columns: 2fr 1fr 1fr 120px; gap: 0; min-height: var(--res-card-min-h); }
 .res-cell { @apply px-3; }
@@ -124,10 +143,10 @@
 .pill-btn--sky { @apply bg-sky-50 border-sky-300 text-sky-800; }
 .pill-btn--neutral { @apply bg-gray-100 border-gray-300 text-gray-500; }
 .pill-btn--neutral:hover { @apply bg-gray-200; }
+
+/* Activos */
 .pill-btn--sky-active { @apply bg-sky-100 border-sky-500 text-sky-900; }
-.pill-btn--amber { @apply bg-yellow-50 border-yellow-300 text-yellow-800; }
 .pill-btn--amber-active { @apply bg-yellow-100 border-yellow-500 text-yellow-900; }
-.pill-btn--gray { @apply bg-gray-100 border-gray-400 text-gray-700; }
 .pill-btn--gray-active { @apply bg-gray-200 border-gray-500 text-gray-900; }
 
 /* Mini popover */
@@ -140,6 +159,7 @@
 .mini-popover__btn { @apply px-3 py-1.5 rounded text-sm; }
 .mini-popover__btn--muted { @apply bg-gray-100 text-gray-800 border border-gray-300; }
 .mini-popover__btn--ok { @apply bg-black text-white; }
+.mini-popover__title { @apply mb-2 text-sm font-semibold text-gray-800; }
 
 /* Ocultar stack viejo si existiera*/
 .status-stack { display: none; }

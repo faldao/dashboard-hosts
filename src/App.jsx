@@ -26,6 +26,23 @@ const toLocalIso = (dateStr, timeStr) => {
   return dt.isValid ? dt.toISO() : null;
 };
 
+// Convierte Timestamps/firestore/json a texto corto
+const fmtTS = (ts) => {
+  if (!ts) return "";
+  // Firestore Timestamp (admin o web)
+  if (ts.seconds || ts._seconds) {
+    const s = ts.seconds ?? ts._seconds;
+    return DateTime.fromSeconds(Number(s), { zone: TZ }).toFormat("dd/MM HH:mm");
+  }
+  // ISO string o Date
+  try {
+    const d = DateTime.fromISO(String(ts), { zone: TZ });
+    if (d.isValid) return d.toFormat("dd/MM HH:mm");
+  } catch { }
+  return "";
+};
+
+
 /* ---------- Chip reutilizable ---------- */
 const Chip = ({ label, active, tone = "sky" }) => {
   const onClass = tone === "amber" ? "chip--amber" : "chip--sky";
@@ -104,8 +121,8 @@ function Tabs({ tab, onChange, counts }) {
 
   return (
     <div role="tablist" aria-label="Reservas" className="tabsbar">
-      <Btn id="checkins"  label="Check-ins" />
-      <Btn id="stays"     label="Stays" />
+      <Btn id="checkins" label="Check-ins" />
+      <Btn id="stays" label="Stays" />
       <Btn id="checkouts" label="Check-outs" />
       <div className="tabsbar__spacer" />
     </div>
@@ -174,34 +191,40 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
     }
   };
 
+  // Clase visual: gris por defecto; color SOLO cuando está activo
   const btnClass = cls(
     "pill-btn",
-    tone === "amber" ? "pill-btn--amber" : tone === "sky" ? "pill-btn--sky" : "pill-btn--gray",
-    active && (tone === "amber" ? "pill-btn--amber-active" : tone === "sky" ? "pill-btn--sky-active" : "pill-btn--gray-active")
+    !active
+      ? "pill-btn--neutral"
+      : tone === "amber"
+        ? "pill-btn--amber-active"
+        : tone === "sky"
+          ? "pill-btn--sky-active"
+          : "pill-btn--gray-active"
   );
 
   return (
-    <div className="pill-wrap" onClick={(e)=>e.stopPropagation()}>
-      <button type="button" className={btnClass} onClick={() => setOpen(v=>!v)} disabled={submitting}>
+    <div className="pill-wrap" onClick={(e) => e.stopPropagation()}>
+      <button type="button" className={btnClass} onClick={() => setOpen(v => !v)} disabled={submitting}>
         {label}
       </button>
 
       {open && (
-        <div className="mini-popover" role="dialog" aria-label={label} onClick={(e)=>e.stopPropagation()}>
+        <div className="mini-popover" role="dialog" aria-label={label} onClick={(e) => e.stopPropagation()}>
           <div className="mini-popover__row">
             <label className="mini-popover__lab">Fecha</label>
-            <input type="date" className="mini-popover__field" value={d} onChange={(e)=>setD(e.target.value)} />
+            <input type="date" className="mini-popover__field" value={d} onChange={(e) => setD(e.target.value)} />
           </div>
           <div className="mini-popover__row">
             <label className="mini-popover__lab">Hora</label>
-            <input type="time" className="mini-popover__field" value={t} onChange={(e)=>setT(e.target.value)} />
+            <input type="time" className="mini-popover__field" value={t} onChange={(e) => setT(e.target.value)} />
           </div>
           <div className="mini-popover__row mini-popover__row--note">
             <label className="mini-popover__lab">Nota (opcional)</label>
-            <textarea className="mini-popover__field h-16" value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Agregar nota…" />
+            <textarea className="mini-popover__field h-16" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Agregar nota…" />
           </div>
           <div className="mini-popover__actions">
-            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={()=>setOpen(false)} disabled={submitting}>Cancelar</button>
+            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={() => setOpen(false)} disabled={submitting}>Cancelar</button>
             <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={confirm} disabled={submitting}>
               {submitting ? "Guardando…" : "Confirmar"}
             </button>
@@ -211,6 +234,53 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
     </div>
   );
 }
+
+function NoteAddButton({ r, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const save = async () => {
+    const clean = (note || "").trim();
+    if (!clean) return;
+    try {
+      setSending(true);
+      await axios.post("/api/reservationMutations", {
+        id: r.id,
+        action: "addNote",
+        payload: { text: clean },
+        user: "host",
+      });
+      setNote("");
+      setOpen(false);
+      onDone?.();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="notes-addwrap" onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="notes-addbtn" title="Agregar nota" onClick={() => setOpen(v => !v)}>+</button>
+      {open && (
+        <div className="mini-popover notes-pop" role="dialog" aria-label="Agregar nota" onClick={(e) => e.stopPropagation()}>
+          <div className="mini-popover__title">Agregar nota</div>
+          <div className="mini-popover__row mini-popover__row--note">
+            <label className="mini-popover__lab">Nueva nota</label>
+            <textarea className="mini-popover__field h-24" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Escribí tu nota…" />
+          </div>
+          <div className="mini-popover__actions">
+            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={() => setOpen(false)} disabled={sending}>Cancelar</button>
+            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={sending || !note.trim()}>
+              {sending ? "Guardando…" : "Guardar"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
 function ReservationCard({ r, onRefresh }) {
@@ -264,9 +334,28 @@ function ReservationCard({ r, onRefresh }) {
         </div>
       </div>
 
-      {/* CELDA 2: Notas (placeholder) */}
+      {/* CELDA 2: Notas (lista + botón +) */}
       <div className="res-cell">
-        <div className="notes-box">Notas</div>
+        <div className="notes-wrap">
+          <div className="notes-list">
+            {(Array.isArray(r.host_notes) && r.host_notes.length > 0) ? (
+              r.host_notes.slice().reverse().map((n, i) => (
+                <div key={i} className="note-item">
+                  <div className="note-head">
+                    <span className="note-meta">{fmtTS(n.ts)}{n.by ? ` · ${n.by}` : ""}</span>
+                  </div>
+                  <div className="note-body">{n.text}</div>
+                  {i < r.host_notes.length - 1 && <div className="note-sep" />}
+                </div>
+              ))
+            ) : (
+              <div className="notes-empty">Sin notas</div>
+            )}
+          </div>
+
+          {/* Botón flotante para agregar nota */}
+          <NoteAddButton r={r} onDone={() => onRefresh?.()} />
+        </div>
       </div>
 
       {/* CELDA 3: Pagos (placeholder + badge) */}
@@ -275,8 +364,8 @@ function ReservationCard({ r, onRefresh }) {
           {r.payment_status === "paid"
             ? <span className="badge badge--paid">Pago</span>
             : r.payment_status === "partial"
-            ? <span className="badge badge--partial">Parcial</span>
-            : <span className="badge badge--unpaid">Impago</span>}
+              ? <span className="badge badge--partial">Parcial</span>
+              : <span className="badge badge--unpaid">Impago</span>}
         </div>
       </div>
 
@@ -392,7 +481,7 @@ export default function App() {
             <button type="button" className="btn" onClick={() => goto(-1)}>← Ayer</button>
             <button type="button" className="btn" onClick={() => setDateISO(DateTime.now().setZone(TZ).toISODate())}>Hoy</button>
             <button type="button" className="btn" onClick={() => goto(1)}>Mañana →</button>
-            <input className="input--date" type="date" value={dateISO} onChange={(e)=>setDateISO(e.target.value)} />
+            <input className="input--date" type="date" value={dateISO} onChange={(e) => setDateISO(e.target.value)} />
           </div>
         </div>
       </header>
@@ -418,7 +507,7 @@ export default function App() {
       <section className="bottom">
         {/* Por ahora mantenemos la tabla “tal cual”.
             Le pasamos un no-op al onOpen para no abrir nada. */}
-        <BottomTable items={items} onOpen={() => {}} />
+        <BottomTable items={items} onOpen={() => { }} />
       </section>
     </div>
   );
