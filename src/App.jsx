@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { DateTime } from "luxon";
 
-
 const TZ = "America/Argentina/Buenos_Aires";
 
 /* ---------- helpers ---------- */
@@ -406,6 +405,3 @@ export default function App() {
     </div>
   );
 }
-
-
-
