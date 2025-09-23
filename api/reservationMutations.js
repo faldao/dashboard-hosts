@@ -82,17 +82,23 @@ export default async function handler(req, res) {
       // idem: chips leen checkout_at
     } else if (action === 'contact') {
       update.contacted_at = toTs(payload.when ?? null);
-    } else if (action === 'addNote') {
-      const text = String(payload?.text || '').trim();
-      if (!text) return bad(res, 400, 'Texto de nota vacío');
-      const note = {
-        ts: Timestamp.now(),
-        by: user || 'host',
-        text,
-        source: 'host',
+    }  else if (action === 'addNote') {
+  const text = String(payload?.text || '').trim();
+  if (!text) return bad(res, 400, 'Texto de nota vacío');
+
+  const nowTs = Timestamp.now();
+  const who = user || 'host';
+
+  const unifiedNote = {
+    ts: nowTs,
+    by: who,
+    text,
+    source: 'host',
+    wubook_id: null,
+    sent_to_wubook: false,
       };
       // guardamos en arreglo 'host_notes' y en subcolección 'historial' con snapshot
-      const prevNotes = Array.isArray(before.host_notes) ? before.host_notes.slice(0, 200) : [];
+      const prevNotes = Array.isArray(before.host_notes) ? before.host_notes.slice(0, 1000) : [];
       update.host_notes = [...prevNotes, note];
       historyPayload.note = note;
     } else if (action === 'addPayment') {

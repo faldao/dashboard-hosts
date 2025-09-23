@@ -1,4 +1,4 @@
-// /api/enrichWubookData.js 
+// /api/enrichWubookData.js
 // OBJETIVO: Enriquecer y sincronizar datos de reservas desde WuBook.
 // MODOS:
 // 1. 'pending': Procesa reservas nuevas (enrichmentStatus: 'pending'). Es el modo por defecto.
@@ -12,7 +12,7 @@
 
 import axios from 'axios';
 import qs from 'qs';
-import { firestore, FieldValue } from '../lib/firebaseAdmin.js';
+import { firestore, FieldValue, Timestamp } from '../lib/firebaseAdmin.js';
 import crypto from 'crypto';
 import { DateTime } from 'luxon';
 
@@ -21,7 +21,7 @@ const log = (...args) => console.log('[EnrichWubook]', ...args);
 
 // URLs de WuBook
 const BASE_URL_KP = process.env.WUBOOK_BASE_URL || 'https://kapi.wubook.net/kp';
-const BASE_URL_KAPI = process.env.WUBOOK_BASE_URL_KAPI || 'https://kapi.wubook.net/kapi'; //<------MODIFIQUE SOLAMENTE EL URL KAPI
+const BASE_URL_KAPI = process.env.WUBOOK_BASE_URL_KAPI || 'https://kapi.wubook.net/kapi';
 
 const apiKeyCache = new Map();
 
@@ -30,10 +30,7 @@ const IGNORE_KEYS = new Set(['updatedAt', 'createdAt', 'contentHash', 'enrichmen
 const sortObject = (obj) => {
   if (Array.isArray(obj)) return obj.map(sortObject);
   if (obj && typeof obj === 'object') {
-    return Object.keys(obj).sort().reduce((acc, k) => {
-      acc[k] = sortObject(obj[k]);
-      return acc;
-    }, {});
+    return Object.keys(obj).sort().reduce((acc, k) => { acc[k] = sortObject(obj[k]); return acc; }, {});
   }
   return obj;
 };
@@ -43,8 +40,7 @@ const stripKeys = (obj, ignore = IGNORE_KEYS) => {
   for (const k of Object.keys(obj || {})) if (!ignore.has(k)) out[k] = obj[k];
   return out;
 };
-const hashDoc = (doc) =>
-  crypto.createHash('sha1').update(stableStringify(stripKeys(doc))).digest('hex');
+const hashDoc = (doc) => crypto.createHash('sha1').update(stableStringify(stripKeys(doc))).digest('hex');
 
 // --- Helper para comparar objetos (para el historial) ---
 function getObjectDiff(obj1, obj2) {
@@ -120,32 +116,55 @@ async function fetchNotes(apiKey, rcode) {
   }
 }
 
+// ===================== HELPERS: unificación de notas =====================
+function mapWubookNotesToUnified(arr = []) {
+  // WuBook: { id, remarks, created_at? }
+  return (Array.isArray(arr) ? arr : []).map(n => ({
+    ts: n.created_at || Timestamp.now(),
+    by: 'wubook',
+    text: String(n.remarks ?? '').trim(),
+    source: 'wubook',
+    wubook_id: n.id ?? null,
+    sent_to_wubook: true,
+  })).filter(n => n.text);
+}
+function dedupeNotes(arr = []) {
+  const seen = new Set(); const out = [];
+  for (const n of arr) {
+    const key = n.wubook_id
+      ? `w:${n.wubook_id}`
+      : `s:${n.source}|t:${(n.ts?.seconds ?? n.ts?._seconds ?? n.ts ?? '')}|x:${(n.text||'').slice(0,120)}`;
+    if (seen.has(key)) continue;
+    seen.add(key); out.push(n);
+  }
+  // ordenar por ts ASC para consistencia (la UI puede invertir)
+  out.sort((a,b) => {
+    const sa = (a.ts?.seconds ?? a.ts?._seconds ?? 0);
+    const sb = (b.ts?.seconds ?? b.ts?._seconds ?? 0);
+    return sa - sb;
+  });
+  return out;
+}
+
 // ===================== HANDLER PRINCIPAL =====================
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   try {
-    // Añadimos syncMode, con 'pending' como valor por defecto.
     const { limit = 10, dryRun = false, forceUpdate = false, reservationId = null, syncMode = 'pending' } = req.body;
     log('INIT', { limit, dryRun, forceUpdate, reservationId, syncMode });
 
     let query = firestore.collection('Reservas');
 
     if (reservationId) {
-      // Prioridad 1: si se especifica un ID, se procesa solo esa reserva.
       query = query.where(firestore.FieldPath.documentId(), '==', reservationId);
     } else if (forceUpdate) {
-      // Prioridad 2: forceUpdate ignora todo y procesa un lote.
       log('Mode: forceUpdate');
-      // No se añade ningún 'where', tomará cualquier documento.
     } else if (syncMode === 'active') {
-      // Prioridad 3: Sincronizar reservas activas.
       log('Mode: syncActive');
-      // Usar "hoy" en TZ AR para evitar drifts con UTC del server.
-      const today = DateTime.now().setZone(TZ).toISODate(); // 'YYYY-MM-DD'
+      const today = DateTime.now().setZone(TZ).toISODate();
       query = query.where('departure_iso', '>=', today);
     } else {
-      // Modo por defecto: buscar las pendientes de enriquecimiento inicial.
       log('Mode: pending (default)');
       query = query.where('enrichmentStatus', '==', 'pending');
     }
@@ -172,33 +191,40 @@ export default async function handler(req, res) {
 
       log(`Processing doc ${doc.id} (rcode: ${id_human})...`);
 
-      const [customerData, payments, notes] = await Promise.all([
+      const [customerData, payments, wubookNotesRaw] = await Promise.all([
         fetchCustomerData(apiKey, bookerId),
         fetchPayments(apiKey, id_human),
         fetchNotes(apiKey, id_human)
       ]);
 
+      // ======= UNIFICACIÓN DE NOTAS =======
+      const unifiedFromWubook = mapWubookNotesToUnified(wubookNotesRaw);
+      const existingUnified   = Array.isArray(oldDoc.notes) ? oldDoc.notes : [];
+      const mergedNotes = dedupeNotes([...existingUnified, ...unifiedFromWubook]);
+
       // Construimos el documento "nuevo" con los datos que acabamos de obtener.
+      // (Mantenemos wubook_notes crudas por ahora, pero la **fuente de verdad** es notes[])
       const fetchedData = {
         ...customerData,
         wubook_payments: payments,
-        wubook_notes: notes,
+        wubook_notes: wubookNotesRaw,
+        notes: mergedNotes,
       };
 
-      // Comparamos el hash para ver si algo realmente cambió
+      // Hash tiene en cuenta las notas unificadas
       const newDocForHash = { ...oldDoc, ...fetchedData };
       const newHash = hashDoc(newDocForHash);
 
       if (newHash === oldDoc.contentHash) {
         log(`Skipping ${doc.id}, no changes detected (hash match).`);
-        continue; // Si no hay cambios, no hacemos nada y pasamos al siguiente.
+        continue;
       }
 
       // --- Si hubo cambios, preparamos la actualización ---
       const updateData = {
         ...fetchedData,
         enrichmentStatus: 'completed',
-        enrichedAt: oldDoc.enrichedAt || FieldValue.serverTimestamp(), // Pone la fecha solo la primera vez
+        enrichedAt: oldDoc.enrichedAt || FieldValue.serverTimestamp(),
         lastUpdatedBy: 'wubook_sync',
         lastUpdatedAt: FieldValue.serverTimestamp(),
         contentHash: newHash,
@@ -210,17 +236,17 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // --- Lógica de Historial ---
+      // --- Historial ---
       const diff = getObjectDiff(
         { ...stripKeys(oldDoc), nombre_huesped: bookerId },
         stripKeys(newDocForHash)
       );
       const changedKeys = Object.keys(diff);
 
-      // 1. Actualización principal
+      // 1) Update principal
       batch.update(doc.ref, updateData);
 
-      // 2. Registro en la subcolección 'historial' (incluimos propiedad_id en el contexto)
+      // 2) Registro en subcolección 'historial'
       const histId = `${Date.now()}_sync`;
       const histRef = doc.ref.collection('historial').doc(histId);
       const histDoc = {
@@ -259,3 +285,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
 }
+
