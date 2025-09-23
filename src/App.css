@@ -30,27 +30,48 @@
 .btn { @apply inline-flex items-center justify-center px-2 py-1 border rounded bg-white hover:bg-gray-50; }
 .input--date { @apply border rounded p-1; }
 
-.main { @apply flex-1 grid grid-rows-[auto,auto,1fr] p-3 gap-3; }
+.main {  @apply overflow-hidden; align-content: start; }
 .main__top { @apply flex items-center justify-between; }
 .loader { @apply text-gray-500; }
-.empty { @apply text-gray-500; }
+.empty { @apply text-gray-500;margin-top: .25rem; }
 
 /* ===== TABS (estilo navegador) ===== */
-.tabsbar { @apply relative flex items-end gap-0 border-b bg-gray-100 px-2; }
-.tab {
-  @apply relative select-none px-4 py-2 text-sm text-gray-700
-         border border-b-0 rounded-t-xl bg-gray-50 -mb-px mr-1;
-  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+/* barra de tabs */
+.tabsbar {
+  @apply relative flex items-end bg-gray-100 px-2;
+  border-bottom: 1px solid #d1d5db;       /* gris-300 */
 }
-.tab + .tab { @apply -ml-px; }
-.tab:hover { @apply bg-white; }
+
+/* base de tab (inactiva) */
+.tab {
+  @apply relative select-none px-4 py-2 text-sm text-gray-700 rounded-t-xl;
+  background: #e5e7eb;                    /* gris-200 */
+  border: 1px solid #d1d5db;              /* gris-300 */
+  border-bottom: 0;                        /* para que se vea la línea del bar */
+  margin-bottom: -1px;                     /* se superpone al border del bar */
+  margin-right: .25rem;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.tab + .tab { margin-left: -1px; }
+.tab:hover { background: #f9fafb; }        /* gris-50 */
+
+/* activa */
 .tab--active {
-  @apply bg-white text-gray-900;
-  box-shadow: 0 1px 0 0 #ffffff inset, 0 -1px 0 0 #ffffff inset, 0 1px 3px rgba(0,0,0,.06);
+  background: #ffffff;
+  color: #111827;                          /* gray-900 */
+  box-shadow:
+    0 1px 0 0 #ffffff inset,
+    0 -1px 0 0 #ffffff inset,
+    0 1px 3px rgba(0,0,0,.06);
   position: relative; z-index: 1;
 }
-.tab__count {
-  @apply ml-2 inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[11px] font-medium rounded-full bg-gray-200 text-gray-700;
+
+/* spacer que prolonga la línea de base hasta el borde derecho */
+.tabsbar__spacer {
+  flex: 1 1 auto;
+  height: 0;                               /* no ocupa alto visual */
+  border-bottom: 1px solid #d1d5db;        /* misma línea que el bar */
+  margin-bottom: -1px;                     /* misma superposición que las tabs */
 }
 
 /* ===== PAGINADOR ===== */
@@ -59,7 +80,7 @@
 .pager__label { @apply text-sm text-gray-600; }
 
 /* ===== LISTA SUPERIOR ===== */
-.list { @apply overflow-auto; }
+.list { @apply overflow-auto; min-height: 0;padding-top: .25rem; }
 .list__grid { @apply grid gap-3; }
 .res-card { @apply border rounded-lg p-3 hover:bg-gray-50 cursor-pointer; }
 .res-card__row { @apply flex items-start gap-3 justify-between; }

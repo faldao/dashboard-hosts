@@ -13,18 +13,16 @@
     "react-router-dom": "^7.6.1"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "^4.1.13",
     "@vitejs/plugin-react": "^4.0.0",
-    "concurrently": "^9.0.1",
+    "@tailwindcss/vite": "^4.1.13",
     "tailwindcss": "^4.1.13",
     "vite": "^5.0.0"
   },
   "scripts": {
-    "tw:dev": "tailwindcss -i ./src/index.css -o ./src/tw.css -w",
-    "vite": "vite",
-    "dev": "concurrently \"npm:tw:dev\" \"npm:vite\"",
-    "build": "npm run build:tw && vite build",
+    "dev": "vite --open",
+    "build": "vite build",
     "preview": "vite preview --port 5173"
   }
 }
+
 

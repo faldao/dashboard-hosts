@@ -88,11 +88,13 @@ function Tabs({ tab, onChange, counts }) {
       </button>
     );
   };
+
   return (
     <div role="tablist" aria-label="Reservas" className="tabsbar">
       <Btn id="checkins"  label="Check-ins" />
       <Btn id="stays"     label="Stays" />
       <Btn id="checkouts" label="Check-outs" />
+      <div className="tabsbar__spacer" />   {/* ← extiende la línea */}
     </div>
   );
 }
