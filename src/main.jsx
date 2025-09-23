@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 
 // CSS global de Tailwind y utilitarios de la app
-// import "./tw.css";
+ import "./tw.css";
 
 
 // Monta la app en #root (definido en index.html)
