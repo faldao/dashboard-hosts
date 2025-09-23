@@ -25,6 +25,27 @@ const toLocalIso = (dateStr, timeStr) => {
   });
   return dt.isValid ? dt.toISO() : null;
 };
+const getPayments = (r) => (r && Array.isArray(r.payments) ? r.payments : []);
+
+const groupPaymentsByCurrency = (payments = []) => {
+  const map = new Map();
+  for (const p of payments) {
+    const cur = String(p.currency || 'ARS').toUpperCase();
+    if (!map.has(cur)) map.set(cur, []);
+    map.get(cur).push(p);
+  }
+  // orden: moneda asc; dentro de cada moneda, más recientes arriba
+  return [...map.entries()].map(([cur, list]) => [cur, list.sort((a,b) => {
+    const sa = (a.ts? (a.ts.seconds ?? a.ts._seconds ?? 0) : 0);
+    const sb = (b.ts? (b.ts.seconds ?? b.ts._seconds ?? 0) : 0);
+    return sb - sa;
+  })]);
+};
+
+const sumAmount = (list = []) => list.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
+  //recupera notas//
+  const getNotes = (r) => (r && Array.isArray(r.notes) ? r.notes : []);
 
 // Convierte Timestamps/firestore/json a texto corto
 const fmtTS = (ts) => {
@@ -191,6 +212,9 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
     }
   };
 
+  //recupera notas//
+  const getNotes = (r) => (r && Array.isArray(r.notes) ? r.notes : []);
+
   // Clase visual: gris por defecto; color SOLO cuando está activo
   const btnClass = cls(
     "pill-btn",
@@ -234,6 +258,90 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
     </div>
   );
 }
+
+function PaymentAddButton({ r, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState((r.currency || "ARS").toUpperCase());
+  const [method, setMethod] = useState("Efectivo");
+  const [dateStr, setDateStr] = useState(DateTime.now().setZone(TZ).toISODate());
+  const [timeStr, setTimeStr] = useState(DateTime.now().setZone(TZ).toFormat("HH:mm"));
+  const [sending, setSending] = useState(false);
+
+  const save = async () => {
+    const val = Number(amount);
+    if (!isFinite(val) || val <= 0) return;
+    try {
+      setSending(true);
+      await axios.post("/api/reservationMutations", {
+        id: r.id,
+        action: "addPayment",
+        payload: {
+          amount: val,
+          currency: (currency || "ARS").toUpperCase(),
+          method,
+          when: dateStr ? toLocalIso(dateStr, timeStr) : null, // requiere el pequeño ajuste backend para conservarlo
+        },
+        user: "host",
+      });
+      setAmount("");
+      setOpen(false);
+      onDone?.();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="pay-addwrap" onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="pay-addbtn" title="Agregar pago" onClick={() => setOpen(v => !v)}>+</button>
+      {open && (
+        <div className="mini-popover" role="dialog" aria-label="Agregar pago" onClick={(e) => e.stopPropagation()}>
+          <div className="mini-popover__title">Agregar pago</div>
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">Monto</label>
+            <input className="mini-popover__field" type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+          </div>
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">Moneda</label>
+            <select className="mini-popover__field" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              <option>ARS</option>
+              <option>USD</option>
+              <option>EUR</option>
+              <option>BRL</option>
+              <option>CLP</option>
+            </select>
+          </div>
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">Método</label>
+            <select className="mini-popover__field" value={method} onChange={(e) => setMethod(e.target.value)}>
+              <option>Efectivo</option>
+              <option>Transferencia</option>
+              <option>Tarjeta</option>
+              <option>MercadoPago</option>
+              <option>Otro</option>
+            </select>
+          </div>
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">Fecha</label>
+            <input type="date" className="mini-popover__field" value={dateStr} onChange={(e) => setDateStr(e.target.value)} />
+          </div>
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">Hora</label>
+            <input type="time" className="mini-popover__field" value={timeStr} onChange={(e) => setTimeStr(e.target.value)} />
+          </div>
+          <div className="mini-popover__actions">
+            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={() => setOpen(false)} disabled={sending}>Cancelar</button>
+            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={sending || !(Number(amount) > 0)}>
+              {sending ? "Guardando…" : "Guardar"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function NoteAddButton({ r, onDone }) {
   const [open, setOpen] = useState(false);
@@ -280,6 +388,41 @@ function NoteAddButton({ r, onDone }) {
     </div>
   );
 }
+
+/*------------------- Armado de lista de pagos ------------------- */
+
+function PaymentsList({ r }) {
+  const payments = getPayments(r);
+  if (!payments.length) return <div className="payments-empty">Sin pagos</div>;
+
+  const groups = groupPaymentsByCurrency(payments);
+
+  return (
+    <div className="payments-list">
+      {groups.map(([cur, list], gi) => (
+        <div key={cur}>
+          <div className="pay-group-head">
+            <span>Moneda: <span className="pay-cur">{cur}</span></span>
+            <span className="pay-total">Subtotal: {sumAmount(list).toFixed(2)} {cur}</span>
+          </div>
+
+          {list.map((p, i) => (
+            <div key={gi + "_" + i} className="pay-item">
+              <div className="pay-left">
+                <span className="chip chip--off">{p.method || "—"}</span>
+                <span className="pay-meta">{p.by ? p.by : "host"} · {fmtTS(p.ts)}</span>
+              </div>
+              <div className="pay-amt">{Number(p.amount || 0).toFixed(2)} {cur}</div>
+            </div>
+          ))}
+
+          {gi < groups.length - 1 && <div className="pay-sep" />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 
 
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
@@ -366,16 +509,27 @@ function ReservationCard({ r, onRefresh }) {
         </div>
       </div>
 
-      {/* CELDA 3: Pagos (placeholder + badge) */}
-      <div className="res-cell">
-        <div className="payments-box">
-          {r.payment_status === "paid"
-            ? <span className="badge badge--paid">Pago</span>
-            : r.payment_status === "partial"
-              ? <span className="badge badge--partial">Parcial</span>
-              : <span className="badge badge--unpaid">Impago</span>}
-        </div>
+{/* CELDA 3: Pagos (estado + lista + botón +) */}
+<div className="res-cell">
+  <div className="payments-wrap">
+    <div className="payments-box" style={{ justifyContent: "space-between", alignItems: "start", gap: ".5rem", flexDirection: "column", display: "flex" }}>
+      {/* Estado de pago */}
+      <div>
+        {r.payment_status === "paid"
+          ? <span className="badge badge--paid">Pago</span>
+          : r.payment_status === "partial"
+            ? <span className="badge badge--partial">Parcial</span>
+            : <span className="badge badge--unpaid">Impago</span>}
       </div>
+
+      {/* Lista de pagos con grupos por moneda */}
+      <PaymentsList r={r} />
+    </div>
+
+    {/* Botón flotante para agregar pago */}
+    <PaymentAddButton r={r} onDone={() => { /* refrescamos la card desde el padre */ }} />
+  </div>
+</div>
 
       {/* CELDA 4: 3 botones con popover */}
       <div className="res-cell">

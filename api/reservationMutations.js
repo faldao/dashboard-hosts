@@ -76,31 +76,28 @@ export default async function handler(req, res) {
     // -------- acciones --------
     if (action === 'checkin') {
       update.checkin_at = toTs(payload.when ?? null);
-      // nada más: las cards/chips leen checkin_at
     } else if (action === 'checkout') {
       update.checkout_at = toTs(payload.when ?? null);
-      // idem: chips leen checkout_at
     } else if (action === 'contact') {
       update.contacted_at = toTs(payload.when ?? null);
-    }  else if (action === 'addNote') {
-  const text = String(payload?.text || '').trim();
-  if (!text) return bad(res, 400, 'Texto de nota vacío');
 
-  const nowTs = Timestamp.now();
-  const who = user || 'host';
+    } else if (action === 'addNote') {
+      const text = String(payload?.text || '').trim();
+      if (!text) return bad(res, 400, 'Texto de nota vacío');
 
-  const unifiedNote = {
-    ts: nowTs,
-    by: who,
-    text,
-    source: 'host',
-    wubook_id: null,
-    sent_to_wubook: false,
+      const unifiedNote = {
+        ts: Timestamp.now(),
+        by: user || 'host',
+        text,
+        source: 'host',
+        wubook_id: null,
+        sent_to_wubook: false,
       };
-      // guardamos en arreglo 'host_notes' y en subcolección 'historial' con snapshot
-      const prevNotes = Array.isArray(before.host_notes) ? before.host_notes.slice(0, 1000) : [];
-      update.host_notes = [...prevNotes, note];
-      historyPayload.note = note;
+
+      const prevNotes = Array.isArray(before.notes) ? before.notes.slice(0, 1000) : [];
+      update.notes = [...prevNotes, unifiedNote];
+      historyPayload.note = unifiedNote;
+
     } else if (action === 'addPayment') {
       const amount = Number(payload?.amount);
       const currency = String(payload?.currency || 'ARS');
@@ -110,29 +107,32 @@ export default async function handler(req, res) {
       const payment = {
         ts: Timestamp.now(),
         by: user || 'host',
+        source: 'host',
+        wubook_id: null,
         amount,
         currency,
         method,
-        source: 'host',
       };
-      const prevPays = Array.isArray(before.host_payments) ? before.host_payments.slice(0, 500) : [];
-      update.host_payments = [...prevPays, payment];
 
-      // Heurística simple de estado de pago si no existe lógica de saldo:
-      // - si existía payment_status === 'paid' lo mantenemos
-      // - si sumatoria >= toPay (si existe), marcamos 'paid', si no 'partial'
+      const prevPaysUnified = Array.isArray(before.payments) ? before.payments.slice(0, 1000) : [];
+      update.payments = [...prevPaysUnified, payment];
+
+      // Estado de pago (heurística simple)
       try {
         const toPay = Number(before.toPay);
-        const totalPaid = prevPays.reduce((s, p) => s + (Number(p.amount) || 0), 0) + amount;
+        const totalPaid = prevPaysUnified.reduce((s, p) => s + (Number(p.amount) || 0), 0) + amount;
         if (isFinite(toPay) && toPay > 0) {
           update.payment_status = totalPaid >= toPay ? 'paid' : 'partial';
         } else {
+          // si no tenemos toPay, marcamos al menos 'partial'
           update.payment_status = 'partial';
         }
       } catch {
         update.payment_status = before.payment_status || 'partial';
       }
+
       historyPayload.payment = payment;
+
     } else {
       return bad(res, 400, `Acción no soportada: ${action}`);
     }
@@ -143,7 +143,6 @@ export default async function handler(req, res) {
     update.contentHash = newHash;
     update.updatedAt = nowServer;
 
-    // batch para update + historial
     const batch = firestore.batch();
     batch.update(ref, update);
 
@@ -184,4 +183,5 @@ function computeDiff(a = {}, b = {}) {
   }
   return out;
 }
+
 
