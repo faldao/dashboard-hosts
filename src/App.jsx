@@ -131,42 +131,81 @@ function ReservationCard({ r, onOpen }) {
   const channel = r.source || r.channel_name || "—";
 
   const deptoTagClass = cls("tag", "tag--depto", r.checkout_at && "tag--depto--out");
+  const payBadge =
+    r.payment_status === "paid"
+      ? <span className="badge badge--paid">Pago</span>
+      : r.payment_status === "partial"
+      ? <span className="badge badge--partial">Parcial</span>
+      : <span className="badge badge--unpaid">Impago</span>;
+
+  // Estados (activo => pinta, inactivo => blanco con borde)
+  const pillBase = "pill-fixed";
+  const pillContact = cls(pillBase, r.contacted_at ? "pill--contact" : "");
+  const pillCheckin = cls(pillBase, r.checkin_at ? "pill--checkin" : "");
+  const pillCheckout = cls(pillBase, r.checkout_at ? "pill--checkout" : "");
 
   return (
-    <div className="res-card">
-      <div className="res-card__row">
-        <div className="res-card__left">
-          <div className={cls("res-card__bar", r.checkin_at && "res-card__bar--checkin")} />
-          <div className="res-card__block">
-            {/* 1ª línea: Depto + Nombre + Tel + Email + Bandera */}
-            <div className="res-card__line1">
-              <span className={deptoTagClass}>{depto}</span>
-              <span className={cls("name", r.contacted_at && "name--contacted")}>
-                {r.nombre_huesped || "Sin nombre"}
-              </span>
-              {phone && <span className="text-sm text-gray-600">· {phone}</span>}
-              {email && <span className="text-sm text-gray-600">· {email}</span>}
-              {flag && <span className="text-sm">{flag}</span>}
-            </div>
-
-            {/* 2ª línea: RCode (solo el código en recuadro) + Fechas */}
-            <div className="res-card__line2 flex items-center gap-2">
-              {r.id_human && <span className="tag tag--rcode">{r.id_human}</span>}
-              <span>In: {inDt} · Out: {outDt}</span>
-            </div>
-
-            {/* 3ª línea: Canal (recuadro negro, letras blancas) */}
-            <div className="res-card__line3">
-              <span className="tag--channel">{channel}</span>
-            </div>
-          </div>
+    <div className="res-card4 cursor-pointer" onClick={() => onOpen?.(r)}>
+      {/* CELDA 1: bloque izquierdo (3 líneas) */}
+      <div className="res-cell res-cell--left">
+        {/* L1: Depto + Nombre + Bandera */}
+        <div className="left__line1">
+          <span className={deptoTagClass}>{depto}</span>
+          <span className={cls("name", r.contacted_at && "name--contacted")}>
+            {r.nombre_huesped || "Sin nombre"}
+          </span>
+          {flag && <span className="text-sm">{flag}</span>}
         </div>
 
-        <StatusBar r={r} onOpen={onOpen} />
+        {/* L2: Teléfono + Ícono mail (tooltip y mailto) */}
+        <div className="left__line2">
+          {phone && <span>{phone}</span>}
+          {email && (
+            <a
+              className="mail-link"
+              href={`mailto:${email}`}
+              title={email}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* sobrecito SVG */}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" />
+                <path d="m22 8-10 6L2 8" />
+              </svg>
+            </a>
+          )}
+        </div>
+
+        {/* L3: RCode + Fechas + Canal */}
+        <div className="left__line3">
+          {r.id_human && <span className="tag tag--rcode">{r.id_human}</span>}
+          <span>In: {inDt} · Out: {outDt}</span>
+          <span className="tag--channel">{channel}</span>
+        </div>
+      </div>
+
+      {/* CELDA 2: Notas (placeholder por ahora) */}
+      <div className="res-cell">
+        <div className="notes-box">Notas</div>
+      </div>
+
+      {/* CELDA 3: Pagos (placeholder + badge de estado) */}
+      <div className="res-cell">
+        <div className="payments-box">{payBadge}</div>
+      </div>
+
+      {/* CELDA 4: Stack fijo de estados superpuestos */}
+      <div className="res-cell">
+        <div className="status-stack" onClick={(e) => e.stopPropagation()}>
+          <div className={pillContact}>Contactado</div>
+          <div className={pillCheckin}>Check-in</div>
+          <div className={pillCheckout}>Check-out</div>
+        </div>
       </div>
     </div>
   );
 }
+
 
 function BottomTable({ items, onOpen }) {
   return (

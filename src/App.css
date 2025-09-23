@@ -141,3 +141,73 @@
 .modal__field { @apply w-full border rounded p-2; }
 .modal__footer { @apply mt-4 text-right; }
 
+/* ====== CARD 4 CELDAS ====== */
+.res-card4 {
+  @apply relative border rounded-lg p-3 bg-white;
+  /* 4 columnas: izquierda amplia, notas, pagos, stack fijo */
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 120px;
+  gap: 0;
+  /* Dibujamos 3 divisores verticales que NO tocan el borde (8px de margen) */
+  background-image:
+    linear-gradient(#e5e7eb,#e5e7eb),
+    linear-gradient(#e5e7eb,#e5e7eb),
+    linear-gradient(#e5e7eb,#e5e7eb);
+  background-size: 1px calc(100% - 16px), 1px calc(100% - 16px), 1px calc(100% - 16px);
+  background-repeat: no-repeat;
+  background-position:
+    66.66% 8px, /* entre celda 2 y 3 */
+    50% 8px,    /* entre celda 1 y 2 */
+    83.33% 8px; /* entre celda 3 y 4 */
+}
+.res-card4:hover { @apply bg-gray-50; }
+
+.res-cell { @apply px-3; }               /* padding interno de cada celda */
+.res-cell--left { @apply flex flex-col gap-1; }
+
+/* Línea 1: Depto (tag) + Nombre + Bandera */
+.left__line1 { @apply flex flex-wrap items-center gap-2; }
+
+/* Línea 2: Tel + icono mail (con tooltip nativo por title) */
+.left__line2 { @apply flex items-center gap-3 text-sm text-gray-700; }
+.mail-link { @apply inline-flex items-center justify-center w-6 h-6 rounded hover:bg-gray-200; }
+.mail-link svg { width: 16px; height: 16px; }
+
+/* Línea 3: RCode + fechas + canal */
+.left__line3 { @apply flex flex-wrap items-center gap-2 text-xs text-gray-600; }
+
+/* Etiquetas ya existentes que reutilizamos */
+.tag { @apply px-2 py-0.5 text-xs rounded-md border; }
+.tag--rcode   { @apply bg-white text-gray-800 border-black; }
+.tag--depto   { @apply bg-gray-100 text-gray-900 border-black; }
+.tag--depto--out { @apply bg-sky-200 text-gray-900 border-black; }
+.tag--channel { @apply px-2 py-0.5 text-xs rounded-md bg-black text-white; }
+
+/* Nombre “contactado” */
+.name--contacted { background: var(--contacted); @apply px-1 rounded; }
+
+/* ===== CELDA 2 (Notas) y CELDA 3 (Pagos) – placeholders por ahora ===== */
+.notes-box, .payments-box {
+  @apply text-sm text-gray-500 h-full flex items-center justify-center;
+}
+
+/* ===== CELDA 4: stack fijo de estados ===== */
+.status-stack {
+  position: relative;
+  width: 120px;
+  height: 80px; /* alto fijo */
+}
+.pill-fixed {
+  @apply absolute right-2 px-2 text-xs rounded border;
+  height: 22px; width: 98px; /* tamaño fijo */
+  @apply flex items-center justify-center bg-white;
+}
+.pill--contact { @apply border-amber-400 text-amber-800 bg-yellow-100; top: 6px; }
+.pill--checkin { @apply border-sky-400   text-sky-800   bg-sky-100;   top: 30px; }
+.pill--checkout{ @apply border-gray-400  text-gray-800  bg-gray-100;  top: 54px; }
+
+/* Badges de pago (reuso) */
+.badge { @apply px-2 py-0.5 text-xs rounded-md; }
+.badge--paid    { @apply text-gray-900; background: var(--paid); }
+.badge--partial { @apply text-gray-900; background: var(--partial); }
+.badge--unpaid  { @apply text-gray-900; background: var(--unpaid); }
