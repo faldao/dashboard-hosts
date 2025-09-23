@@ -13,7 +13,20 @@ const toFlag = (cc) => {
   const up = cc.toUpperCase();
   return String.fromCodePoint(...[...up].map((c) => c.charCodeAt(0) + A));
 };
+const toLocalIso = (dateStr, timeStr) => {
+  // Combina "YYYY-MM-DD" + "HH:mm" como ISO con zona AR para backend
+  if (!dateStr) return null;
+  const [h, m] = (timeStr || "00:00").split(":").map(Number);
+  const dt = DateTime.fromISO(dateStr, { zone: TZ }).set({
+    hour: h || 0,
+    minute: m || 0,
+    second: 0,
+    millisecond: 0,
+  });
+  return dt.isValid ? dt.toISO() : null;
+};
 
+/* ---------- Chip reutilizable ---------- */
 const Chip = ({ label, active, tone = "sky" }) => {
   const onClass = tone === "amber" ? "chip--amber" : "chip--sky";
   return <span className={cls("chip", active ? onClass : "chip--off")}>{label}</span>;
@@ -94,7 +107,7 @@ function Tabs({ tab, onChange, counts }) {
       <Btn id="checkins"  label="Check-ins" />
       <Btn id="stays"     label="Stays" />
       <Btn id="checkouts" label="Check-outs" />
-      <div className="tabsbar__spacer" />   {/* ← extiende la línea */}
+      <div className="tabsbar__spacer" />
     </div>
   );
 }
@@ -111,28 +124,96 @@ function Paginator({ page, totalPages, onPage }) {
   );
 }
 
-/* ---------- UI: StatusBar (chips + pago + abrir) ---------- */
-function StatusBar({ r, onOpen }) {
-  const pay =
-    r.payment_status === "paid"
-      ? <span className="badge badge--paid">Pago</span>
-      : r.payment_status === "partial"
-      ? <span className="badge badge--partial">Parcial</span>
-      : <span className="badge badge--unpaid">Impago</span>;
+/* ---------- UI: ActionButton con popover ---------- */
+function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [d, setD] = useState(defaultDateISO || "");
+  const [t, setT] = useState(defaultTimeHHmm || "");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const label = type === "contact" ? "Contactado" : type === "checkin" ? "Check-in" : "Check-out";
+
+  const confirm = async () => {
+    try {
+      setSubmitting(true);
+
+      // Defaults de when por tipo
+      let whenISO;
+      if (type === "contact") {
+        // si no completan, null => serverTimestamp (ahora)
+        whenISO = d && t ? toLocalIso(d, t) : null;
+      } else if (type === "checkin") {
+        const dateUse = d || (r.arrival_iso || "");
+        const timeUse = t || "15:00";
+        whenISO = toLocalIso(dateUse, timeUse);
+      } else {
+        const dateUse = d || (r.departure_iso || "");
+        const timeUse = t || "11:00";
+        whenISO = toLocalIso(dateUse, timeUse);
+      }
+
+      // 1) acción principal
+      await axios.post("/api/reservationMutations", {
+        id: r.id, action: type, payload: { when: whenISO }, user: "host"
+      });
+
+      // 2) nota opcional
+      const clean = (note || "").trim();
+      if (clean) {
+        await axios.post("/api/reservationMutations", {
+          id: r.id, action: "addNote", payload: { text: clean }, user: "host"
+        });
+      }
+
+      onDone?.();
+      setOpen(false);
+      setNote("");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const btnClass = cls(
+    "pill-btn",
+    tone === "amber" ? "pill-btn--amber" : tone === "sky" ? "pill-btn--sky" : "pill-btn--gray",
+    active && (tone === "amber" ? "pill-btn--amber-active" : tone === "sky" ? "pill-btn--sky-active" : "pill-btn--gray-active")
+  );
 
   return (
-    <div className="status">
-      <button type="button" onClick={() => onOpen?.(r)} className="status__open">Abrir</button>
-      {pay}
-      <Chip label="Check-out" active={!!r.checkout_at} />
-      <Chip label="Check-in" active={!!r.checkin_at} />
-      <Chip label="Contactado" active={!!r.contacted_at} tone="amber" />
+    <div className="pill-wrap" onClick={(e)=>e.stopPropagation()}>
+      <button type="button" className={btnClass} onClick={() => setOpen(v=>!v)} disabled={submitting}>
+        {label}
+      </button>
+
+      {open && (
+        <div className="mini-popover" role="dialog" aria-label={label} onClick={(e)=>e.stopPropagation()}>
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">Fecha</label>
+            <input type="date" className="mini-popover__field" value={d} onChange={(e)=>setD(e.target.value)} />
+          </div>
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">Hora</label>
+            <input type="time" className="mini-popover__field" value={t} onChange={(e)=>setT(e.target.value)} />
+          </div>
+          <div className="mini-popover__row mini-popover__row--note">
+            <label className="mini-popover__lab">Nota (opcional)</label>
+            <textarea className="mini-popover__field h-16" value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Agregar nota…" />
+          </div>
+          <div className="mini-popover__actions">
+            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={()=>setOpen(false)} disabled={submitting}>Cancelar</button>
+            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={confirm} disabled={submitting}>
+              {submitting ? "Guardando…" : "Confirmar"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
-function ReservationCard({ r, onOpen }) {
+function ReservationCard({ r, onRefresh }) {
   const depto = r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—";
   const phone = r.customer_phone || r.telefono || "";
   const email = r.customer_email || "";
@@ -140,14 +221,17 @@ function ReservationCard({ r, onOpen }) {
   const inDt = fmtDate(r.arrival_iso);
   const outDt = fmtDate(r.departure_iso);
   const channel = r.source || r.channel_name || "—";
-
   const deptoTagClass = cls("tag", "tag--depto", r.checkout_at && "tag--depto--out");
 
+  const defContactDate = DateTime.now().setZone(TZ).toISODate();
+  const defContactTime = DateTime.now().setZone(TZ).toFormat("HH:mm");
+  const defInDate = r.arrival_iso || "";
+  const defOutDate = r.departure_iso || "";
+
   return (
-    <div className="res-card4 cursor-pointer" onClick={() => onOpen?.(r)}>
+    <div className="res-card4">
       {/* CELDA 1: bloque izquierdo (3 líneas) */}
       <div className="res-cell res-cell--left">
-        {/* L1: Depto + Nombre + Bandera */}
         <div className="left__line1">
           <span className={deptoTagClass}>{depto}</span>
           <span className={cls("name", r.contacted_at && "name--contacted")}>
@@ -156,7 +240,6 @@ function ReservationCard({ r, onOpen }) {
           {flag && <span className="text-sm">{flag}</span>}
         </div>
 
-        {/* L2: Teléfono + Ícono mail */}
         <div className="left__line2">
           {phone && <span>{phone}</span>}
           {email && (
@@ -166,7 +249,6 @@ function ReservationCard({ r, onOpen }) {
               title={email}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* sobrecito SVG */}
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" />
                 <path d="m22 8-10 6L2 8" />
@@ -175,7 +257,6 @@ function ReservationCard({ r, onOpen }) {
           )}
         </div>
 
-        {/* L3: RCode + Fechas + Canal */}
         <div className="left__line3">
           {r.id_human && <span className="tag tag--rcode">{r.id_human}</span>}
           <span>In: {inDt} · Out: {outDt}</span>
@@ -199,19 +280,43 @@ function ReservationCard({ r, onOpen }) {
         </div>
       </div>
 
-      {/* CELDA 4: Stack de estados (gris -> color cuando activo) */}
-      <div className="res-cell" onClick={(e) => e.stopPropagation()}>
-        <div className="status-stack">
-          <div className={cls("pill-fixed","pill--pos-contact",  r.contacted_at && "pill--active-contact")}>Contactado</div>
-          <div className={cls("pill-fixed","pill--pos-checkin",  r.checkin_at   && "pill--active-checkin")}>Check-in</div>
-          <div className={cls("pill-fixed","pill--pos-checkout", r.checkout_at  && "pill--active-checkout")}>Check-out</div>
+      {/* CELDA 4: 3 botones con popover */}
+      <div className="res-cell">
+        <div className="status-stack-new">
+          <ActionButton
+            r={r}
+            type="contact"
+            active={!!r.contacted_at}
+            defaultDateISO={defContactDate}
+            defaultTimeHHmm={defContactTime}
+            tone="amber"
+            onDone={onRefresh}
+          />
+          <ActionButton
+            r={r}
+            type="checkin"
+            active={!!r.checkin_at}
+            defaultDateISO={defInDate}
+            defaultTimeHHmm={"15:00"}
+            tone="sky"
+            onDone={onRefresh}
+          />
+          <ActionButton
+            r={r}
+            type="checkout"
+            active={!!r.checkout_at}
+            defaultDateISO={defOutDate}
+            defaultTimeHHmm={"11:00"}
+            tone="gray"
+            onDone={onRefresh}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-/* ---------- UI: BottomTable ---------- */
+/* ---------- UI: BottomTable (sin cambios funcionales) ---------- */
 function BottomTable({ items, onOpen }) {
   return (
     <div className="tablewrap">
@@ -264,100 +369,11 @@ function BottomTable({ items, onOpen }) {
   );
 }
 
-/* ---------- UI: Modal acciones ---------- */
-function Modal({ open, onClose, r, onAction }) {
-  const [note, setNote] = useState("");
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("Efectivo");
-  const [currency, setCurrency] = useState("ARS");
-  if (!open || !r) return null;
-
-  const act = async (action, payload) => {
-    await axios.post("/api/reservationMutations", { id: r.id, action, payload, user: "host" });
-    onAction?.();   // << refetch desde App
-    onClose();
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e)=>e.stopPropagation()}>
-        <div className="modal__header">
-          <h3 className="modal__title">
-            {r.nombre_huesped} · {r.depto_nombre || r.nombre_depto || r.codigo_depto}
-          </h3>
-          <button type="button" onClick={onClose} className="modal__close">✕</button>
-        </div>
-
-        <div className="modal__grid">
-          <div className="space-y-2">
-            <div className="modal__hint">
-              {r.id_human && <span className="tag tag--rcode mr-2">{r.id_human}</span>}
-              In: {fmtDate(r.arrival_iso)} · Out: {fmtDate(r.departure_iso)}
-            </div>
-            <div className="modal__actions">
-              <button type="button" onClick={() => act("checkin", { when: null })} className={cls("modal__btn","modal__btn--in")}>
-                Marcar Check-in (ahora)
-              </button>
-              <button type="button" onClick={() => act("contact", { when: null })} className={cls("modal__btn","modal__btn--contact")}>
-                Marcar Contactado (ahora)
-              </button>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm">Nueva nota</label>
-              <textarea value={note} onChange={(e) => setNote(e.target.value)} className="modal__field h-20" />
-              <button
-                type="button"
-                disabled={!note.trim()}
-                onClick={() => act("addNote", { text: note })}
-                className="px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-40"
-              >
-                Guardar nota
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm">Nuevo pago</label>
-            <input placeholder="Monto" value={amount} onChange={(e) => setAmount(e.target.value)} className="modal__field" />
-            <div className="flex gap-2">
-              <select value={method} onChange={(e) => setMethod(e.target.value)} className="modal__field w-1/2">
-                <option>Efectivo</option>
-                <option>Stripe</option>
-                <option>Transferencia</option>
-              </select>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="modal__field w-1/2">
-                <option>ARS</option>
-                <option>USD</option>
-              </select>
-            </div>
-            <button
-              type="button"
-              onClick={() => act("addPayment", { amount, method, currency })}
-              className="w-full px-3 py-2 rounded bg-green-700 text-white"
-            >
-              Registrar pago
-            </button>
-          </div>
-        </div>
-
-        <div className="modal__footer">
-          <button type="button" onClick={onClose} className="btn">Cerrar</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ---------- App ---------- */
 export default function App() {
   const today = DateTime.now().setZone(TZ).toISODate();
   const [dateISO, setDateISO] = useState(today);
   const { loading, items, counts, tab, setActiveTab, page, setPage, totalPages, refetch } = useDaily(dateISO);
-  const [open, setOpen] = useState(false);
-  const [current, setCurrent] = useState(null);
-
-  const openModal = (r) => { setCurrent(r); setOpen(true); };
-  const onActionDone = () => refetch();
 
   const goto = (offsetDays) => {
     const d = DateTime.fromISO(dateISO, { zone: TZ }).plus({ days: offsetDays }).toISODate();
@@ -391,19 +407,20 @@ export default function App() {
 
         {!loading && (
           <div className="list">
-            {items.length === 0 && <div className="empty">Sin reservas</div>}
+            {items.length === 0 && <div className="empty empty--as-card">Sin reservas</div>}
             <div className="list__grid">
-              {items.map((r) => <ReservationCard key={r.id} r={r} onOpen={openModal} />)}
+              {items.map((r) => <ReservationCard key={r.id} r={r} onRefresh={refetch} />)}
             </div>
           </div>
         )}
       </main>
 
       <section className="bottom">
-        <BottomTable items={items} onOpen={openModal} />
+        {/* Por ahora mantenemos la tabla “tal cual”.
+            Le pasamos un no-op al onOpen para no abrir nada. */}
+        <BottomTable items={items} onOpen={() => {}} />
       </section>
-
-      <Modal open={open} onClose={()=>setOpen(false)} r={current} onAction={onActionDone} />
     </div>
   );
 }
+

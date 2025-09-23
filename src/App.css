@@ -1,22 +1,15 @@
-
 /* === TOKENS === */
-:root{
-  --checkin:#38bdf8;     /* celeste */
-  --contacted:#fde68a;   /* amarillo */
-  --paid:#86efac;        /* verde */
-  --partial:#fcd34d;     /* ámbar */
-  --unpaid:#fecaca;      /* rojo claro */
-}
+:root { --checkin:#38bdf8; --contacted:#fde68a; --paid:#86efac; --partial:#fcd34d; --unpaid:#fecaca;  --panel-bg:#dee9f5; --res-card-min-h:104px; } /* ~80px stack + padding */
 
 /* ===== TAGS / PASTILLAS SEMÁNTICAS ===== */
 .tag { @apply px-2 py-0.5 text-xs rounded-md border; }
-.tag--rcode   { @apply bg-white text-gray-800 border-black; }                 /* RCode */
-.tag--depto   { @apply bg-gray-100 text-gray-900 border-black; }              /* depto: gris */
-.tag--depto--out { @apply bg-sky-200 text-gray-900 border-black; }            /* depto: celeste si hay check-out */
-.tag--channel { @apply px-2 py-0.5 text-xs rounded-md bg-black text-white; }  /* Canal */
-.name--contacted { background: var(--contacted); @apply px-1 rounded; }       /* nombre resaltado si contactado */
+.tag--rcode { @apply bg-white text-gray-800 border-black; } /* RCode */
+.tag--depto { @apply bg-gray-100 text-gray-900 border-black; } /* depto: gris */
+.tag--depto--out { @apply bg-sky-200 text-gray-900 border-black; } /* depto: celeste si hay check-out */
+.tag--channel { @apply px-2 py-0.5 text-xs rounded-md bg-black text-white; } /* Canal */
+.name--contacted { background: var(--contacted); @apply px-1 rounded; } /* nombre resaltado si contactado */
 
-/* Píldora vertical (no se usa en esta versión, dejamos para compatibilidad) */
+/* Píldora vertical (legacy) */
 .res-card__bar { @apply w-2 rounded bg-gray-300; }
 .res-card__bar--checkin { background: var(--checkin); }
 
@@ -30,49 +23,24 @@
 .btn { @apply inline-flex items-center justify-center px-2 py-1 border rounded bg-white hover:bg-gray-50; }
 .input--date { @apply border rounded p-1; }
 
-.main {  @apply overflow-hidden; align-content: start; }
-.main__top { @apply flex items-center justify-between; }
+.main { @apply flex-1 flex flex-col min-h-0; }  /* deja que el hijo scrollee */
+.main__top { @apply flex items-end justify-between; position: relative; } /* fila superior: tabs + paginador */
 .loader { @apply text-gray-500; }
-.empty { @apply text-gray-500;margin-top: .25rem; }
+
+/* cuando no hay reservas, reservá el espacio de una card */
+.empty { @apply text-gray-500; min-height: var(--res-card-min-h); padding-top: .25rem; }
+.empty--as-card { @apply border rounded-lg bg-white hover:bg-gray-50; padding: .75rem; } /* similar a .res-card4 */
 
 /* ===== TABS (estilo navegador) ===== */
-/* barra de tabs */
-.tabsbar {
-  @apply relative flex items-end bg-gray-100 px-2;
-  border-bottom: 1px solid #d1d5db;       /* gris-300 */
-}
-
-/* base de tab (inactiva) */
-.tab {
-  @apply relative select-none px-4 py-2 text-sm text-gray-700 rounded-t-xl;
-  background: #e5e7eb;                    /* gris-200 */
-  border: 1px solid #d1d5db;              /* gris-300 */
-  border-bottom: 0;                        /* para que se vea la línea del bar */
-  margin-bottom: -1px;                     /* se superpone al border del bar */
-  margin-right: .25rem;
-  transition: background .15s, color .15s, box-shadow .15s;
-}
-.tab + .tab { margin-left: -1px; }
-.tab:hover { background: #f9fafb; }        /* gris-50 */
-
-/* activa */
-.tab--active {
-  background: #ffffff;
-  color: #111827;                          /* gray-900 */
-  box-shadow:
-    0 1px 0 0 #ffffff inset,
-    0 -1px 0 0 #ffffff inset,
-    0 1px 3px rgba(0,0,0,.06);
-  position: relative; z-index: 1;
-}
-
-/* spacer que prolonga la línea de base hasta el borde derecho */
-.tabsbar__spacer {
-  flex: 1 1 auto;
-  height: 0;                               /* no ocupa alto visual */
-  border-bottom: 1px solid #d1d5db;        /* misma línea que el bar */
-  margin-bottom: -1px;                     /* misma superposición que las tabs */
-}
+/* Barra de tabs y línea continua inferior */
+.tabsbar { @apply relative flex items-end; padding-left:.375rem; padding-right:.375rem; margin-top:3px; flex:1 1 auto; width:100%; background:#ffffff; }
+.tabsbar::after { content:""; position:absolute; left:0; right:0; bottom:0; height:1px; background:#949494; z-index:2; } /* separador */
+.tab { @apply relative select-none px-4 py-2 text-sm rounded-t-xl; color:#111827; background:#f7f9fa; border:1px solid #cfd0d0; border-bottom:0; margin-bottom:-1px; margin-right:.25rem; transition:background .15s,color .15s,box-shadow .15s; z-index:1; }
+.tab + .tab { margin-left:-1px; } /* sin doble borde */
+.tab:hover { background:#e5e7eb; }
+.tab--active { background:var(--panel-bg); color:#0f172a; position:relative; z-index:3; box-shadow:0 1px 0 0 #f8fafc inset,0 -1px 0 0 #f8fafc inset,0 1px 3px #0000000f; border-color:#949494; }
+.tab--active::after { content:""; position:absolute; left:-1px; right:-1px; bottom:0; height:2px; background:var(--panel-bg); z-index:4; } /* corta la línea bajo el activo */
+.tab__count { @apply ml-2 inline-flex items-center justify-center h-5 min-w-[22px] px-1 text-[11px] font-semibold rounded-full border bg-sky-100 text-sky-800 border-sky-400; }
 
 /* ===== PAGINADOR ===== */
 .pager { @apply flex items-center gap-2; }
@@ -80,7 +48,7 @@
 .pager__label { @apply text-sm text-gray-600; }
 
 /* ===== LISTA SUPERIOR ===== */
-.list { @apply overflow-auto; min-height: 0;padding-top: .25rem; }
+.list { @apply flex-1 overflow-auto min-h-0; padding-top:.25rem; padding-left:.375rem; padding-right:.375rem; background:var(--panel-bg); }
 .list__grid { @apply grid gap-3; }
 .res-card { @apply border rounded-lg p-3 hover:bg-gray-50 cursor-pointer; }
 .res-card__row { @apply flex items-start gap-3 justify-between; }
@@ -90,24 +58,24 @@
 .res-card__line2 { @apply text-xs text-gray-600 mt-1; }
 .res-card__line3 { @apply text-xs text-gray-500 mt-1; }
 
-/* ===== BARRA ESTADO DERECHA ===== */
+/* ===== BARRA ESTADO DERECHA (legacy) ===== */
 .status { @apply flex items-center gap-2 flex-row-reverse; }
 .status__open { @apply text-sm px-3 py-1 rounded bg-black text-white; }
 
 /* Badges de pago */
 .badge { @apply px-2 py-0.5 text-xs rounded-md; }
-.badge--paid    { @apply text-gray-900; background: var(--paid); }
+.badge--paid { @apply text-gray-900; background: var(--paid); }
 .badge--partial { @apply text-gray-900; background: var(--partial); }
-.badge--unpaid  { @apply text-gray-900; background: var(--unpaid); }
+.badge--unpaid { @apply text-gray-900; background: var(--unpaid); }
 
 /* Chips on/off con borde */
 .chip { @apply px-2 py-0.5 text-xs rounded-md border; }
-.chip--off  { @apply bg-white border-gray-300 text-gray-700; }
-.chip--sky  { @apply bg-sky-100 border-sky-500 text-sky-800; }
-.chip--amber{ @apply bg-yellow-100 border-yellow-500 text-yellow-800; }
+.chip--off { @apply bg-white border-gray-300 text-gray-700; }
+.chip--sky { @apply bg-sky-100 border-sky-500 text-sky-800; }
+.chip--amber { @apply bg-yellow-100 border-yellow-500 text-yellow-800; }
 
 /* ===== TABLA INFERIOR ===== */
-.bottom { @apply h-[30%] p-3; }
+.bottom { @apply h-[30%] p-3 min-h-0; }
 .tablewrap { @apply h-full overflow-auto border-t bg-white; }
 .table { @apply w-full text-sm; }
 .table thead { @apply sticky top-0 bg-white shadow; }
@@ -120,39 +88,19 @@
 .td__depto-tag--in { @apply bg-sky-200; }
 .td__name { @apply rounded px-1; }
 
-/* ===== MODAL ===== */
-.modal-overlay { @apply fixed inset-0 bg-black/40 flex items-center justify-center z-50; }
-.modal { @apply bg-white rounded-xl w-full max-w-2xl p-5 shadow-xl; }
-.modal__header { @apply flex items-center justify-between mb-3; }
-.modal__title { @apply text-lg font-semibold; }
-.modal__close { @apply text-gray-500; }
-.modal__grid { @apply grid grid-cols-2 gap-4; }
-.modal__hint { @apply text-sm text-gray-600; }
-.modal__actions { @apply flex gap-2; }
-.modal__btn { @apply flex-1 px-3 py-2 rounded text-white; }
-.modal__btn--in { @apply bg-sky-600; }
-.modal__btn--contact { @apply bg-amber-600; }
-.modal__field { @apply w-full border rounded p-2; }
-.modal__footer { @apply mt-4 text-right; }
+/* ===== MODAL (legacy) ===== */
+/* Eliminado del flujo; dejamos estilos por compatibilidad si existiera algo residual */
+.modal-overlay { @apply hidden; }
+.modal { @apply hidden; }
 
 /* ====== CARD 4 CELDAS ====== */
-.res-card4 {
-  @apply relative border rounded-lg p-3 bg-white hover:bg-gray-50;
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr 120px;
-  gap: 0;
-}
+.res-card4 { @apply relative border rounded-lg p-3 bg-white hover:bg-gray-50; display: grid; grid-template-columns: 2fr 1fr 1fr 120px; gap: 0; min-height: var(--res-card-min-h); }
 .res-cell { @apply px-3; }
 .res-cell--left { @apply flex flex-col gap-1; }
 
-/* Divisores verticales robustos (no dependen de %): cada celda salvo la última dibuja su divider */
+/* Divisores verticales robustos */
 .res-card4 > .res-cell { position: relative; }
-.res-card4 > .res-cell:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 8px; bottom: 8px; right: 0;
-  width: 1px; background: #e5e7eb;
-}
+.res-card4 > .res-cell:not(:last-child)::after { content: ""; position: absolute; top: 8px; bottom: 8px; right: 0; width: 1px; background: #e5e7eb; }
 
 /* Línea 1: Depto + Nombre + Bandera */
 .left__line1 { @apply flex flex-wrap items-center gap-2; }
@@ -166,26 +114,33 @@
 .left__line3 { @apply flex flex-wrap items-center gap-2 text-xs text-gray-600; }
 
 /* ===== CELDA 2 y 3 placeholders ===== */
-.notes-box, .payments-box { @apply text-sm text-gray-500 h-full flex items-center justify-center; }
+.notes-box { @apply text-sm text-gray-500 h-full flex items-center justify-center; }
+.payments-box { @apply text-sm text-gray-500 h-full flex items-center justify-center; }
 
-/* ===== CELDA 4: stack fijo de estados superpuestos ===== */
-.status-stack{ position: relative; width: 120px; height: 80px; }
-.pill-fixed{
-  position: absolute; right: 8px; left: 8px; height: 24px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  @apply px-2 text-xs rounded border flex items-center justify-center
-         bg-gray-100 border-gray-300 text-gray-600;  /* gris por defecto */
-  z-index: 0;
-}
-.pill--pos-contact { top: 8px;  z-index: 3; }
-.pill--pos-checkin { top: 30px; z-index: 2; }
-.pill--pos-checkout{ top: 52px; z-index: 1; }
+/* ===== NUEVO: BOTONES DE ESTADO (píldoras clicables) ===== */
+.status-stack-new { @apply relative flex flex-col gap-2 pr-2; } /* columna de 3 botones */
+.pill-wrap { @apply relative; } /* contenedor relativo del popover */
+.pill-btn { @apply w-full h-7 px-2 text-xs rounded border flex items-center justify-center select-none; } /* base */
+.pill-btn--sky { @apply bg-sky-50 border-sky-300 text-sky-800; }
+.pill-btn--neutral { @apply bg-gray-100 border-gray-300 text-gray-500; }
+.pill-btn--neutral:hover { @apply bg-gray-200; }
+.pill-btn--sky-active { @apply bg-sky-100 border-sky-500 text-sky-900; }
+.pill-btn--amber { @apply bg-yellow-50 border-yellow-300 text-yellow-800; }
+.pill-btn--amber-active { @apply bg-yellow-100 border-yellow-500 text-yellow-900; }
+.pill-btn--gray { @apply bg-gray-100 border-gray-400 text-gray-700; }
+.pill-btn--gray-active { @apply bg-gray-200 border-gray-500 text-gray-900; }
 
-/* Estados ACTIVOS */
-.pill--active-contact { @apply bg-yellow-100 border-amber-400 text-amber-800; }
-.pill--active-checkin { @apply bg-sky-100    border-sky-400   text-sky-800; }
-.pill--active-checkout{ @apply bg-gray-200   border-gray-500  text-gray-800; }
+/* Mini popover */
+.mini-popover { @apply absolute top-8 right-0 z-50 w-64 p-3 rounded-lg border bg-white shadow-xl; }
+.mini-popover__row { @apply mb-2; }
+.mini-popover__row--note { @apply mb-3; }
+.mini-popover__lab { @apply block text-xs text-gray-600 mb-1; }
+.mini-popover__field { @apply w-full border rounded p-2 text-sm; }
+.mini-popover__actions { @apply flex items-center justify-end gap-2; }
+.mini-popover__btn { @apply px-3 py-1.5 rounded text-sm; }
+.mini-popover__btn--muted { @apply bg-gray-100 text-gray-800 border border-gray-300; }
+.mini-popover__btn--ok { @apply bg-black text-white; }
 
-/* ===== utilidades ===== */
-.chip { @apply px-2 py-0.5 text-xs rounded-md border; }
-
+/* Ocultar stack viejo si existiera*/
+.status-stack { display: none; }
+.pill-fixed { display: none; }
