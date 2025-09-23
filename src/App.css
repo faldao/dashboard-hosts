@@ -191,20 +191,31 @@
   @apply text-sm text-gray-500 h-full flex items-center justify-center;
 }
 
-/* ===== CELDA 4: stack fijo de estados ===== */
+/* ===== CELDA 4: stack fijo de estados superpuestos ===== */
 .status-stack {
   position: relative;
-  width: 120px;
-  height: 80px; /* alto fijo */
+  width: 120px;      /* ancho fijo */
+  height: 80px;      /* alto fijo */
+  display: block;
 }
+
 .pill-fixed {
-  @apply absolute right-2 px-2 text-xs rounded border;
-  height: 22px; width: 98px; /* tamaño fijo */
-  @apply flex items-center justify-center bg-white;
+  position: absolute;
+  right: 8px;
+  left: 8px;         /* para que las tres tengan el mismo ancho */
+  height: 24px;      /* alto fijo */
+  @apply px-2 text-xs rounded border flex items-center justify-center bg-white;
+  line-height: 1;    /* evita que crezca con la fuente */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 0;        /* base */
 }
-.pill--contact { @apply border-amber-400 text-amber-800 bg-yellow-100; top: 6px; }
-.pill--checkin { @apply border-sky-400   text-sky-800   bg-sky-100;   top: 30px; }
-.pill--checkout{ @apply border-gray-400  text-gray-800  bg-gray-100;  top: 54px; }
+
+/* posiciones (superpuestas verticalmente) */
+.pill--contact { top: 8px;  @apply border-amber-400 text-amber-800 bg-yellow-100; z-index: 3; }
+.pill--checkin { top: 30px; @apply border-sky-400   text-sky-800   bg-sky-100;   z-index: 2; }
+.pill--checkout{ top: 52px; @apply border-gray-400  text-gray-800  bg-gray-100;  z-index: 1; }
 
 /* Badges de pago (reuso) */
 .badge { @apply px-2 py-0.5 text-xs rounded-md; }
