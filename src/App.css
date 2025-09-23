@@ -1,3 +1,4 @@
+
 /* === TOKENS === */
 :root{
   --checkin:#38bdf8;     /* celeste */
@@ -9,32 +10,24 @@
 
 /* ===== TAGS / PASTILLAS SEMÁNTICAS ===== */
 .tag { @apply px-2 py-0.5 text-xs rounded-md border; }
+.tag--rcode   { @apply bg-white text-gray-800 border-black; }                 /* RCode */
+.tag--depto   { @apply bg-gray-100 text-gray-900 border-black; }              /* depto: gris */
+.tag--depto--out { @apply bg-sky-200 text-gray-900 border-black; }            /* depto: celeste si hay check-out */
+.tag--channel { @apply px-2 py-0.5 text-xs rounded-md bg-black text-white; }  /* Canal */
+.name--contacted { background: var(--contacted); @apply px-1 rounded; }       /* nombre resaltado si contactado */
 
-/* RCode: sin título, borde negro, fondo blanco */
-.tag--rcode { @apply bg-white text-gray-800 border-black; }
-
-/* Depto en CARD: borde negro, gris por defecto; celeste si hay check-out */
-.tag--depto { @apply bg-gray-100 text-gray-900 border-black; }
-.tag--depto--out { @apply bg-sky-200 text-gray-900 border-black; }
-
-/* Canal: recuadro negro, letras blancas */
-.tag--channel { @apply px-2 py-0.5 text-xs rounded-md bg-black text-white; }
-
-/* Nombre contactado (card + tabla) */
-.name--contacted { background: var(--contacted); @apply px-1 rounded; }
-
-/* Píldora vertical (check-in hecho) */
+/* Píldora vertical (no se usa en esta versión, dejamos para compatibilidad) */
 .res-card__bar { @apply w-2 rounded bg-gray-300; }
 .res-card__bar--checkin { background: var(--checkin); }
 
 /* ===== LAYOUT GLOBAL ===== */
 .app { @apply h-screen flex flex-col; }
-.header { @apply p-3 border-b; }
+.header { @apply p-3 border-b bg-white; }
 .header__bar { @apply flex items-center justify-between; }
 .header__title { @apply text-xl font-semibold; }
 .header__date { @apply text-gray-500; }
 .header__actions { @apply flex items-center gap-2; }
-.btn { @apply inline-flex items-center justify-center px-2 py-1 border rounded; }
+.btn { @apply inline-flex items-center justify-center px-2 py-1 border rounded bg-white hover:bg-gray-50; }
 .input--date { @apply border rounded p-1; }
 
 .main { @apply flex-1 grid grid-rows-[auto,auto,1fr] p-3 gap-3; }
@@ -43,51 +36,31 @@
 .empty { @apply text-gray-500; }
 
 /* ===== TABS (estilo navegador) ===== */
-/* Contenedor con borde inferior (como la barra de pestañas) */
 .tabsbar { @apply relative flex items-end gap-0 border-b bg-gray-100 px-2; }
-
-/* La “pestaña” base: levemente curvada arriba, sin fondo fuerte */
 .tab {
-  @apply relative select-none;
-  @apply px-4 py-2 text-sm text-gray-700;
-  @apply border border-b-0 rounded-t-xl;
-  @apply bg-gray-50;
-  @apply -mb-px;                /* se superpone al borde inferior del bar */
-  @apply mr-1;                  /* pequeño gap entre pestañas */
+  @apply relative select-none px-4 py-2 text-sm text-gray-700
+         border border-b-0 rounded-t-xl bg-gray-50 -mb-px mr-1;
   transition: background .15s ease, color .15s ease, box-shadow .15s ease;
 }
-
-/* Borde compartido entre tabs para que no se vean dobles */
 .tab + .tab { @apply -ml-px; }
-
-/* Hover sutil como en Chrome */
 .tab:hover { @apply bg-white; }
-
-/* Estado ACTIVO: fondo blanco, sombra leve, “corta” el borde inferior del bar */
 .tab--active {
   @apply bg-white text-gray-900;
   box-shadow: 0 1px 0 0 #ffffff inset, 0 -1px 0 0 #ffffff inset, 0 1px 3px rgba(0,0,0,.06);
-  position: relative;
-  z-index: 1;
+  position: relative; z-index: 1;
 }
-
-/* Contador (el número entre paréntesis) como burbuja sutil */
 .tab__count {
-  @apply ml-2 inline-flex items-center justify-center;
-  @apply h-5 min-w-[20px] px-1 text-[11px] font-medium;
-  @apply rounded-full bg-gray-200 text-gray-700;
+  @apply ml-2 inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[11px] font-medium rounded-full bg-gray-200 text-gray-700;
 }
-
 
 /* ===== PAGINADOR ===== */
 .pager { @apply flex items-center gap-2; }
-.pager__btn { @apply px-2 py-1 border rounded disabled:opacity-40; }
+.pager__btn { @apply px-2 py-1 border rounded bg-white hover:bg-gray-50 disabled:opacity-40; }
 .pager__label { @apply text-sm text-gray-600; }
 
 /* ===== LISTA SUPERIOR ===== */
 .list { @apply overflow-auto; }
 .list__grid { @apply grid gap-3; }
-
 .res-card { @apply border rounded-lg p-3 hover:bg-gray-50 cursor-pointer; }
 .res-card__row { @apply flex items-start gap-3 justify-between; }
 .res-card__left { @apply flex items-start gap-3; }
@@ -114,7 +87,7 @@
 
 /* ===== TABLA INFERIOR ===== */
 .bottom { @apply h-[30%] p-3; }
-.tablewrap { @apply h-full overflow-auto border-t; }
+.tablewrap { @apply h-full overflow-auto border-t bg-white; }
 .table { @apply w-full text-sm; }
 .table thead { @apply sticky top-0 bg-white shadow; }
 .th { @apply text-left p-2; }
@@ -143,32 +116,27 @@
 
 /* ====== CARD 4 CELDAS ====== */
 .res-card4 {
-  @apply relative border rounded-lg p-3 bg-white;
-  /* 4 columnas: izquierda amplia, notas, pagos, stack fijo */
+  @apply relative border rounded-lg p-3 bg-white hover:bg-gray-50;
   display: grid;
   grid-template-columns: 2fr 1fr 1fr 120px;
   gap: 0;
-  /* Dibujamos 3 divisores verticales que NO tocan el borde (8px de margen) */
-  background-image:
-    linear-gradient(#e5e7eb,#e5e7eb),
-    linear-gradient(#e5e7eb,#e5e7eb),
-    linear-gradient(#e5e7eb,#e5e7eb);
-  background-size: 1px calc(100% - 16px), 1px calc(100% - 16px), 1px calc(100% - 16px);
-  background-repeat: no-repeat;
-  background-position:
-    66.66% 8px, /* entre celda 2 y 3 */
-    50% 8px,    /* entre celda 1 y 2 */
-    83.33% 8px; /* entre celda 3 y 4 */
 }
-.res-card4:hover { @apply bg-gray-50; }
-
-.res-cell { @apply px-3; }               /* padding interno de cada celda */
+.res-cell { @apply px-3; }
 .res-cell--left { @apply flex flex-col gap-1; }
 
-/* Línea 1: Depto (tag) + Nombre + Bandera */
+/* Divisores verticales robustos (no dependen de %): cada celda salvo la última dibuja su divider */
+.res-card4 > .res-cell { position: relative; }
+.res-card4 > .res-cell:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 8px; bottom: 8px; right: 0;
+  width: 1px; background: #e5e7eb;
+}
+
+/* Línea 1: Depto + Nombre + Bandera */
 .left__line1 { @apply flex flex-wrap items-center gap-2; }
 
-/* Línea 2: Tel + icono mail (con tooltip nativo por title) */
+/* Línea 2: Tel + icono mail */
 .left__line2 { @apply flex items-center gap-3 text-sm text-gray-700; }
 .mail-link { @apply inline-flex items-center justify-center w-6 h-6 rounded hover:bg-gray-200; }
 .mail-link svg { width: 16px; height: 16px; }
@@ -176,51 +144,26 @@
 /* Línea 3: RCode + fechas + canal */
 .left__line3 { @apply flex flex-wrap items-center gap-2 text-xs text-gray-600; }
 
-/* Etiquetas ya existentes que reutilizamos */
-.tag { @apply px-2 py-0.5 text-xs rounded-md border; }
-.tag--rcode   { @apply bg-white text-gray-800 border-black; }
-.tag--depto   { @apply bg-gray-100 text-gray-900 border-black; }
-.tag--depto--out { @apply bg-sky-200 text-gray-900 border-black; }
-.tag--channel { @apply px-2 py-0.5 text-xs rounded-md bg-black text-white; }
+/* ===== CELDA 2 y 3 placeholders ===== */
+.notes-box, .payments-box { @apply text-sm text-gray-500 h-full flex items-center justify-center; }
 
-/* Nombre “contactado” */
-.name--contacted { background: var(--contacted); @apply px-1 rounded; }
-
-/* ===== CELDA 2 (Notas) y CELDA 3 (Pagos) – placeholders por ahora ===== */
-.notes-box, .payments-box {
-  @apply text-sm text-gray-500 h-full flex items-center justify-center;
-}
 /* ===== CELDA 4: stack fijo de estados superpuestos ===== */
-.status-stack{
-  position: relative;
-  width: 120px;          /* ancho fijo */
-  height: 80px;          /* alto fijo */
-}
-
-/* Base: GRIS por defecto */
+.status-stack{ position: relative; width: 120px; height: 80px; }
 .pill-fixed{
-  position: absolute;
-  right: 8px; left: 8px; /* mismo ancho para todas */
-  height: 24px;          /* alto fijo */
-  line-height: 1;
+  position: absolute; right: 8px; left: 8px; height: 24px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  @apply px-2 text-xs rounded border flex items-center justify-center;
-  @apply bg-gray-100 border-gray-300 text-gray-600;  /* << gris por defecto */
+  @apply px-2 text-xs rounded border flex items-center justify-center
+         bg-gray-100 border-gray-300 text-gray-600;  /* gris por defecto */
   z-index: 0;
 }
-
-/* Posiciones (superpuestas) */
 .pill--pos-contact { top: 8px;  z-index: 3; }
 .pill--pos-checkin { top: 30px; z-index: 2; }
 .pill--pos-checkout{ top: 52px; z-index: 1; }
 
-/* Estados ACTIVOS: coloreados al 100% */
+/* Estados ACTIVOS */
 .pill--active-contact { @apply bg-yellow-100 border-amber-400 text-amber-800; }
 .pill--active-checkin { @apply bg-sky-100    border-sky-400   text-sky-800; }
 .pill--active-checkout{ @apply bg-gray-200   border-gray-500  text-gray-800; }
 
-/* Badges de pago (reuso) */
-.badge { @apply px-2 py-0.5 text-xs rounded-md; }
-.badge--paid    { @apply text-gray-900; background: var(--paid); }
-.badge--partial { @apply text-gray-900; background: var(--partial); }
-.badge--unpaid  { @apply text-gray-900; background: var(--unpaid); }
+/* ===== utilidades ===== */
+.chip { @apply px-2 py-0.5 text-xs rounded-md border; }

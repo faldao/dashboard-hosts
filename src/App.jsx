@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { DateTime } from "luxon";
 
+
 const TZ = "America/Argentina/Buenos_Aires";
 
-/* Helpers */
+/* ---------- helpers ---------- */
 const fmtDate = (iso) => (iso ? DateTime.fromISO(iso, { zone: TZ }).toISODate() : "");
 const cls = (...xs) => xs.filter(Boolean).join(" ");
 const toFlag = (cc) => {
@@ -19,6 +20,7 @@ const Chip = ({ label, active, tone = "sky" }) => {
   return <span className={cls("chip", active ? onClass : "chip--off")}>{label}</span>;
 };
 
+/* ---------- data hook ---------- */
 function useDaily(dateISO) {
   const [loading, setLoading] = useState(true);
   const [idx, setIdx] = useState(null);
@@ -29,29 +31,36 @@ function useDaily(dateISO) {
 
   const fetchTab = async (t, indexDoc) => {
     const ids = indexDoc?.[t] || [];
-    if (!ids?.length) return setItems([]);
+    if (!ids?.length) {
+      setItems([]);
+      return;
+    }
     const { data } = await axios.post("/api/resolveReservations", { ids });
     setItems(data.items || []);
   };
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const { data } = await axios.get(`/api/dailyIndex?date=${dateISO}`);
-        setIdx(data);
-        await fetchTab(tab, data);
-      } finally {
-        setLoading(false);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateISO]);
+  const loadDay = async (t = tab) => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`/api/dailyIndex?date=${dateISO}`);
+      setIdx(data);
+      await fetchTab(t, data);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadDay(); /* eslint-disable-next-line */ }, [dateISO]);
 
   const setActiveTab = async (t) => {
     setTab(t);
     setPage(1);
-    await fetchTab(t, idx);
+    if (idx) await fetchTab(t, idx);
+  };
+
+  const refetch = async () => {
+    if (idx) await fetchTab(tab, idx);
+    else await loadDay(tab);
   };
 
   const paged = useMemo(() => {
@@ -60,11 +69,10 @@ function useDaily(dateISO) {
   }, [items, page]);
 
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  return { loading, idx, items: paged, counts: idx?.counts || {}, tab, setActiveTab, page, setPage, totalPages };
+  return { loading, idx, items: paged, counts: idx?.counts || {}, tab, setActiveTab, page, setPage, totalPages, refetch };
 }
 
-/* ===== UI ===== */
-
+/* ---------- UI: Tabs ---------- */
 function Tabs({ tab, onChange, counts }) {
   const Btn = ({ id, label }) => {
     const isActive = tab === id;
@@ -81,7 +89,6 @@ function Tabs({ tab, onChange, counts }) {
       </button>
     );
   };
-
   return (
     <div role="tablist" aria-label="Reservas" className="tabsbar">
       <Btn id="checkins"  label="Check-ins" />
@@ -91,17 +98,19 @@ function Tabs({ tab, onChange, counts }) {
   );
 }
 
+/* ---------- UI: Paginator ---------- */
 function Paginator({ page, totalPages, onPage }) {
   if (totalPages <= 1) return null;
   return (
     <div className="pager">
-      <button className="pager__btn" onClick={() => onPage(Math.max(1, page - 1))} disabled={page <= 1}>←</button>
+      <button type="button" className="pager__btn" onClick={() => onPage(Math.max(1, page - 1))} disabled={page <= 1}>←</button>
       <span className="pager__label">Página {page} / {totalPages}</span>
-      <button className="pager__btn" onClick={() => onPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages}>→</button>
+      <button type="button" className="pager__btn" onClick={() => onPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages}>→</button>
     </div>
   );
 }
 
+/* ---------- UI: StatusBar (chips + pago + abrir) ---------- */
 function StatusBar({ r, onOpen }) {
   const pay =
     r.payment_status === "paid"
@@ -112,7 +121,7 @@ function StatusBar({ r, onOpen }) {
 
   return (
     <div className="status">
-      <button onClick={() => onOpen?.(r)} className="status__open">Abrir</button>
+      <button type="button" onClick={() => onOpen?.(r)} className="status__open">Abrir</button>
       {pay}
       <Chip label="Check-out" active={!!r.checkout_at} />
       <Chip label="Check-in" active={!!r.checkin_at} />
@@ -121,6 +130,7 @@ function StatusBar({ r, onOpen }) {
   );
 }
 
+/* ---------- UI: ReservationCard (4 celdas) ---------- */
 function ReservationCard({ r, onOpen }) {
   const depto = r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—";
   const phone = r.customer_phone || r.telefono || "";
@@ -131,18 +141,6 @@ function ReservationCard({ r, onOpen }) {
   const channel = r.source || r.channel_name || "—";
 
   const deptoTagClass = cls("tag", "tag--depto", r.checkout_at && "tag--depto--out");
-  const payBadge =
-    r.payment_status === "paid"
-      ? <span className="badge badge--paid">Pago</span>
-      : r.payment_status === "partial"
-      ? <span className="badge badge--partial">Parcial</span>
-      : <span className="badge badge--unpaid">Impago</span>;
-
-  // Estados (activo => pinta, inactivo => blanco con borde)
-  const pillBase = "pill-fixed";
-  const pillContact = cls(pillBase, r.contacted_at ? "pill--contact" : "");
-  const pillCheckin = cls(pillBase, r.checkin_at ? "pill--checkin" : "");
-  const pillCheckout = cls(pillBase, r.checkout_at ? "pill--checkout" : "");
 
   return (
     <div className="res-card4 cursor-pointer" onClick={() => onOpen?.(r)}>
@@ -157,7 +155,7 @@ function ReservationCard({ r, onOpen }) {
           {flag && <span className="text-sm">{flag}</span>}
         </div>
 
-        {/* L2: Teléfono + Ícono mail (tooltip y mailto) */}
+        {/* L2: Teléfono + Ícono mail */}
         <div className="left__line2">
           {phone && <span>{phone}</span>}
           {email && (
@@ -184,53 +182,35 @@ function ReservationCard({ r, onOpen }) {
         </div>
       </div>
 
-      {/* CELDA 2: Notas (placeholder por ahora) */}
+      {/* CELDA 2: Notas (placeholder) */}
       <div className="res-cell">
         <div className="notes-box">Notas</div>
       </div>
 
-      {/* CELDA 3: Pagos (placeholder + badge de estado) */}
+      {/* CELDA 3: Pagos (placeholder + badge) */}
       <div className="res-cell">
-        <div className="payments-box">{payBadge}</div>
+        <div className="payments-box">
+          {r.payment_status === "paid"
+            ? <span className="badge badge--paid">Pago</span>
+            : r.payment_status === "partial"
+            ? <span className="badge badge--partial">Parcial</span>
+            : <span className="badge badge--unpaid">Impago</span>}
+        </div>
       </div>
 
-            {/* CELDA 4: Stack fijo de estados superpuestos (gris -> color cuando activo) */}
+      {/* CELDA 4: Stack de estados (gris -> color cuando activo) */}
       <div className="res-cell" onClick={(e) => e.stopPropagation()}>
         <div className="status-stack">
-          <div
-            className={cls(
-              "pill-fixed",
-              "pill--pos-contact",
-              r.contacted_at && "pill--active-contact"
-            )}
-          >
-            Contactado
-          </div>
-          <div
-            className={cls(
-              "pill-fixed",
-              "pill--pos-checkin",
-              r.checkin_at && "pill--active-checkin"
-            )}
-          >
-            Check-in
-          </div>
-          <div
-            className={cls(
-              "pill-fixed",
-              "pill--pos-checkout",
-              r.checkout_at && "pill--active-checkout"
-            )}
-          >
-            Check-out
-          </div>
+          <div className={cls("pill-fixed","pill--pos-contact",  r.contacted_at && "pill--active-contact")}>Contactado</div>
+          <div className={cls("pill-fixed","pill--pos-checkin",  r.checkin_at   && "pill--active-checkin")}>Check-in</div>
+          <div className={cls("pill-fixed","pill--pos-checkout", r.checkout_at  && "pill--active-checkout")}>Check-out</div>
         </div>
       </div>
     </div>
   );
 }
 
-
+/* ---------- UI: BottomTable ---------- */
 function BottomTable({ items, onOpen }) {
   return (
     <div className="tablewrap">
@@ -258,37 +238,22 @@ function BottomTable({ items, onOpen }) {
             const phone = r.customer_phone || "";
             const email = r.customer_email || "";
             const contacted = !!r.contacted_at;
-
-            // Depto: GRIS por defecto; CELESTE cuando hay check-in
             const deptoClass = cls("td__depto-tag", r.checkin_at && "td__depto-tag--in");
-
             return (
               <tr key={r.id} className="tr">
-                <td className="td">
-                  {r.id_human ? <span className="tag tag--rcode">{r.id_human}</span> : "—"}
-                </td>
-                <td className="td">
-                  <span className={deptoClass}>{depto}</span>
-                </td>
+                <td className="td">{r.id_human ? <span className="tag tag--rcode">{r.id_human}</span> : "—"}</td>
+                <td className="td"><span className={deptoClass}>{depto}</span></td>
                 <td className="td">{r.adults ?? "-"}</td>
                 <td className="td">{r.checkin_at ? "check-in" : ""}</td>
-                <td className="td">
-                  <span className={cls("td__name", contacted && "name--contacted")}>
-                    {r.nombre_huesped || "-"}
-                  </span>
-                </td>
+                <td className="td"><span className={cls("td__name", contacted && "name--contacted")}>{r.nombre_huesped || "-"}</span></td>
                 <td className="td">{phone || "-"}</td>
                 <td className="td">{email || "-"}</td>
                 <td className="td">{r.toPay ?? "-"}</td>
                 <td className="td">{r.currency || "-"}</td>
                 <td className="td">{r.arrival_iso ? "IN" : "OUT"}</td>
                 <td className="td">{r.extras || "-"}</td>
-                <td className="td">
-                  <span className="tag--channel">{r.source || "-"}</span>
-                </td>
-                <td className="td">
-                  <button onClick={() => onOpen(r)} className="text-blue-600 underline">Ver</button>
-                </td>
+                <td className="td"><span className="tag--channel">{r.source || "-"}</span></td>
+                <td className="td"><button type="button" onClick={() => onOpen(r)} className="text-blue-600 underline">Ver</button></td>
               </tr>
             );
           })}
@@ -298,6 +263,7 @@ function BottomTable({ items, onOpen }) {
   );
 }
 
+/* ---------- UI: Modal acciones ---------- */
 function Modal({ open, onClose, r, onAction }) {
   const [note, setNote] = useState("");
   const [amount, setAmount] = useState("");
@@ -307,18 +273,18 @@ function Modal({ open, onClose, r, onAction }) {
 
   const act = async (action, payload) => {
     await axios.post("/api/reservationMutations", { id: r.id, action, payload, user: "host" });
-    onAction?.();
+    onAction?.();   // << refetch desde App
     onClose();
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e)=>e.stopPropagation()}>
         <div className="modal__header">
           <h3 className="modal__title">
             {r.nombre_huesped} · {r.depto_nombre || r.nombre_depto || r.codigo_depto}
           </h3>
-          <button onClick={onClose} className="modal__close">✕</button>
+          <button type="button" onClick={onClose} className="modal__close">✕</button>
         </div>
 
         <div className="modal__grid">
@@ -328,17 +294,22 @@ function Modal({ open, onClose, r, onAction }) {
               In: {fmtDate(r.arrival_iso)} · Out: {fmtDate(r.departure_iso)}
             </div>
             <div className="modal__actions">
-              <button onClick={() => act("checkin", { when: null })} className={cls("modal__btn","modal__btn--in")}>
+              <button type="button" onClick={() => act("checkin", { when: null })} className={cls("modal__btn","modal__btn--in")}>
                 Marcar Check-in (ahora)
               </button>
-              <button onClick={() => act("contact", { when: null })} className={cls("modal__btn","modal__btn--contact")}>
+              <button type="button" onClick={() => act("contact", { when: null })} className={cls("modal__btn","modal__btn--contact")}>
                 Marcar Contactado (ahora)
               </button>
             </div>
             <div className="space-y-1">
               <label className="text-sm">Nueva nota</label>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} className="modal__field h-20" />
-              <button disabled={!note.trim()} onClick={() => act("addNote", { text: note })} className="px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-40">
+              <button
+                type="button"
+                disabled={!note.trim()}
+                onClick={() => act("addNote", { text: note })}
+                className="px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-40"
+              >
                 Guardar nota
               </button>
             </div>
@@ -358,29 +329,35 @@ function Modal({ open, onClose, r, onAction }) {
                 <option>USD</option>
               </select>
             </div>
-            <button onClick={() => act("addPayment", { amount, method, currency })} className="w-full px-3 py-2 rounded bg-green-700 text-white">
+            <button
+              type="button"
+              onClick={() => act("addPayment", { amount, method, currency })}
+              className="w-full px-3 py-2 rounded bg-green-700 text-white"
+            >
               Registrar pago
             </button>
           </div>
         </div>
 
         <div className="modal__footer">
-          <button onClick={onClose} className="btn">Cerrar</button>
+          <button type="button" onClick={onClose} className="btn">Cerrar</button>
         </div>
       </div>
     </div>
   );
 }
 
+/* ---------- App ---------- */
 export default function App() {
   const today = DateTime.now().setZone(TZ).toISODate();
   const [dateISO, setDateISO] = useState(today);
-  const { loading, items, counts, tab, setActiveTab, page, setPage, totalPages } = useDaily(dateISO);
+  const { loading, items, counts, tab, setActiveTab, page, setPage, totalPages, refetch } = useDaily(dateISO);
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState(null);
 
   const openModal = (r) => { setCurrent(r); setOpen(true); };
-  const onActionDone = () => setCurrent(null);
+  const onActionDone = () => refetch();
+
   const goto = (offsetDays) => {
     const d = DateTime.fromISO(dateISO, { zone: TZ }).plus({ days: offsetDays }).toISODate();
     setDateISO(d);
@@ -395,9 +372,9 @@ export default function App() {
             <span className="header__date">({dateISO})</span>
           </div>
           <div className="header__actions">
-            <button className="btn" onClick={() => goto(-1)}>← Ayer</button>
-            <button className="btn" onClick={() => setDateISO(DateTime.now().setZone(TZ).toISODate())}>Hoy</button>
-            <button className="btn" onClick={() => goto(1)}>Mañana →</button>
+            <button type="button" className="btn" onClick={() => goto(-1)}>← Ayer</button>
+            <button type="button" className="btn" onClick={() => setDateISO(DateTime.now().setZone(TZ).toISODate())}>Hoy</button>
+            <button type="button" className="btn" onClick={() => goto(1)}>Mañana →</button>
             <input className="input--date" type="date" value={dateISO} onChange={(e)=>setDateISO(e.target.value)} />
           </div>
         </div>
@@ -429,5 +406,6 @@ export default function App() {
     </div>
   );
 }
+
 
 
