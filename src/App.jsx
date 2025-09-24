@@ -91,6 +91,29 @@ const Chip = ({ label, active, tone = "sky" }) => {
 };
 
 /* ---------- data hook ---------- */
+function useActiveProperties() {
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // Endpoint mínimo del backend que devuelva { items: [{id, nombre}] }
+        // Lectura de la colección 'propiedades' con filtro activo=true.
+        const { data } = await axios.get("/api/properties?active=1");
+        setList([{ id: "all", nombre: "Todas" }, ...(data?.items || [])]);
+      } catch (e) {
+        setList([{ id: "all", nombre: "Todas" }]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  return { list, loading };
+}
+
+
 function useDaily(dateISO) {
   const [loading, setLoading] = useState(true);
   const [idx, setIdx] = useState(null);
@@ -109,16 +132,18 @@ function useDaily(dateISO) {
     setItems(data.items || []);
   };
 
-  const loadDay = async (t = tab) => {
-    setLoading(true);
-    try {
-      const { data } = await axios.get(`/api/dailyIndex?date=${dateISO}`);
-      setIdx(data);
-      await fetchTab(t, data);
-    } finally {
-      setLoading(false);
-    }
-  };
+const loadDay = async (t = tab) => {
+  setLoading(true);
+  try {
+    const q = new URLSearchParams({ date: dateISO });
+    if (propertyId && propertyId !== "all") q.set("property", propertyId);
+    const { data } = await axios.get(`/api/dailyIndex?${q.toString()}`);
+    setIdx(data);
+    await fetchTab(t, data);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => { loadDay(); /* eslint-disable-next-line */ }, [dateISO]);
 
@@ -249,12 +274,11 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
 /* -------------------boton registro de pagos -----------------------------*/
 
 function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
-  const btnRef = useRef(null);              // ⟵ ANCLA
+  const btnRef = useRef(null);
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState((r.currency || "ARS").toUpperCase());
   const [method, setMethod] = useState("Efectivo");
-  const [dateStr, setDateStr] = useState(DateTime.now().setZone(TZ).toISODate());
-  const [timeStr, setTimeStr] = useState(DateTime.now().setZone(TZ).toFormat("HH:mm"));
+  const [concept, setConcept] = useState("");             // NUEVO
   const [sending, setSending] = useState(false);
 
   const save = async () => {
@@ -263,11 +287,19 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
     try {
       setSending(true);
       await axios.post("/api/reservationMutations", {
-        id: r.id, action: "addPayment",
-        payload: { amount: val, currency: (currency || "ARS").toUpperCase(), method, when: dateStr ? toLocalIso(dateStr, timeStr) : null },
+        id: r.id,
+        action: "addPayment",
+        payload: {
+          amount: val,
+          currency: (currency || "ARS").toUpperCase(),
+          method,
+          concept: concept || undefined,                  // NUEVO
+          // quitamos fecha/hora: 'when' va como null
+          when: null
+        },
         user: "host",
       });
-      setAmount("");
+      setAmount(""); setConcept("");                      // limpiar inputs
       onDone?.();
     } finally { setSending(false); }
   };
@@ -278,34 +310,37 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
 
       <PopoverPortal anchorRef={btnRef} open={isOpen} onClose={onToggle} placement="top-right" maxWidth={320}>
         <div className="mini-popover__title">Agregar pago</div>
+
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Monto</label>
           <input className="mini-popover__field" type="number" step="0.01" min="0"
-            value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+                 value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
         </div>
+
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Moneda</label>
           <select className="mini-popover__field" value={currency} onChange={(e) => setCurrency(e.target.value)}>
             <option>ARS</option><option>USD</option><option>EUR</option><option>BRL</option><option>CLP</option>
           </select>
         </div>
+
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Método</label>
           <select className="mini-popover__field" value={method} onChange={(e) => setMethod(e.target.value)}>
             <option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>MercadoPago</option><option>Otro</option>
           </select>
         </div>
+
         <div className="mini-popover__row">
-          <label className="mini-popover__lab">Fecha</label>
-          <input type="date" className="mini-popover__field" value={dateStr} onChange={(e) => setDateStr(e.target.value)} />
+          <label className="mini-popover__lab">Concepto</label>
+          <input className="mini-popover__field" type="text" maxLength={80}
+                 value={concept} onChange={(e) => setConcept(e.target.value)} placeholder="Ej. seña, saldo, limpieza…" />
         </div>
-        <div className="mini-popover__row">
-          <label className="mini-popover__lab">Hora</label>
-          <input type="time" className="mini-popover__field" value={timeStr} onChange={(e) => setTimeStr(e.target.value)} />
-        </div>
+
         <div className="mini-popover__actions">
           <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
-          <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={!(Number(amount) > 0) || sending}>
+          <button type="button" className="mini-popover__btn mini-popover__btn--ok"
+                  onClick={save} disabled={!(Number(amount) > 0) || sending}>
             {sending ? "Guardando…" : "Guardar"}
           </button>
         </div>
@@ -313,6 +348,7 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
     </div>
   );
 }
+
 
 /* ----------------------------Boton de agregado de notas --------------------------------*/
 
@@ -391,10 +427,10 @@ function PaymentsList({ r }) {
 
 
 function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
-  const editBtnRef = useRef(null);          // ⟵ ANCLA
+  const editBtnRef = useRef(null);
   const [baseUSD, setBaseUSD] = useState(typeof r.toPay === "number" && isFinite(r.toPay) ? String(r.toPay.toFixed(2)) : "");
-  const [ivaMode, setIvaMode] = useState("percent"); // "percent" | "amount"
-  const [ivaPercent, setIvaPercent] = useState("0");
+  const [ivaMode, setIvaMode] = useState("percent");
+  const [ivaPercent, setIvaPercent] = useState("21");     // ← default 21%
   const [ivaUSD, setIvaUSD] = useState("");
   const [cleaningUSD, setCleaningUSD] = useState("");
 
@@ -404,8 +440,7 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
     else payload.ivaUSD = Number(ivaUSD) || 0;
 
     await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
-    onDone?.();
-    onRefresh?.();
+    onDone?.(); onRefresh?.();
   };
 
   return (
@@ -437,34 +472,35 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Base USD</label>
           <input className="mini-popover__field" type="number" step="0.01" min="0" value={baseUSD}
-            onChange={(e) => setBaseUSD(e.target.value)} placeholder="0.00" />
+                 onChange={(e) => setBaseUSD(e.target.value)} placeholder="0.00" />
         </div>
 
         <div className="mini-popover__row">
           <label className="mini-popover__lab">IVA</label>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1">
-              <input type="radio" name={`ivaMode_${r.id}`} value="percent"
-                checked={ivaMode === "percent"} onChange={() => setIvaMode("percent")} />
-              <span>%</span>
-            </label>
-            <input className="mini-popover__field" type="number" step="0.01" min="0" value={ivaPercent}
-              onChange={(e) => setIvaPercent(e.target.value)} placeholder="21" disabled={ivaMode !== "percent"} style={{ width: 90 }} />
 
-            <label className="flex items-center gap-1 ml-3">
-              <input type="radio" name={`ivaMode_${r.id}`} value="amount"
-                checked={ivaMode === "amount"} onChange={() => setIvaMode("amount")} />
-              <span>USD</span>
-            </label>
-            <input className="mini-popover__field" type="number" step="0.01" min="0" value={ivaUSD}
-              onChange={(e) => setIvaUSD(e.target.value)} placeholder="0.00" disabled={ivaMode !== "amount"} style={{ width: 110 }} />
-          </div>
+          <label className="flex items-center gap-1">
+            <input type="radio" name={`ivaMode_${r.id}`} value="percent"
+                   checked={ivaMode === "percent"} onChange={() => setIvaMode("percent")} />
+            <span>%</span>
+          </label>
+          <input className="mini-popover__field mini-popover__field--xs" type="number" step="0.01" min="0"
+                 value={ivaPercent} onChange={(e) => setIvaPercent(e.target.value)}
+                 placeholder="21" disabled={ivaMode !== "percent"} />
+
+          <label className="flex items-center gap-1 ml-2">
+            <input type="radio" name={`ivaMode_${r.id}`} value="amount"
+                   checked={ivaMode === "amount"} onChange={() => setIvaMode("amount")} />
+            <span>USD</span>
+          </label>
+          <input className="mini-popover__field mini-popover__field--s" type="number" step="0.01" min="0"
+                 value={ivaUSD} onChange={(e) => setIvaUSD(e.target.value)}
+                 placeholder="0.00" disabled={ivaMode !== "amount"} />
         </div>
 
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Limpieza (USD)</label>
           <input className="mini-popover__field" type="number" step="0.01" min="0" value={cleaningUSD}
-            onChange={(e) => setCleaningUSD(e.target.value)} placeholder="0.00" />
+                 onChange={(e) => setCleaningUSD(e.target.value)} placeholder="0.00" />
         </div>
 
         <div className="mini-popover__actions">
@@ -475,7 +511,6 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
     </>
   );
 }
-
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
 
 function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
@@ -633,7 +668,7 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
 }
 
 
-/* ---------- UI: BottomTable (sin cambios funcionales) ---------- */
+
 /* ---------- UI: BottomTable (nuevo formato + export Excel) ---------- */
 function BottomTable({ items }) {
   // Helpers locales (no tocan tus helpers globales)
@@ -663,9 +698,10 @@ function BottomTable({ items }) {
   // Aplana reservas -> filas (primera fila con datos; filas extra sólo pagos)
   const rows = [];
   items.forEach((r, idx) => {
-    const pays = getPayments(r); // ya lo tenés arriba en helpers
+    const pays = getPayments(r);
     rows.push({
       _sepTop: idx > 0, // línea negra arriba al iniciar nueva reserva
+      // datos visibles
       depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—",
       pax: r.adults ?? "-",
       nombre: r.nombre_huesped || "-",
@@ -675,16 +711,20 @@ function BottomTable({ items }) {
       checkout: fmtDay(r.departure_iso),
       hora_out: fmtHourTS(r.checkout_at),
       agencia: r.source || r.channel_name || "-",
-      toPay: money(r.toPay, "USD"),                       // Total a pagar en USD
+      toPay: money(r.toPay, "USD"),
       pago: pays[0] ? money(pays[0].amount, pays[0].currency) : "",
       metodo: pays[0]?.method || "",
       concepto: pays[0]?.concept || "",
+      // flags de color (solo se aplican en la 1ª fila)
+      hasCheckin: !!r.checkin_at,
+      wasContacted: !!r.contacted_at,
+      payStatus: String(r.payment_status || "unpaid").toLowerCase(),
     });
 
     for (let i = 1; i < pays.length; i++) {
       const p = pays[i];
       rows.push({
-        _payRow: true, // línea gris arriba (subfila de pago)
+        _payRow: true, // subfila de pago (no coloreamos nada acá)
         depto: "", pax: "", nombre: "", tel: "",
         checkin: "", hora_in: "", checkout: "", hora_out: "",
         agencia: "", toPay: "",
@@ -720,30 +760,44 @@ function BottomTable({ items }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr
-              key={i}
-              className={cls(
-                "tr",
-                r._sepTop && "btr--res-sep",  // línea negra arriba de cada reserva
-                r._payRow && "btr--pay"       // línea gris para subfilas de pago
-              )}
-            >
-              <td className="td">{r.depto}</td>
-              <td className="td">{r.pax}</td>
-              <td className="td">{r.nombre}</td>
-              <td className="td">{r.tel}</td>
-              <td className="td">{r.checkin}</td>
-              <td className="td">{r.hora_in}</td>
-              <td className="td">{r.checkout}</td>
-              <td className="td">{r.hora_out}</td>
-              <td className="td">{r.agencia}</td>
-              <td className="td td--money-strong">{r.toPay}</td>
-              <td className="td td--money-dim">{r.pago}</td>
-              <td className="td">{r.metodo}</td>
-              <td className="td">{r.concepto}</td>
-            </tr>
-          ))}
+          {rows.map((r, i) => {
+            const tdDeptoCls = cls("td", !r._payRow && r.hasCheckin && "td--depto-in");
+            const tdNameCls  = cls("td", !r._payRow && r.wasContacted && "td--name-contacted");
+            const tdPagoCls  = cls(
+              "td td--money-dim",
+              !r._payRow &&
+                (r.payStatus === "paid"
+                  ? "td--pay-paid"
+                  : r.payStatus === "partial"
+                  ? "td--pay-partial"
+                  : "td--pay-unpaid")
+            );
+
+            return (
+              <tr
+                key={i}
+                className={cls(
+                  "tr",
+                  r._sepTop && "btr--res-sep",
+                  r._payRow && "btr--pay"
+                )}
+              >
+                <td className={tdDeptoCls}>{r.depto}</td>
+                <td className="td">{r.pax}</td>
+                <td className={tdNameCls}>{r.nombre}</td>
+                <td className="td">{r.tel}</td>
+                <td className="td">{r.checkin}</td>
+                <td className="td">{r.hora_in}</td>
+                <td className="td">{r.checkout}</td>
+                <td className="td">{r.hora_out}</td>
+                <td className="td">{r.agencia}</td>
+                <td className="td td--money-strong">{r.toPay}</td>
+                <td className={tdPagoCls}>{r.pago}</td>
+                <td className="td">{r.metodo}</td>
+                <td className="td">{r.concepto}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -755,8 +809,12 @@ function BottomTable({ items }) {
 
 export default function App() {
   const today = DateTime.now().setZone(TZ).toISODate();
+  const { list: propsList } = useActiveProperties();
+  const [propertyId, setPropertyId] = useState("all");     // NUEVO
+
   const [dateISO, setDateISO] = useState(today);
-  const { loading, items, counts, tab, setActiveTab, page, setPage, totalPages, refetch } = useDaily(dateISO);
+  const { loading, items, counts, tab, setActiveTab, page, setPage, totalPages, refetch } =
+    useDaily(dateISO, propertyId); 
 
   // --- NUEVO: estado global de popovers ---
   const [activePopover, setActivePopover] = useState(null);
@@ -786,11 +844,25 @@ export default function App() {
             <h1 className="header__title">Planilla de Hosts</h1>
             <span className="header__date">({dateISO})</span>
           </div>
+
           <div className="header__actions">
+            {/* Selector de propiedad */}
+            <select
+              className="input--date"                   // mismo estilo que el date
+              value={propertyId}
+              onChange={(e) => { setPropertyId(e.target.value); closeAllPopovers(); }}
+              title="Propiedad"
+            >
+              {propsList.map(p => (
+                <option key={p.id} value={p.id}>{p.nombre}</option>
+              ))}
+            </select>
+
             <button type="button" className="btn" onClick={() => goto(-1)}>← Ayer</button>
             <button type="button" className="btn" onClick={() => { setDateISO(DateTime.now().setZone(TZ).toISODate()); closeAllPopovers(); }}>Hoy</button>
             <button type="button" className="btn" onClick={() => goto(1)}>Mañana →</button>
-            <input className="input--date" type="date" value={dateISO} onChange={(e) => { setDateISO(e.target.value); closeAllPopovers(); }} />
+            <input className="input--date" type="date" value={dateISO}
+                   onChange={(e) => { setDateISO(e.target.value); closeAllPopovers(); }} />
           </div>
         </div>
       </header>
