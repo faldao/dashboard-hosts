@@ -1,36 +1,3 @@
-// /api/dailyIndex.js
-// Construye/lee el índice DIARIO sin duplicar reservas y, además,
-// genera las ramas por PROPIEDAD y por DEPARTAMENTO (dentro de la propiedad).
-//
-// Estructura creada:
-//
-// DailyIndex/{YYYY-MM-DD} => {
-//   tz, generated_at, counts, checkins[], stays[], checkouts[]
-// }
-//
-// DailyIndex/{YYYY-MM-DD}/props/{propId} => {
-//   propiedad_nombre, counts, checkins[], stays[], checkouts[]
-// }
-//
-// DailyIndex/{YYYY-MM-DD}/props/{propId}/depts/{codigo_depto} => {
-//   depto_nombre, counts, checkins[], stays[], checkouts[]
-// }
-//
-// Parámetros:
-//   ?date=YYYY-MM-DD   (opcional; default: hoy AR)
-//   ?rebuild=1         (opcional; fuerza reconstrucción aunque exista)
-//
-// Notas:
-// - Requiere un índice compuesto en Firestore para "stays":
-//   Colección: Reservas
-//   Campos: arrival_iso Asc, departure_iso Asc
-//
-// - No duplica información de Reservas: solo guarda arrays de IDs.
-// - Se EXCLUYEN reservas canceladas (status / flags).
-//
-// - El handler siempre responde con el documento GLOBAL del día, para tu front.
-//
-
 import { firestore, FieldValue } from '../lib/firebaseAdmin.js';
 import { DateTime } from 'luxon';
 
@@ -49,11 +16,9 @@ const bad = (res, code, error) => {
   return res.status(code).json({ error });
 };
 
-// Helpers utilitarios
 const toISODateAR = (dateLike) =>
   (dateLike ? DateTime.fromISO(String(dateLike), { zone: TZ }) : DateTime.now().setZone(TZ)).toISODate();
 
-/** Normaliza y detecta canceladas en un doc de Reservas */
 const normalizeStatus = (s) => String(s || 'unknown').toLowerCase().replace(/\s+/g, '_');
 function isCancelledDoc(data) {
   const s =
@@ -66,9 +31,7 @@ function isCancelledDoc(data) {
   return false;
 }
 
-/** Agrupa un array de docs de Reservas en mapas por prop y por depto */
 function groupByPropAndDept(docsByBucket) {
-  // docsByBucket: { checkins: [doc], stays: [doc], checkouts: [doc] }
   const byProp = {};      // { propId: { propiedad_nombre, checkins:[], stays:[], checkouts:[] } }
   const byPropDept = {};  // { propId: { [codigo_depto]: { depto_nombre, checkins:[], stays:[], checkouts:[] } } }
 
@@ -96,10 +59,10 @@ function groupByPropAndDept(docsByBucket) {
       const propId = data?.propiedad_id || 'unknown';
       const propName = data?.propiedad_nombre || null;
       const codigo_depto = data?.codigo_depto || data?.id_zak || 'unknown';
-      const depto_nombre = data?.depto_nombre || data?.nombre_depto || null;
+      const nombre_depto = data?.depto_nombre || data?.nombre_depto || null;
 
       ensureProp(propId, propName);
-      ensureDept(propId, codigo_depto, depto_nombre);
+      ensureDept(propId, codigo_depto, nombre_depto);
 
       byProp[propId][b].push(id);
       byPropDept[propId][codigo_depto][b].push(id);
@@ -116,20 +79,49 @@ export default async function handler(req, res) {
 
     const dateParam = (req.query.date || req.body?.date || '').trim();
     const rebuild = (req.query.rebuild || req.body?.rebuild || '') === '1';
+    const propParam = String(req.query.property || req.body?.property || 'all').trim(); // 'all' | '<propId>'
     const dateISO = dateParam ? toISODateAR(dateParam) : DateTime.now().setZone(TZ).toISODate();
 
     const rootRef = firestore.collection('DailyIndex').doc(dateISO);
 
+    // ---------- FAST PATH: cache ----------
     if (!rebuild) {
       const existing = await rootRef.get();
       if (existing.exists) {
-        // Ya existe: devolvemos el doc global tal cual.
+        if (propParam && propParam !== 'all') {
+          const propSnap = await rootRef.collection('props').doc(propParam).get();
+          if (propSnap.exists) {
+            const pd = propSnap.data() || {};
+            return ok(res, {
+              ok: true,
+              date: dateISO,
+              propiedad_id: propParam,
+              propiedad_nombre: pd.propiedad_nombre || null,
+              counts: pd.counts || { checkins: 0, stays: 0, checkouts: 0 },
+              checkins: Array.isArray(pd.checkins) ? pd.checkins : [],
+              stays: Array.isArray(pd.stays) ? pd.stays : [],
+              checkouts: Array.isArray(pd.checkouts) ? pd.checkouts : [],
+              fromCache: true
+            });
+          }
+          // si no existe el subdoc, devolvemos vacío consistente
+          return ok(res, {
+            ok: true,
+            date: dateISO,
+            propiedad_id: propParam,
+            propiedad_nombre: null,
+            counts: { checkins: 0, stays: 0, checkouts: 0 },
+            checkins: [], stays: [], checkouts: [],
+            fromCache: true
+          });
+        }
+
+        // Global
         return ok(res, { ok: true, date: dateISO, ...existing.data(), fromCache: true });
       }
     }
 
-    // --- Construcción del día (3 consultas) ---
-    // 1) Llegan hoy
+    // ---------- BUILD ----------
     const [checkInsSnapRaw, checkOutsSnapRaw, staysSnapRaw] = await Promise.all([
       firestore.collection('Reservas').where('arrival_iso', '==', dateISO).get(),
       firestore.collection('Reservas').where('departure_iso', '==', dateISO).get(),
@@ -139,27 +131,19 @@ export default async function handler(req, res) {
         .get(), // requiere índice compuesto
     ]);
 
-    // --- Filtrado de canceladas ---
-    const checkInsSnap = {
-      docs: checkInsSnapRaw.docs.filter(d => !isCancelledDoc(d.data()))
-    };
-    const checkOutsSnap = {
-      docs: checkOutsSnapRaw.docs.filter(d => !isCancelledDoc(d.data()))
-    };
+    const checkInsSnap = { docs: checkInsSnapRaw.docs.filter(d => !isCancelledDoc(d.data())) };
+    const checkOutsSnap = { docs: checkOutsSnapRaw.docs.filter(d => !isCancelledDoc(d.data())) };
     let staysDocsFiltered = staysSnapRaw.docs.filter(d => !isCancelledDoc(d.data()));
 
-    // --- Deduplicación entre buckets ---
-    // Prioridad: checkins > checkouts > stays
+    // dedupe: prioridad checkins > checkouts > stays
     const setCheckins = new Set(checkInsSnap.docs.map(d => d.id));
     const setCheckouts = new Set(checkOutsSnap.docs.map(d => d.id));
     staysDocsFiltered = staysDocsFiltered.filter(d => !setCheckins.has(d.id) && !setCheckouts.has(d.id));
 
-    // IDs finales por bucket
     const checkinsIds = checkInsSnap.docs.map(d => d.id);
     const checkoutsIds = checkOutsSnap.docs.map(d => d.id);
     const staysIds = staysDocsFiltered.map(d => d.id);
 
-    // --- Payload GLOBAL ---
     const globalPayload = {
       tz: TZ,
       generated_at: FieldValue.serverTimestamp(),
@@ -173,7 +157,6 @@ export default async function handler(req, res) {
       }
     };
 
-    // --- Agrupación por PROPIEDAD y DEPARTAMENTO ---
     const docsByBucket = {
       checkins: checkInsSnap.docs,
       stays: staysDocsFiltered,
@@ -181,12 +164,10 @@ export default async function handler(req, res) {
     };
     const { byProp, byPropDept } = groupByPropAndDept(docsByBucket);
 
-    // --- Escrituras en batch ---
+    // ---------- WRITE ----------
     let batch = firestore.batch();
     let ops = 0;
-    const flush = async () => {
-      if (ops > 0) { await batch.commit(); batch = firestore.batch(); ops = 0; }
-    };
+    const flush = async () => { if (ops > 0) { await batch.commit(); batch = firestore.batch(); ops = 0; } };
     const flushIfNeeded = async () => { if (ops >= 450) await flush(); };
 
     // 1) Global
@@ -210,7 +191,7 @@ export default async function handler(req, res) {
       batch.set(propRef, propPayload, { merge: true }); ops++;
       await flushIfNeeded();
 
-      // 3) Depts de esa propiedad
+      // 3) Depts por prop
       const depts = byPropDept[propId] || {};
       for (const [codigo_depto, b] of Object.entries(depts)) {
         const dCounts = {
@@ -233,12 +214,33 @@ export default async function handler(req, res) {
 
     if (ops > 0) await flush();
 
-    // Devolvemos el GLOBAL (lo que consume tu front)
+    // ---------- RESPONSE acorde al filtro ----------
+    if (propParam && propParam !== 'all') {
+      const b = byProp[propParam] || { checkins: [], stays: [], checkouts: [], propiedad_nombre: null };
+      return ok(res, {
+        ok: true,
+        date: dateISO,
+        propiedad_id: propParam,
+        propiedad_nombre: b.propiedad_nombre || null,
+        counts: {
+          checkins: b.checkins.length,
+          stays: b.stays.length,
+          checkouts: b.checkouts.length
+        },
+        checkins: b.checkins,
+        stays: b.stays,
+        checkouts: b.checkouts,
+        fromCache: false
+      });
+    }
+
+    // Global
     return ok(res, { ok: true, date: dateISO, ...globalPayload, fromCache: false });
   } catch (e) {
     console.error(e);
     return bad(res, 500, e.message || 'Error building daily index');
   }
 }
+
 
 

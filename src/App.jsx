@@ -91,6 +91,9 @@ const Chip = ({ label, active, tone = "sky" }) => {
 };
 
 /* ---------- data hook ---------- */
+
+        // Endpoint mínimo del backend que devuelva { items: [{id, nombre}] }
+        // Lectura de la colección 'propiedades' con filtro activo=true.
 function useActiveProperties() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -98,12 +101,16 @@ function useActiveProperties() {
   useEffect(() => {
     (async () => {
       try {
-        // Endpoint mínimo del backend que devuelva { items: [{id, nombre}] }
-        // Lectura de la colección 'propiedades' con filtro activo=true.
-        const { data } = await axios.get("/api/properties?active=1");
-        setList([{ id: "all", nombre: "Todas" }, ...(data?.items || [])]);
-      } catch (e) {
-        setList([{ id: "all", nombre: "Todas" }]);
+       const { data } = await axios.get("/api/properties?active=1");
+       // Soporta {items:[...]} ó directamente [...]
+       const raw = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
+       const items = raw.map(p => ({
+         id: p.id || p?.uid || p?.docId,
+        nombre: p.nombre || p?.name || String(p.id || p?.uid || p?.docId || "")
+       })).filter(p => p.id);
+        const seen = new Set();
+        const clean = items.filter(p => p?.id && !seen.has(p.id) && (seen.add(p.id), true));
+        setList(clean);
       } finally {
         setLoading(false);
       }
@@ -114,7 +121,8 @@ function useActiveProperties() {
 }
 
 
-function useDaily(dateISO) {
+
+function useDaily(dateISO, propertyId) {
   const [loading, setLoading] = useState(true);
   const [idx, setIdx] = useState(null);
   const [items, setItems] = useState([]);
@@ -136,7 +144,11 @@ const loadDay = async (t = tab) => {
   setLoading(true);
   try {
     const q = new URLSearchParams({ date: dateISO });
-    if (propertyId && propertyId !== "all") q.set("property", propertyId);
+    const propParam = propertyId && propertyId !== "all" ? propertyId : "all";
+    q.set("property", propParam);
+    // opcional (solo si tu backend también mira 'propiedad_id'):
+    // q.set("propiedad_id", propParam);
+
     const { data } = await axios.get(`/api/dailyIndex?${q.toString()}`);
     setIdx(data);
     await fetchTab(t, data);
@@ -145,7 +157,8 @@ const loadDay = async (t = tab) => {
   }
 };
 
-  useEffect(() => { loadDay(); /* eslint-disable-next-line */ }, [dateISO]);
+  useEffect(() => { loadDay(); /* eslint-disable-next-line */ }, [dateISO, propertyId]);
+
 
   const setActiveTab = async (t) => {
     setTab(t);
@@ -853,6 +866,7 @@ export default function App() {
               onChange={(e) => { setPropertyId(e.target.value); closeAllPopovers(); }}
               title="Propiedad"
             >
+              <option value="all">Todas</option>
               {propsList.map(p => (
                 <option key={p.id} value={p.id}>{p.nombre}</option>
               ))}
