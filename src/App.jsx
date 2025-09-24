@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { DateTime } from "luxon";
+import PopoverPortal from "./components/PopoverPortal";
+import ExportBottomExcel from "./components/ExportBottomExcel"; 
+
 
 const TZ = "America/Argentina/Buenos_Aires";
 
@@ -13,6 +16,17 @@ const toFlag = (cc) => {
   const up = cc.toUpperCase();
   return String.fromCodePoint(...[...up].map((c) => c.charCodeAt(0) + A));
 };
+
+
+/* --------------------- Lapicito--------------------------*/
+const PencilIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+  </svg>
+);
+
 const toLocalIso = (dateStr, timeStr) => {
   // Combina "YYYY-MM-DD" + "HH:mm" como ISO con zona AR para backend
   if (!dateStr) return null;
@@ -34,9 +48,9 @@ const groupPaymentsByCurrency = (payments = []) => {
     map.get(cur).push(p);
   }
   // orden: moneda asc; dentro de cada moneda, más recientes arriba
-  return [...map.entries()].map(([cur, list]) => [cur, list.sort((a,b) => {
-    const sa = (a.ts? (a.ts.seconds ?? a.ts._seconds ?? 0) : 0);
-    const sb = (b.ts? (b.ts.seconds ?? b.ts._seconds ?? 0) : 0);
+  return [...map.entries()].map(([cur, list]) => [cur, list.sort((a, b) => {
+    const sa = (a.ts ? (a.ts.seconds ?? a.ts._seconds ?? 0) : 0);
+    const sb = (b.ts ? (b.ts.seconds ?? b.ts._seconds ?? 0) : 0);
     return sb - sa;
   })]);
 };
@@ -62,8 +76,8 @@ const fmtTS = (ts) => {
 // === Helpers de pago (badge y normalización numérica)
 const payBadge = (status) =>
   status === "paid" ? <span className="badge badge--paid">Pago</span> :
-  status === "partial" ? <span className="badge badge--partial">Parcial</span> :
-  <span className="badge badge--unpaid">Impago</span>;
+    status === "partial" ? <span className="badge badge--partial">Parcial</span> :
+      <span className="badge badge--unpaid">Impago</span>;
 
 const toNum = (v) => {
   const n = Number(v);
@@ -169,23 +183,18 @@ function Paginator({ page, totalPages, onPage }) {
 }
 
 /* ---------- UI: ActionButton con popover ---------- */
+
 function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, isOpen, onToggle, onDone }) {
+  const btnRef = useRef(null);               // ⟵ ANCLA
   const [d, setD] = useState(defaultDateISO || "");
   const [t, setT] = useState(defaultTimeHHmm || "");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const label = type === "contact" ? "Contactado" : type === "checkin" ? "Check-in" : "Check-out";
-  const btnClass = cls(
-    "pill-btn",
-    !active
-      ? "pill-btn--neutral"
-      : tone === "amber"
-        ? "pill-btn--amber-active"
-        : tone === "sky"
-          ? "pill-btn--sky-active"
-          : "pill-btn--gray-active"
-  );
+  const btnClass = cls("pill-btn", !active ? "pill-btn--neutral" :
+    tone === "amber" ? "pill-btn--amber-active" :
+      tone === "sky" ? "pill-btn--sky-active" : "pill-btn--gray-active");
 
   const confirm = async () => {
     try {
@@ -194,68 +203,53 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
       if (type === "contact") {
         whenISO = d && t ? toLocalIso(d, t) : null;
       } else if (type === "checkin") {
-        const dateUse = d || (r.arrival_iso || "");
-        const timeUse = t || "15:00";
-        whenISO = toLocalIso(dateUse, timeUse);
+        whenISO = toLocalIso(d || (r.arrival_iso || ""), t || "15:00");
       } else {
-        const dateUse = d || (r.departure_iso || "");
-        const timeUse = t || "11:00";
-        whenISO = toLocalIso(dateUse, timeUse);
+        whenISO = toLocalIso(d || (r.departure_iso || ""), t || "11:00");
       }
-
-      await axios.post("/api/reservationMutations", {
-        id: r.id, action: type, payload: { when: whenISO }, user: "host"
-      });
-
+      await axios.post("/api/reservationMutations", { id: r.id, action: type, payload: { when: whenISO }, user: "host" });
       const clean = (note || "").trim();
-      if (clean) {
-        await axios.post("/api/reservationMutations", {
-          id: r.id, action: "addNote", payload: { text: clean }, user: "host"
-        });
-      }
-
+      if (clean) await axios.post("/api/reservationMutations", { id: r.id, action: "addNote", payload: { text: clean }, user: "host" });
       setNote("");
       onDone?.();
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   };
 
   return (
-    <div className="pill-wrap" onClick={(e)=>e.stopPropagation()}>
-      <button type="button" className={btnClass} onClick={onToggle} disabled={submitting}>
+    <div className="pill-wrap" onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} type="button" className={btnClass} onClick={onToggle} disabled={submitting}>
         {label}
       </button>
 
-      {isOpen && (
-        <div className="mini-popover" role="dialog" aria-label={label} onClick={(e)=>e.stopPropagation()}>
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">Fecha</label>
-            <input type="date" className="mini-popover__field" value={d} onChange={(e)=>setD(e.target.value)} />
-          </div>
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">Hora</label>
-            <input type="time" className="mini-popover__field" value={t} onChange={(e)=>setT(e.target.value)} />
-          </div>
-          <div className="mini-popover__row mini-popover__row--note">
-            <label className="mini-popover__lab">Nota (opcional)</label>
-            <textarea className="mini-popover__field h-16" value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Agregar nota…" />
-          </div>
-          <div className="mini-popover__actions">
-            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle} disabled={submitting}>Cancelar</button>
-            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={confirm} disabled={submitting}>
-              {submitting ? "Guardando…" : "Confirmar"}
-            </button>
-          </div>
+      <PopoverPortal anchorRef={btnRef} open={isOpen} onClose={onToggle} placement="top-right" maxWidth={300}>
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">Fecha</label>
+          <input type="date" className="mini-popover__field" value={d} onChange={(e) => setD(e.target.value)} />
         </div>
-      )}
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">Hora</label>
+          <input type="time" className="mini-popover__field" value={t} onChange={(e) => setT(e.target.value)} />
+        </div>
+        <div className="mini-popover__row mini-popover__row--note">
+          <label className="mini-popover__lab">Nota (opcional)</label>
+          <textarea className="mini-popover__field h-16" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Agregar nota…" />
+        </div>
+        <div className="mini-popover__actions">
+          <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle} disabled={submitting}>Cancelar</button>
+          <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={confirm} disabled={submitting}>
+            {submitting ? "Guardando…" : "Confirmar"}
+          </button>
+        </div>
+      </PopoverPortal>
     </div>
   );
 }
 
+
 /* -------------------boton registro de pagos -----------------------------*/
 
 function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
+  const btnRef = useRef(null);              // ⟵ ANCLA
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState((r.currency || "ARS").toUpperCase());
   const [method, setMethod] = useState("Efectivo");
@@ -269,68 +263,61 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
     try {
       setSending(true);
       await axios.post("/api/reservationMutations", {
-        id: r.id,
-        action: "addPayment",
-        payload: {
-          amount: val,
-          currency: (currency || "ARS").toUpperCase(),
-          method,
-          when: dateStr ? toLocalIso(dateStr, timeStr) : null,
-        },
+        id: r.id, action: "addPayment",
+        payload: { amount: val, currency: (currency || "ARS").toUpperCase(), method, when: dateStr ? toLocalIso(dateStr, timeStr) : null },
         user: "host",
       });
       setAmount("");
       onDone?.();
-    } finally {
-      setSending(false);
-    }
+    } finally { setSending(false); }
   };
 
   return (
-    <div className="pay-addwrap" onClick={(e)=>e.stopPropagation()}>
-      <button type="button" className="pay-addbtn" title="Agregar pago" onClick={onToggle}>+</button>
-      {isOpen && (
-        <div className="mini-popover pay-pop" role="dialog" aria-label="Agregar pago" onClick={(e)=>e.stopPropagation()}>
-          <div className="mini-popover__title">Agregar pago</div>
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">Monto</label>
-            <input className="mini-popover__field" type="number" step="0.01" min="0" value={amount} onChange={(e)=>setAmount(e.target.value)} placeholder="0.00" />
-          </div>
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">Moneda</label>
-            <select className="mini-popover__field" value={currency} onChange={(e)=>setCurrency(e.target.value)}>
-              <option>ARS</option><option>USD</option><option>EUR</option><option>BRL</option><option>CLP</option>
-            </select>
-          </div>
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">Método</label>
-            <select className="mini-popover__field" value={method} onChange={(e)=>setMethod(e.target.value)}>
-              <option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>MercadoPago</option><option>Otro</option>
-            </select>
-          </div>
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">Fecha</label>
-            <input type="date" className="mini-popover__field" value={dateStr} onChange={(e)=>setDateStr(e.target.value)} />
-          </div>
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">Hora</label>
-            <input type="time" className="mini-popover__field" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} />
-          </div>
-          <div className="mini-popover__actions">
-            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
-            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={!(Number(amount) > 0) || sending}>
-              {sending ? "Guardando…" : "Guardar"}
-            </button>
-          </div>
+    <div className="pay-addwrap" onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} type="button" className="pay-addbtn" title="Agregar pago" onClick={onToggle}>+</button>
+
+      <PopoverPortal anchorRef={btnRef} open={isOpen} onClose={onToggle} placement="top-right" maxWidth={320}>
+        <div className="mini-popover__title">Agregar pago</div>
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">Monto</label>
+          <input className="mini-popover__field" type="number" step="0.01" min="0"
+            value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
         </div>
-      )}
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">Moneda</label>
+          <select className="mini-popover__field" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            <option>ARS</option><option>USD</option><option>EUR</option><option>BRL</option><option>CLP</option>
+          </select>
+        </div>
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">Método</label>
+          <select className="mini-popover__field" value={method} onChange={(e) => setMethod(e.target.value)}>
+            <option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>MercadoPago</option><option>Otro</option>
+          </select>
+        </div>
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">Fecha</label>
+          <input type="date" className="mini-popover__field" value={dateStr} onChange={(e) => setDateStr(e.target.value)} />
+        </div>
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">Hora</label>
+          <input type="time" className="mini-popover__field" value={timeStr} onChange={(e) => setTimeStr(e.target.value)} />
+        </div>
+        <div className="mini-popover__actions">
+          <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
+          <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={!(Number(amount) > 0) || sending}>
+            {sending ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      </PopoverPortal>
     </div>
   );
 }
 
-/* ----------------------------Boton de agregado de notaas --------------------------------*/
+/* ----------------------------Boton de agregado de notas --------------------------------*/
 
 function NoteAddButton({ r, isOpen, onToggle, onDone }) {
+  const btnRef = useRef(null);              // ⟵ ANCLA
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -339,37 +326,29 @@ function NoteAddButton({ r, isOpen, onToggle, onDone }) {
     if (!clean) return;
     try {
       setSending(true);
-      await axios.post("/api/reservationMutations", {
-        id: r.id,
-        action: "addNote",
-        payload: { text: clean },
-        user: "host",
-      });
+      await axios.post("/api/reservationMutations", { id: r.id, action: "addNote", payload: { text: clean }, user: "host" });
       setNote("");
       onDone?.();
-    } finally {
-      setSending(false);
-    }
+    } finally { setSending(false); }
   };
 
   return (
-    <div className="notes-addwrap" onClick={(e)=>e.stopPropagation()}>
-      <button type="button" className="notes-addbtn" title="Agregar nota" onClick={onToggle}>+</button>
-      {isOpen && (
-        <div className="mini-popover notes-pop" role="dialog" aria-label="Agregar nota" onClick={(e)=>e.stopPropagation()}>
-          <div className="mini-popover__title">Agregar nota</div>
-          <div className="mini-popover__row mini-popover__row--note">
-            <label className="mini-popover__lab">Nueva nota</label>
-            <textarea className="mini-popover__field h-24" value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Escribí tu nota…" />
-          </div>
-          <div className="mini-popover__actions">
-            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle} disabled={sending}>Cancelar</button>
-            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={sending || !note.trim()}>
-              {sending ? "Guardando…" : "Guardar"}
-            </button>
-          </div>
+    <div className="notes-addwrap" onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} type="button" className="notes-addbtn" title="Agregar nota" onClick={onToggle}>+</button>
+
+      <PopoverPortal anchorRef={btnRef} open={isOpen} onClose={onToggle} placement="top-right" maxWidth={340}>
+        <div className="mini-popover__title">Agregar nota</div>
+        <div className="mini-popover__row mini-popover__row--note">
+          <label className="mini-popover__lab">Nueva nota</label>
+          <textarea className="mini-popover__field h-24" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Escribí tu nota…" />
         </div>
-      )}
+        <div className="mini-popover__actions">
+          <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle} disabled={sending}>Cancelar</button>
+          <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={sending || !note.trim()}>
+            {sending ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      </PopoverPortal>
     </div>
   );
 }
@@ -409,143 +388,96 @@ function PaymentsList({ r }) {
 }
 
 /* --------- Nueva Línea 4: editor de toPay en USD + badge ---------- */
-function ToPayLine({ r, onRefresh }) {
-  const [open, setOpen] = useState(false);
 
-  // Borrador de edición (base, iva% o iva$, limpieza)
-  const [baseUSD, setBaseUSD] = useState(
-    (typeof r.toPay === "number" && isFinite(r.toPay)) ? String(r.toPay.toFixed(2)) : ""
-  );
+
+function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
+  const editBtnRef = useRef(null);          // ⟵ ANCLA
+  const [baseUSD, setBaseUSD] = useState(typeof r.toPay === "number" && isFinite(r.toPay) ? String(r.toPay.toFixed(2)) : "");
   const [ivaMode, setIvaMode] = useState("percent"); // "percent" | "amount"
   const [ivaPercent, setIvaPercent] = useState("0");
   const [ivaUSD, setIvaUSD] = useState("");
   const [cleaningUSD, setCleaningUSD] = useState("");
 
-  const onOpen = () => setOpen(true);
-  const onCancel = () => setOpen(false);
-
   const onSave = async () => {
-    const payload = {
-      baseUSD: toNum(baseUSD),
-      cleaningUSD: toNum(cleaningUSD),
-    };
-    if (ivaMode === "percent") payload.ivaPercent = toNum(ivaPercent);
-    else payload.ivaUSD = toNum(ivaUSD);
+    const payload = { baseUSD: Number(baseUSD) || 0, cleaningUSD: Number(cleaningUSD) || 0 };
+    if (ivaMode === "percent") payload.ivaPercent = Number(ivaPercent) || 0;
+    else payload.ivaUSD = Number(ivaUSD) || 0;
 
-    await axios.post("/api/reservationMutations", {
-      id: r.id,
-      action: "setToPay",
-      user: "host",
-      payload
-    });
-
-    setOpen(false);
+    await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
+    onDone?.();
     onRefresh?.();
   };
 
   return (
     <>
-      <div className="left__line4">
+      <div className="left__line4" onClick={(e) => e.stopPropagation()}>
         <span className="toPay-view">
           <span className="toPay-cur">USD</span>
           <strong>{(typeof r.toPay === "number" && isFinite(r.toPay)) ? r.toPay.toFixed(2) : "-"}</strong>
         </span>
-        <button type="button" className="toPay-btn" onClick={onOpen}>Editar</button>
+
+        {/* botón lapicito */}
+        <button
+          ref={editBtnRef}
+          type="button"
+          className="toPay-btn toPay-btn--icon"
+          aria-label="Editar total"
+          title="Editar total"
+          onClick={onToggle}
+        >
+          <PencilIcon />
+        </button>
+
         {payBadge(r.payment_status || "unpaid")}
       </div>
 
-      {open && (
-        <div className="mini-popover" role="dialog" aria-label="Editar total a pagar" onClick={(e) => e.stopPropagation()}>
-          <div className="mini-popover__title">Total a pagar (USD)</div>
+      <PopoverPortal anchorRef={editBtnRef} open={isOpen} onClose={onToggle} placement="bottom-left" maxWidth={360}>
+        <div className="mini-popover__title">Total a pagar (USD)</div>
 
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">Base USD</label>
-            <input
-              className="mini-popover__field"
-              type="number"
-              step="0.01"
-              min="0"
-              value={baseUSD}
-              onChange={(e) => setBaseUSD(e.target.value)}
-              placeholder="0.00"
-            />
-          </div>
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">Base USD</label>
+          <input className="mini-popover__field" type="number" step="0.01" min="0" value={baseUSD}
+            onChange={(e) => setBaseUSD(e.target.value)} placeholder="0.00" />
+        </div>
 
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">IVA</label>
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  name={`ivaMode_${r.id}`}
-                  value="percent"
-                  checked={ivaMode === "percent"}
-                  onChange={() => setIvaMode("percent")}
-                />
-                <span>%</span>
-              </label>
-              <input
-                className="mini-popover__field"
-                type="number"
-                step="0.01"
-                min="0"
-                value={ivaPercent}
-                onChange={(e) => setIvaPercent(e.target.value)}
-                placeholder="21"
-                disabled={ivaMode !== "percent"}
-                style={{ width: 90 }}
-              />
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">IVA</label>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1">
+              <input type="radio" name={`ivaMode_${r.id}`} value="percent"
+                checked={ivaMode === "percent"} onChange={() => setIvaMode("percent")} />
+              <span>%</span>
+            </label>
+            <input className="mini-popover__field" type="number" step="0.01" min="0" value={ivaPercent}
+              onChange={(e) => setIvaPercent(e.target.value)} placeholder="21" disabled={ivaMode !== "percent"} style={{ width: 90 }} />
 
-              <label className="flex items-center gap-1 ml-3">
-                <input
-                  type="radio"
-                  name={`ivaMode_${r.id}`}
-                  value="amount"
-                  checked={ivaMode === "amount"}
-                  onChange={() => setIvaMode("amount")}
-                />
-                <span>USD</span>
-              </label>
-              <input
-                className="mini-popover__field"
-                type="number"
-                step="0.01"
-                min="0"
-                value={ivaUSD}
-                onChange={(e) => setIvaUSD(e.target.value)}
-                placeholder="0.00"
-                disabled={ivaMode !== "amount"}
-                style={{ width: 110 }}
-              />
-            </div>
-          </div>
-
-          <div className="mini-popover__row">
-            <label className="mini-popover__lab">Limpieza (USD)</label>
-            <input
-              className="mini-popover__field"
-              type="number"
-              step="0.01"
-              min="0"
-              value={cleaningUSD}
-              onChange={(e) => setCleaningUSD(e.target.value)}
-              placeholder="0.00"
-            />
-          </div>
-
-          <div className="mini-popover__actions">
-            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onCancel}>Cancelar</button>
-            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={onSave}>
-              Guardar
-            </button>
+            <label className="flex items-center gap-1 ml-3">
+              <input type="radio" name={`ivaMode_${r.id}`} value="amount"
+                checked={ivaMode === "amount"} onChange={() => setIvaMode("amount")} />
+              <span>USD</span>
+            </label>
+            <input className="mini-popover__field" type="number" step="0.01" min="0" value={ivaUSD}
+              onChange={(e) => setIvaUSD(e.target.value)} placeholder="0.00" disabled={ivaMode !== "amount"} style={{ width: 110 }} />
           </div>
         </div>
-      )}
+
+        <div className="mini-popover__row">
+          <label className="mini-popover__lab">Limpieza (USD)</label>
+          <input className="mini-popover__field" type="number" step="0.01" min="0" value={cleaningUSD}
+            onChange={(e) => setCleaningUSD(e.target.value)} placeholder="0.00" />
+        </div>
+
+        <div className="mini-popover__actions">
+          <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
+          <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={onSave}>Guardar</button>
+        </div>
+      </PopoverPortal>
     </>
   );
 }
 
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
+
 function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   const depto = r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—";
   const phone = r.customer_phone || r.telefono || "";
@@ -554,26 +486,27 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   const inDt = fmtDate(r.arrival_iso);
   const outDt = fmtDate(r.departure_iso);
   const channel = r.source || r.channel_name || "—";
-  const deptoTagClass = cls("tag","tag--depto", r.checkin_at ? "tag--depto--in" : (r.checkout_at ? "tag--depto--out" : ""));
+  const deptoTagClass = cls("tag", "tag--depto", r.checkin_at ? "tag--depto--in" : (r.checkout_at ? "tag--depto--out" : ""));
 
   // --- NUEVO: card activa si el popover actual empieza con su id ---
   const isCardActive = !!activePopover && String(activePopover).startsWith(`${r.id}::`);
   const cardClassName = cls("res-card4", isCardActive && "res-card4--active");
 
   // ids únicos por acción en esta reserva
-  const pidNote     = `${r.id}::addNote`;
-  const pidPay      = `${r.id}::addPayment`;
-  const pidContact  = `${r.id}::contact`;
-  const pidCheckIn  = `${r.id}::checkin`;
+  const pidNote = `${r.id}::addNote`;
+  const pidPay = `${r.id}::addPayment`;
+  const pidContact = `${r.id}::contact`;
+  const pidCheckIn = `${r.id}::checkin`;
   const pidCheckOut = `${r.id}::checkout`;
+  const pidToPay = `${r.id}::toPay`;
 
   const defContactDate = DateTime.now().setZone(TZ).toISODate();
   const defContactTime = DateTime.now().setZone(TZ).toFormat("HH:mm");
-  const defInDate  = r.arrival_iso   || "";
+  const defInDate = r.arrival_iso || "";
   const defOutDate = r.departure_iso || "";
 
   return (
-    <div className={cardClassName} onClick={(e)=>e.stopPropagation()}>
+    <div className={cardClassName} onClick={(e) => e.stopPropagation()}>
       {/* CELDA 1 */}
       <div className="res-cell res-cell--left">
         <div className="left__line1">
@@ -585,7 +518,7 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
         <div className="left__line2">
           {phone && <span>{phone}</span>}
           {email && (
-            <a className="mail-link" href={`mailto:${email}`} title={email} onClick={(e)=>e.stopPropagation()}>
+            <a className="mail-link" href={`mailto:${email}`} title={email} onClick={(e) => e.stopPropagation()}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" />
                 <path d="m22 8-10 6L2 8" />
@@ -600,13 +533,18 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
           <span className="tag--channel">{channel}</span>
         </div>
 
-        <ToPayLine r={r} onRefresh={onRefresh} />
+        <ToPayLine
+          r={r}
+          isOpen={activePopover === pidToPay}
+          onToggle={() => onPopoverToggle(pidToPay)}
+          onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
+        />
       </div>
 
       {/* CELDA 2: Notas */}
       <div className="res-cell">
-        <div className="notes-wrap">
-          <div className="notes-list">
+        <div className="panel">
+          <div className="panel__list">
             {(() => {
               const list = getNotes(r).slice().reverse();
               return list.length ? list.map((n, i) => (
@@ -625,30 +563,33 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
           </div>
 
           {/* Botón + nota con popover global */}
+          <div className="panel__toolbar">
           <NoteAddButton
             r={r}
             isOpen={activePopover === pidNote}
             onToggle={() => onPopoverToggle(pidNote)}
             onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
           />
+          </div>
         </div>
       </div>
 
       {/* CELDA 3: Pagos */}
       <div className="res-cell">
-        <div className="payments-wrap">
-          <div className="payments-box" style={{ justifyContent: "space-between", alignItems: "start", gap: ".5rem", flexDirection: "column", display: "flex" }}>
-            <PaymentsList r={r} />
+        <div className="panel">
+          <div className="panel__list">
+          <PaymentsList r={r} />
           </div>
+          <div className="panel__toolbar">
           <PaymentAddButton
             r={r}
             isOpen={activePopover === pidPay}
             onToggle={() => onPopoverToggle(pidPay)}
             onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
           />
+          </div>
         </div>
       </div>
-
       {/* CELDA 4: Estado */}
       <div className="res-cell">
         <div className="status-stack-new">
@@ -693,57 +634,122 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
 
 
 /* ---------- UI: BottomTable (sin cambios funcionales) ---------- */
-function BottomTable({ items, onOpen }) {
+/* ---------- UI: BottomTable (nuevo formato + export Excel) ---------- */
+function BottomTable({ items }) {
+  // Helpers locales (no tocan tus helpers globales)
+  const fmtDay = (iso) =>
+    iso ? DateTime.fromISO(iso, { zone: TZ }).toFormat("dd/MM/yyyy") : "-";
+
+  const fmtHourTS = (ts) => {
+    if (!ts) return "-";
+    if (ts.seconds || ts._seconds) {
+      const s = ts.seconds ?? ts._seconds;
+      return DateTime.fromSeconds(Number(s), { zone: TZ }).toFormat("HH:mm");
+    }
+    try {
+      const d = DateTime.fromISO(String(ts), { zone: TZ });
+      if (d.isValid) return d.toFormat("HH:mm");
+    } catch {}
+    return "-";
+  };
+
+  const money = (n, cur) => {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return "-";
+    const c = (cur || "USD").toString().toUpperCase();
+    return `${v.toFixed(2)} ${c}`;
+  };
+
+  // Aplana reservas -> filas (primera fila con datos; filas extra sólo pagos)
+  const rows = [];
+  items.forEach((r, idx) => {
+    const pays = getPayments(r); // ya lo tenés arriba en helpers
+    rows.push({
+      _sepTop: idx > 0, // línea negra arriba al iniciar nueva reserva
+      depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—",
+      pax: r.adults ?? "-",
+      nombre: r.nombre_huesped || "-",
+      tel: r.customer_phone || r.telefono || "-",
+      checkin: fmtDay(r.arrival_iso),
+      hora_in: fmtHourTS(r.checkin_at),
+      checkout: fmtDay(r.departure_iso),
+      hora_out: fmtHourTS(r.checkout_at),
+      agencia: r.source || r.channel_name || "-",
+      toPay: money(r.toPay, "USD"),                       // Total a pagar en USD
+      pago: pays[0] ? money(pays[0].amount, pays[0].currency) : "",
+      metodo: pays[0]?.method || "",
+      concepto: pays[0]?.concept || "",
+    });
+
+    for (let i = 1; i < pays.length; i++) {
+      const p = pays[i];
+      rows.push({
+        _payRow: true, // línea gris arriba (subfila de pago)
+        depto: "", pax: "", nombre: "", tel: "",
+        checkin: "", hora_in: "", checkout: "", hora_out: "",
+        agencia: "", toPay: "",
+        pago: money(p.amount, p.currency),
+        metodo: p.method || "",
+        concepto: p.concept || "",
+      });
+    }
+  });
+
   return (
     <div className="tablewrap">
-      <table className="table">
+      <div className="btable__toolbar">
+        <ExportBottomExcel items={items} />
+      </div>
+
+      <table className="table btable">
         <thead>
           <tr>
-            <th className="th">RCode</th>
-            <th className="th">Depto</th>
+            <th className="th">Unidad</th>
             <th className="th">PAX</th>
-            <th className="th">Hora in/out</th>
             <th className="th">Nombre</th>
             <th className="th">Teléfono</th>
-            <th className="th">Email</th>
-            <th className="th">A pagar</th>
-            <th className="th">Moneda</th>
-            <th className="th">IN/OUT</th>
-            <th className="th">Extras</th>
+            <th className="th">Check in</th>
+            <th className="th">Hora in</th>
+            <th className="th">Check out</th>
+            <th className="th">Hora out</th>
             <th className="th">Agencia</th>
-            <th className="th">Notas/Pagos</th>
+            <th className="th">A pagar</th>
+            <th className="th">Pago</th>
+            <th className="th">Forma de pago</th>
+            <th className="th">Concepto</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((r) => {
-            const depto = r.depto_nombre || r.nombre_depto || r.codigo_depto || "—";
-            const phone = r.customer_phone || "";
-            const email = r.customer_email || "";
-            const contacted = !!r.contacted_at;
-            const deptoClass = cls("td__depto-tag", r.checkin_at && "td__depto-tag--in");
-            return (
-              <tr key={r.id} className="tr">
-                <td className="td">{r.id_human ? <span className="tag tag--rcode">{r.id_human}</span> : "—"}</td>
-                <td className="td"><span className={deptoClass}>{depto}</span></td>
-                <td className="td">{r.adults ?? "-"}</td>
-                <td className="td">{r.checkin_at ? "check-in" : ""}</td>
-                <td className="td"><span className={cls("td__name", contacted && "name--contacted")}>{r.nombre_huesped || "-"}</span></td>
-                <td className="td">{phone || "-"}</td>
-                <td className="td">{email || "-"}</td>
-                <td className="td">{r.toPay ?? "-"}</td>
-                <td className="td">{r.currency || "-"}</td>
-                <td className="td">{r.arrival_iso ? "IN" : "OUT"}</td>
-                <td className="td">{r.extras || "-"}</td>
-                <td className="td"><span className="tag--channel">{r.source || "-"}</span></td>
-                <td className="td"><button type="button" onClick={() => onOpen(r)} className="text-blue-600 underline">Ver</button></td>
-              </tr>
-            );
-          })}
+          {rows.map((r, i) => (
+            <tr
+              key={i}
+              className={cls(
+                "tr",
+                r._sepTop && "btr--res-sep",  // línea negra arriba de cada reserva
+                r._payRow && "btr--pay"       // línea gris para subfilas de pago
+              )}
+            >
+              <td className="td">{r.depto}</td>
+              <td className="td">{r.pax}</td>
+              <td className="td">{r.nombre}</td>
+              <td className="td">{r.tel}</td>
+              <td className="td">{r.checkin}</td>
+              <td className="td">{r.hora_in}</td>
+              <td className="td">{r.checkout}</td>
+              <td className="td">{r.hora_out}</td>
+              <td className="td">{r.agencia}</td>
+              <td className="td td--money-strong">{r.toPay}</td>
+              <td className="td td--money-dim">{r.pago}</td>
+              <td className="td">{r.metodo}</td>
+              <td className="td">{r.concepto}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
   );
 }
+
 
 /* ---------- App ---------- */
 
@@ -791,8 +797,8 @@ export default function App() {
 
       <main className="main" onClick={(e) => e.stopPropagation()}>
         <div className="main__top">
-          <Tabs tab={tab} onChange={(t)=>{ setActiveTab(t); closeAllPopovers(); }} counts={counts} />
-          <Paginator page={page} totalPages={totalPages} onPage={(p)=>{ setPage(p); closeAllPopovers(); }} />
+          <Tabs tab={tab} onChange={(t) => { setActiveTab(t); closeAllPopovers(); }} counts={counts} />
+          <Paginator page={page} totalPages={totalPages} onPage={(p) => { setPage(p); closeAllPopovers(); }} />
         </div>
 
         {loading && <div className="loader">Cargando…</div>}
@@ -816,7 +822,7 @@ export default function App() {
       </main>
 
       <section className="bottom">
-        <BottomTable items={items} onOpen={() => {}} />
+        <BottomTable items={items} onOpen={() => { }} />
       </section>
     </div>
   );

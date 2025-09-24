@@ -88,34 +88,21 @@
 .td__depto-tag--in { @apply bg-sky-200; }
 .td__name { @apply rounded px-1; }
 
-/* ===== MODAL (legacy) ===== */
+/* ===== MODAL (legacy oculto) ===== */
 .modal-overlay { @apply hidden; }
 .modal { @apply hidden; }
-
-/* ===== NOTAS (celda 2) ===== */
-.notes-wrap { @apply relative h-full; }
-.notes-list { @apply h-full text-sm text-gray-700 overflow-auto pr-2; max-height: 100px; }
-.notes-empty { @apply text-gray-400 italic; }
-.note-item { @apply pb-2; }
-.note-head { @apply flex items-center justify-between; }
-.note-meta { @apply text-[11px] text-gray-500; }
-.note-body { @apply whitespace-pre-wrap break-words; }
-.note-sep { @apply my-2 border-t; border-color:#e5e7eb; }
-
-/* Botón flotante “+” (notas) */
-.notes-addwrap { @apply absolute right-2 bottom-2; z-index:10; }
-.notes-addbtn { @apply w-7 h-7 rounded-full border bg-white text-gray-700 leading-none flex items-center justify-center shadow hover:bg-gray-50; }
-/* Popover de nota */
-.notes-pop { right: .5rem; bottom: 2.5rem; top: auto; }
 
 /* ====== CARD 4 CELDAS ====== */
 .res-card4 { @apply relative border rounded-lg p-3 bg-white hover:bg-gray-50; display: grid; grid-template-columns: 1fr 1fr 1fr 120px; gap: 0; min-height: var(--res-card-min-h); overflow: visible; }
 .res-cell { @apply px-3; }
-.res-cell--left { @apply flex flex-col gap-1; }
+.res-cell--left { @apply flex flex-col gap-1; display: flex; flex-direction: column;}
 
 /* Divisores verticales */
 .res-card4 > .res-cell { position: relative; }
 .res-card4 > .res-cell:not(:last-child)::after { content: ""; position: absolute; top: 8px; bottom: 8px; right: 0; width: 1px; background: #e5e7eb; }
+
+/* Card activa cuando algún popover está abierto */
+.res-card4--active { outline: 2px solid #93c5fd; outline-offset: 2px; }
 
 /* Línea 1/2/3 izquierda */
 .left__line1 { @apply flex flex-wrap items-center gap-2; }
@@ -130,13 +117,39 @@
 .toPay-cur { @apply inline-flex items-center px-1.5 py-0.5 rounded-md border text-xs bg-white text-gray-800 border-gray-300; }
 .toPay-input { @apply w-28 border rounded p-1 text-sm; }
 .toPay-btn { @apply px-2 py-1 text-xs rounded border bg-white hover:bg-gray-50; }
+.toPay-btn--icon { @apply p-1 w-7 h-7 rounded-full flex items-center justify-center; }
+.toPay-btn--icon svg { width: 16px; height: 16px; }
 
-/* ===== CELDA 2 y 3 placeholders (unificada) ===== */
-.notes-box { @apply text-sm text-gray-500 h-full flex items-center justify-center; }
-/* IMPORTANTE: payments-box ya NO centra ni usa flex para no “engordar” la card */
-.payments-box { @apply h-full text-sm text-gray-700; }
+/* ===== PANEL GENÉRICO (para celdas 2 y 3) ===== */
+.panel { @apply h-full; display: grid; grid-template-columns: 1fr auto; column-gap: .5rem; align-items: start; }
+.panel__list { @apply flex-1 text-sm text-gray-700 overflow-auto pr-2; max-height: 100px; }
+.panel__toolbar { @apply flex justify-end; align-self: start; justify-content: flex-end;}
 
-/* ===== NUEVO: BOTONES DE ESTADO ===== */
+/* ===== NOTAS (contenido) ===== */
+.notes-empty { @apply text-gray-400 italic; }
+.note-item { @apply pb-2; }
+.note-head { @apply flex items-center justify-between; }
+.note-meta { font-size: 11px; @apply text-gray-500; }
+.note-body { @apply whitespace-pre-wrap break-words; }
+.note-sep { @apply my-2 border-t; border-color:#e5e7eb; }
+
+/* Botón + (ya NO flotante) */
+.notes-addwrap, .pay-addwrap { position: static; right: auto; bottom: auto; z-index: auto; }
+.notes-addbtn, .pay-addbtn { @apply w-7 h-7 rounded-full border bg-white text-gray-700 leading-none flex items-center justify-center shadow hover:bg-gray-50; }
+
+/* ===== PAGOS (lista interna) ===== */
+.payments-list { @apply pr-2 overflow-auto; max-height: 100px; }
+.payments-empty { @apply text-gray-400 italic; }
+.pay-item { @apply grid items-center; grid-template-columns: 1fr auto; gap:.25rem; padding:.125rem 0; }
+.pay-left { @apply flex items-center gap-2; }
+.pay-amt { @apply text-gray-700 text-right text-xs font-semibold; }
+.pay-cur { @apply inline-flex items-center px-1.5 py-0.5 rounded-md border text-xs bg-white text-gray-800 border-gray-300; }
+.pay-meta { font-size: 11px; @apply text-gray-500; }
+.pay-sep { @apply my-2 border-t; border-color:#e5e7eb; }
+.pay-group-head { @apply flex items-center justify-between text-xs text-gray-600 mt-1 mb-1; }
+.pay-total { @apply text-right text-xs font-semibold text-black; }
+
+/* ===== NUEVO: BOTONES DE ESTADO (celda 4) ===== */
 .status-stack-new { @apply relative flex flex-col gap-2 pr-2; }
 .pill-wrap { @apply relative; }
 .pill-btn { @apply w-full h-7 px-2 text-xs rounded border flex items-center justify-center select-none; }
@@ -147,8 +160,9 @@
 .pill-btn--amber-active { @apply bg-yellow-100 border-yellow-500 text-yellow-900; }
 .pill-btn--gray-active { @apply bg-gray-200 border-gray-500 text-gray-900; }
 
-/* ===== Mini popover (todas las variantes) ===== */
-.mini-popover { @apply absolute top-8 right-0 w-64 p-3 rounded-lg border bg-white shadow-xl; z-index:1000; opacity:1; }
+/* ===== Mini popover (PORTAL) ===== */
+/* Solo estilos visuales: el posicionamiento lo hace el PopoverPortal con position:fixed */
+.mini-popover { @apply w-64 p-3 rounded-lg border bg-white shadow-xl; z-index:1000; opacity: 1; }
 .mini-popover__row { @apply mb-2; }
 .mini-popover__row--note { @apply mb-3; }
 .mini-popover__lab { @apply block text-xs text-gray-600 mb-1; }
@@ -163,22 +177,23 @@
 .status-stack { display: none; }
 .pill-fixed { display: none; }
 
-/* ===== PAGOS (celda 3) ===== */
-.payments-wrap { position: relative; height: 100%; padding-bottom: 2rem; } /* espacio para botón + */
-.payments-list { @apply pr-2 overflow-auto; max-height: 100px; } /* igual que notas */
-.payments-empty { @apply text-gray-400 italic; }
-.pay-item { @apply grid items-center; grid-template-columns: 1fr auto; gap:.25rem; padding:.125rem 0; }
-.pay-left { @apply flex items-center gap-2; }
-.pay-amt { @apply text-right font-semibold; }
-.pay-cur { @apply inline-flex items-center px-1.5 py-0.5 rounded-md border text-xs bg-white text-gray-800 border-gray-300; }
-.pay-meta { @apply text-[11px] text-gray-500; }
-.pay-sep { @apply my-2 border-t; border-color:#e5e7eb; }
-.pay-group-head { @apply flex items-center justify-between text-xs text-gray-600 mt-1 mb-1; }
-.pay-total { @apply text-xs font-semibold; }
-.pay-addwrap { position:absolute; right:.5rem; bottom:.5rem; z-index:10; }
-.pay-addbtn { @apply w-7 h-7 rounded-full border bg-white text-gray-700 leading-none flex items-center justify-center shadow hover:bg-gray-50; }
-.pay-pop { right: .5rem; bottom: 2.5rem; top: auto; }
+
+/* Toolbar de export en la tabla inferior */
+.btable__toolbar { @apply flex items-center justify-end py-2; }
+
+/* Quita el “estilo card” en filas; controlaremos las líneas a mano */
+.table.btable .tr { border-bottom: none; }
+
+/* Línea negra arriba de cada nueva reserva */
+.btr--res-sep { border-top: 2px solid #0f172a; }
+
+/* Línea gris arriba entre pagos de la misma reserva */
+.btr--pay { border-top: 1px solid #e5e7eb; }
+
+/* Tipografía de montos: Subtotal (A pagar) negro; Pagos gris oscuro, ambos al mismo tamaño */
+.td--money-strong { font-size: 0.875rem; @apply text-black font-semibold text-right; }
+.td--money-dim    { font-size: 0.875rem; @apply text-gray-700 font-semibold text-right; }
 
 
-/* Card “activa” cuando algún popover de esa card está abierto */
-.res-card4--active { outline: 2px solid #93c5fd; outline-offset: 2px; }
+
+
