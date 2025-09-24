@@ -423,6 +423,7 @@ function PaymentsList({ r }) {
             <div key={gi + "_" + i} className="pay-item">
               <div className="pay-left">
                 <span className="chip chip--off">{p.method || "—"}</span>
+                {p.concept ? <span className="chip chip--off">{p.concept}</span> : null}
                 <span className="pay-meta">{p.by ? p.by : "host"} · {fmtTS(p.ts)}</span>
               </div>
               <div className="pay-amt">{Number(p.amount || 0).toFixed(2)} {cur}</div>
@@ -435,6 +436,7 @@ function PaymentsList({ r }) {
     </div>
   );
 }
+
 
 /* --------- Nueva Línea 4: editor de toPay en USD + badge ---------- */
 

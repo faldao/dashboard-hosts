@@ -5,14 +5,13 @@
 //  - "checkout"    : marca check-out (ídem)
 //  - "contact"     : marca contactado (ídem)
 //  - "addNote"     : agrega nota de host (payload: { text })
-//  - "addPayment"  : agrega pago de host (payload: { amount, currency, method, when? })
+//  - "addPayment"  : agrega pago de host (payload: { amount, currency, method, concept?, when? })
 //  - "setToPay"    : setea total a pagar en USD con desglose (payload: { baseUSD, ivaPercent?, ivaUSD?, cleaningUSD?, fxRate? })
 // Todas las acciones guardan historial de cambios (subcolección 'historial') con diff.
 
 import { firestore, FieldValue, Timestamp } from '../lib/firebaseAdmin.js';
 import crypto from 'crypto';
 
-// ------------------ helpers comunes (alineados con tus otros endpoints) ------------------
 const log = (...args) => console.log('[ReservationMutations]', ...args);
 const IGNORE_KEYS = new Set(['updatedAt','createdAt','contentHash','enrichmentStatus','enrichedAt','lastUpdatedAt','lastUpdatedBy']);
 
@@ -45,7 +44,6 @@ function bad(res, code, error) {
 }
 
 function toTs(when) {
-  // when puede venir null/"now" => serverTimestamp; ISO string => Timestamp.fromDate
   if (!when || when === 'now') return FieldValue.serverTimestamp();
   try {
     const d = new Date(when);
@@ -58,22 +56,19 @@ const num = (x) => {
   return isFinite(n) ? n : 0;
 };
 
-// ---- FX helper: busca ARS/USD del día (YYYY-MM-DD) en 'fx_rates/{dateISO}.rate'
 async function getUsdArsRateByDate(dateISO) {
   try {
     if (!dateISO) return null;
     const id = String(dateISO).slice(0, 10);
     const ref = firestore.collection('fx_rates').doc(id);
     const snap = await ref.get();
-    const rate = snap.exists ? Number(snap.data()?.rate) : null; // ARS por 1 USD
+    const rate = snap.exists ? Number(snap.data()?.rate) : null;
     return isFinite(rate) && rate > 0 ? rate : null;
   } catch (e) {
     log('WARN getUsdArsRateByDate', e?.message);
     return null;
   }
 }
-
-// Saca la fecha de referencia para FX: arrival_iso si existe; si no, hoy (zona servidor)
 function getReservationFxDateISO(res) {
   if (res?.arrival_iso) {
     try {
@@ -83,9 +78,6 @@ function getReservationFxDateISO(res) {
   }
   return new Date().toISOString().slice(0,10);
 }
-
-// Calcula total pagado expresado en USD, usando rate del día (si existe) para ARS.
-// Devuelve { paidUSD, rateUsed, note }
 function computePaidUSD(payments = [], fxRate) {
   let paidUSD = 0;
   for (const p of payments || []) {
@@ -94,12 +86,10 @@ function computePaidUSD(payments = [], fxRate) {
     if (!amt) continue;
     if (curr === 'USD') paidUSD += amt;
     else if (curr === 'ARS' && fxRate) paidUSD += (amt / fxRate);
-    // otras monedas se ignoran aquí; se pueden extender luego
   }
   return { paidUSD, rateUsed: fxRate || null, note: !fxRate ? 'FX missing: USD total ignores ARS' : null };
 }
 
-// ------------------ lógica principal ------------------
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return ok(res, { ok: true });
   if (req.method !== 'POST') return bad(res, 405, 'Método no permitido');
@@ -119,7 +109,6 @@ export default async function handler(req, res) {
     let historyPayload = {};
     let changeTag = action;
 
-    // -------- acciones --------
     if (action === 'checkin') {
       update.checkin_at = toTs(payload.when ?? null);
 
@@ -147,29 +136,29 @@ export default async function handler(req, res) {
       historyPayload.note = unifiedNote;
 
     } else if (action === 'addPayment') {
-      const amount = Number(payload?.amount);
+      const amount  = Number(payload?.amount);
       const currency = String(payload?.currency || 'ARS').toUpperCase();
-      const method = String(payload?.method || 'Efectivo');
+      const method   = String(payload?.method || 'Efectivo');
+      const concept  = String(payload?.concept || '').trim() || null; // ← NUEVO
       if (!isFinite(amount) || amount <= 0) return bad(res, 400, 'Monto inválido');
 
       const payment = {
-        ts: payload?.when ? toTs(payload.when) : Timestamp.now(), // <-- permite fecha/hora opcional
+        ts: payload?.when ? toTs(payload.when) : Timestamp.now(),
         by: user || 'host',
         source: 'host',
         wubook_id: null,
         amount,
         currency,
         method,
+        concept, // ← NUEVO (se guarda si viene, o null)
       };
 
       const prevPaysUnified = Array.isArray(before.payments) ? before.payments.slice(0, 1000) : [];
       update.payments = [...prevPaysUnified, payment];
 
-      // Estado de pago (heurística con USD y ARS->USD si hay FX de arrival)
       try {
         const toPayUSD = Number(before.toPay);
         const fxDateISO = getReservationFxDateISO(before);
-        // override opcional vía payload.fxRate (no expuesto en UI por ahora)
         const fxRate = payload?.fxRate ? Number(payload.fxRate) : (await getUsdArsRateByDate(fxDateISO));
         const { paidUSD } = computePaidUSD(update.payments, isFinite(fxRate) && fxRate > 0 ? fxRate : null);
 
@@ -185,12 +174,10 @@ export default async function handler(req, res) {
       historyPayload.payment = payment;
 
     } else if (action === 'setToPay') {
-      // Total en USD con desglose de IVA y limpieza. IVA puede venir como porcentaje (ivaPercent) o monto (ivaUSD).
       const baseUSD = num(payload?.baseUSD);
       const cleaningUSD = num(payload?.cleaningUSD);
       let ivaUSD = num(payload?.ivaUSD);
       const ivaPercent = num(payload?.ivaPercent);
-
       if (!ivaUSD && ivaPercent) ivaUSD = +(baseUSD * (ivaPercent / 100)).toFixed(2);
 
       const toPayUSD = +(baseUSD + ivaUSD + cleaningUSD).toFixed(2);
@@ -199,14 +186,12 @@ export default async function handler(req, res) {
       update.toPay = toPayUSD;
       update.currency = 'USD';
 
-      // FX del día de check-in (o arrival); aceptar override si viene
       const fxDateISO = getReservationFxDateISO(before);
       const fxRate =
         payload?.fxRate && isFinite(Number(payload.fxRate)) && Number(payload.fxRate) > 0
           ? Number(payload.fxRate)
           : (await getUsdArsRateByDate(fxDateISO));
 
-      // Recalcular estado considerando pagos existentes (USD + ARS/FX)
       try {
         const pays = Array.isArray(before.payments) ? before.payments : [];
         const { paidUSD, rateUsed, note } = computePaidUSD(pays, isFinite(fxRate) && fxRate > 0 ? fxRate : null);
@@ -225,7 +210,6 @@ export default async function handler(req, res) {
       return bad(res, 400, `Acción no soportada: ${action}`);
     }
 
-    // -------- re-calcular hash y registrar historial con diff --------
     const afterPreview = { ...before, ...update };
     const newHash = hashDoc(afterPreview);
     update.contentHash = newHash;
@@ -258,7 +242,6 @@ export default async function handler(req, res) {
   }
 }
 
-// diff básico (alineado a lo que ya usás)
 function computeDiff(a = {}, b = {}) {
   const out = {};
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
@@ -271,6 +254,3 @@ function computeDiff(a = {}, b = {}) {
   }
   return out;
 }
-
-
-
