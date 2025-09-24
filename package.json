@@ -4,6 +4,8 @@
   "type": "module",
   "dependencies": {
     "axios": "^1.12.2",
+    "exceljs": "^4.4.0",
+    "file-saver": "^2.0.5",
     "firebase": "^10.7.0",
     "firebase-admin": "^13.5.0",
     "luxon": "^3.7.2",
@@ -13,8 +15,8 @@
     "react-router-dom": "^7.6.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.0.0",
     "@tailwindcss/vite": "^4.1.13",
+    "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.1.13",
     "vite": "^5.0.0"
   },
@@ -24,5 +26,3 @@
     "preview": "vite preview --port 5173"
   }
 }
-
-
