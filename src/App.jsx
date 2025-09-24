@@ -746,14 +746,6 @@ function BottomTable({ items, onOpen }) {
 }
 
 /* ---------- App ---------- */
-// App.jsx (fragmento relevante)
-import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
-import { DateTime } from "luxon";
-
-const TZ = "America/Argentina/Buenos_Aires";
-
-// ... helpers y hooks (sin cambios) ...
 
 export default function App() {
   const today = DateTime.now().setZone(TZ).toISODate();
