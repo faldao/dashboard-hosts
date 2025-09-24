@@ -26,7 +26,6 @@ const toLocalIso = (dateStr, timeStr) => {
   return dt.isValid ? dt.toISO() : null;
 };
 const getPayments = (r) => (r && Array.isArray(r.payments) ? r.payments : []);
-
 const groupPaymentsByCurrency = (payments = []) => {
   const map = new Map();
   for (const p of payments) {
@@ -41,12 +40,9 @@ const groupPaymentsByCurrency = (payments = []) => {
     return sb - sa;
   })]);
 };
-
 const sumAmount = (list = []) => list.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-
-  //recupera notas//
-  const getNotes = (r) => (r && Array.isArray(r.notes) ? r.notes : []);
-
+//recupera notas//
+const getNotes = (r) => (r && Array.isArray(r.notes) ? r.notes : []);
 // Convierte Timestamps/firestore/json a texto corto
 const fmtTS = (ts) => {
   if (!ts) return "";
@@ -63,6 +59,16 @@ const fmtTS = (ts) => {
   return "";
 };
 
+// === Helpers de pago (badge y normalización numérica)
+const payBadge = (status) =>
+  status === "paid" ? <span className="badge badge--paid">Pago</span> :
+  status === "partial" ? <span className="badge badge--partial">Parcial</span> :
+  <span className="badge badge--unpaid">Impago</span>;
+
+const toNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
 /* ---------- Chip reutilizable ---------- */
 const Chip = ({ label, active, tone = "sky" }) => {
@@ -163,59 +169,13 @@ function Paginator({ page, totalPages, onPage }) {
 }
 
 /* ---------- UI: ActionButton con popover ---------- */
-function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, onDone }) {
-  const [open, setOpen] = useState(false);
+function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, isOpen, onToggle, onDone }) {
   const [d, setD] = useState(defaultDateISO || "");
   const [t, setT] = useState(defaultTimeHHmm || "");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const label = type === "contact" ? "Contactado" : type === "checkin" ? "Check-in" : "Check-out";
-
-  const confirm = async () => {
-    try {
-      setSubmitting(true);
-
-      // Defaults de when por tipo
-      let whenISO;
-      if (type === "contact") {
-        // si no completan, null => serverTimestamp (ahora)
-        whenISO = d && t ? toLocalIso(d, t) : null;
-      } else if (type === "checkin") {
-        const dateUse = d || (r.arrival_iso || "");
-        const timeUse = t || "15:00";
-        whenISO = toLocalIso(dateUse, timeUse);
-      } else {
-        const dateUse = d || (r.departure_iso || "");
-        const timeUse = t || "11:00";
-        whenISO = toLocalIso(dateUse, timeUse);
-      }
-
-      // 1) acción principal
-      await axios.post("/api/reservationMutations", {
-        id: r.id, action: type, payload: { when: whenISO }, user: "host"
-      });
-
-      // 2) nota opcional
-      const clean = (note || "").trim();
-      if (clean) {
-        await axios.post("/api/reservationMutations", {
-          id: r.id, action: "addNote", payload: { text: clean }, user: "host"
-        });
-      }
-
-      onDone?.();
-      setOpen(false);
-      setNote("");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  //recupera notas//
-  const getNotes = (r) => (r && Array.isArray(r.notes) ? r.notes : []);
-
-  // Clase visual: gris por defecto; color SOLO cuando está activo
   const btnClass = cls(
     "pill-btn",
     !active
@@ -227,28 +187,62 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
           : "pill-btn--gray-active"
   );
 
+  const confirm = async () => {
+    try {
+      setSubmitting(true);
+      let whenISO;
+      if (type === "contact") {
+        whenISO = d && t ? toLocalIso(d, t) : null;
+      } else if (type === "checkin") {
+        const dateUse = d || (r.arrival_iso || "");
+        const timeUse = t || "15:00";
+        whenISO = toLocalIso(dateUse, timeUse);
+      } else {
+        const dateUse = d || (r.departure_iso || "");
+        const timeUse = t || "11:00";
+        whenISO = toLocalIso(dateUse, timeUse);
+      }
+
+      await axios.post("/api/reservationMutations", {
+        id: r.id, action: type, payload: { when: whenISO }, user: "host"
+      });
+
+      const clean = (note || "").trim();
+      if (clean) {
+        await axios.post("/api/reservationMutations", {
+          id: r.id, action: "addNote", payload: { text: clean }, user: "host"
+        });
+      }
+
+      setNote("");
+      onDone?.();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <div className="pill-wrap" onClick={(e) => e.stopPropagation()}>
-      <button type="button" className={btnClass} onClick={() => setOpen(v => !v)} disabled={submitting}>
+    <div className="pill-wrap" onClick={(e)=>e.stopPropagation()}>
+      <button type="button" className={btnClass} onClick={onToggle} disabled={submitting}>
         {label}
       </button>
 
-      {open && (
-        <div className="mini-popover" role="dialog" aria-label={label} onClick={(e) => e.stopPropagation()}>
+      {isOpen && (
+        <div className="mini-popover" role="dialog" aria-label={label} onClick={(e)=>e.stopPropagation()}>
           <div className="mini-popover__row">
             <label className="mini-popover__lab">Fecha</label>
-            <input type="date" className="mini-popover__field" value={d} onChange={(e) => setD(e.target.value)} />
+            <input type="date" className="mini-popover__field" value={d} onChange={(e)=>setD(e.target.value)} />
           </div>
           <div className="mini-popover__row">
             <label className="mini-popover__lab">Hora</label>
-            <input type="time" className="mini-popover__field" value={t} onChange={(e) => setT(e.target.value)} />
+            <input type="time" className="mini-popover__field" value={t} onChange={(e)=>setT(e.target.value)} />
           </div>
           <div className="mini-popover__row mini-popover__row--note">
             <label className="mini-popover__lab">Nota (opcional)</label>
-            <textarea className="mini-popover__field h-16" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Agregar nota…" />
+            <textarea className="mini-popover__field h-16" value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Agregar nota…" />
           </div>
           <div className="mini-popover__actions">
-            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={() => setOpen(false)} disabled={submitting}>Cancelar</button>
+            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle} disabled={submitting}>Cancelar</button>
             <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={confirm} disabled={submitting}>
               {submitting ? "Guardando…" : "Confirmar"}
             </button>
@@ -259,8 +253,9 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
   );
 }
 
-function PaymentAddButton({ r, onDone }) {
-  const [open, setOpen] = useState(false);
+/* -------------------boton registro de pagos -----------------------------*/
+
+function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState((r.currency || "ARS").toUpperCase());
   const [method, setMethod] = useState("Efectivo");
@@ -280,12 +275,11 @@ function PaymentAddButton({ r, onDone }) {
           amount: val,
           currency: (currency || "ARS").toUpperCase(),
           method,
-          when: dateStr ? toLocalIso(dateStr, timeStr) : null, // requiere el pequeño ajuste backend para conservarlo
+          when: dateStr ? toLocalIso(dateStr, timeStr) : null,
         },
         user: "host",
       });
       setAmount("");
-      setOpen(false);
       onDone?.();
     } finally {
       setSending(false);
@@ -293,46 +287,38 @@ function PaymentAddButton({ r, onDone }) {
   };
 
   return (
-    <div className="pay-addwrap" onClick={(e) => e.stopPropagation()}>
-      <button type="button" className="pay-addbtn" title="Agregar pago" onClick={() => setOpen(v => !v)}>+</button>
-      {open && (
-        <div className="mini-popover" role="dialog" aria-label="Agregar pago" onClick={(e) => e.stopPropagation()}>
+    <div className="pay-addwrap" onClick={(e)=>e.stopPropagation()}>
+      <button type="button" className="pay-addbtn" title="Agregar pago" onClick={onToggle}>+</button>
+      {isOpen && (
+        <div className="mini-popover pay-pop" role="dialog" aria-label="Agregar pago" onClick={(e)=>e.stopPropagation()}>
           <div className="mini-popover__title">Agregar pago</div>
           <div className="mini-popover__row">
             <label className="mini-popover__lab">Monto</label>
-            <input className="mini-popover__field" type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+            <input className="mini-popover__field" type="number" step="0.01" min="0" value={amount} onChange={(e)=>setAmount(e.target.value)} placeholder="0.00" />
           </div>
           <div className="mini-popover__row">
             <label className="mini-popover__lab">Moneda</label>
-            <select className="mini-popover__field" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              <option>ARS</option>
-              <option>USD</option>
-              <option>EUR</option>
-              <option>BRL</option>
-              <option>CLP</option>
+            <select className="mini-popover__field" value={currency} onChange={(e)=>setCurrency(e.target.value)}>
+              <option>ARS</option><option>USD</option><option>EUR</option><option>BRL</option><option>CLP</option>
             </select>
           </div>
           <div className="mini-popover__row">
             <label className="mini-popover__lab">Método</label>
-            <select className="mini-popover__field" value={method} onChange={(e) => setMethod(e.target.value)}>
-              <option>Efectivo</option>
-              <option>Transferencia</option>
-              <option>Tarjeta</option>
-              <option>MercadoPago</option>
-              <option>Otro</option>
+            <select className="mini-popover__field" value={method} onChange={(e)=>setMethod(e.target.value)}>
+              <option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>MercadoPago</option><option>Otro</option>
             </select>
           </div>
           <div className="mini-popover__row">
             <label className="mini-popover__lab">Fecha</label>
-            <input type="date" className="mini-popover__field" value={dateStr} onChange={(e) => setDateStr(e.target.value)} />
+            <input type="date" className="mini-popover__field" value={dateStr} onChange={(e)=>setDateStr(e.target.value)} />
           </div>
           <div className="mini-popover__row">
             <label className="mini-popover__lab">Hora</label>
-            <input type="time" className="mini-popover__field" value={timeStr} onChange={(e) => setTimeStr(e.target.value)} />
+            <input type="time" className="mini-popover__field" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} />
           </div>
           <div className="mini-popover__actions">
-            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={() => setOpen(false)} disabled={sending}>Cancelar</button>
-            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={sending || !(Number(amount) > 0)}>
+            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
+            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={!(Number(amount) > 0) || sending}>
               {sending ? "Guardando…" : "Guardar"}
             </button>
           </div>
@@ -342,9 +328,9 @@ function PaymentAddButton({ r, onDone }) {
   );
 }
 
+/* ----------------------------Boton de agregado de notaas --------------------------------*/
 
-function NoteAddButton({ r, onDone }) {
-  const [open, setOpen] = useState(false);
+function NoteAddButton({ r, isOpen, onToggle, onDone }) {
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -360,7 +346,6 @@ function NoteAddButton({ r, onDone }) {
         user: "host",
       });
       setNote("");
-      setOpen(false);
       onDone?.();
     } finally {
       setSending(false);
@@ -368,17 +353,17 @@ function NoteAddButton({ r, onDone }) {
   };
 
   return (
-    <div className="notes-addwrap" onClick={(e) => e.stopPropagation()}>
-      <button type="button" className="notes-addbtn" title="Agregar nota" onClick={() => setOpen(v => !v)}>+</button>
-      {open && (
-        <div className="mini-popover notes-pop" role="dialog" aria-label="Agregar nota" onClick={(e) => e.stopPropagation()}>
+    <div className="notes-addwrap" onClick={(e)=>e.stopPropagation()}>
+      <button type="button" className="notes-addbtn" title="Agregar nota" onClick={onToggle}>+</button>
+      {isOpen && (
+        <div className="mini-popover notes-pop" role="dialog" aria-label="Agregar nota" onClick={(e)=>e.stopPropagation()}>
           <div className="mini-popover__title">Agregar nota</div>
           <div className="mini-popover__row mini-popover__row--note">
             <label className="mini-popover__lab">Nueva nota</label>
-            <textarea className="mini-popover__field h-24" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Escribí tu nota…" />
+            <textarea className="mini-popover__field h-24" value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Escribí tu nota…" />
           </div>
           <div className="mini-popover__actions">
-            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={() => setOpen(false)} disabled={sending}>Cancelar</button>
+            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle} disabled={sending}>Cancelar</button>
             <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={save} disabled={sending || !note.trim()}>
               {sending ? "Guardando…" : "Guardar"}
             </button>
@@ -389,8 +374,8 @@ function NoteAddButton({ r, onDone }) {
   );
 }
 
-/*------------------- Armado de lista de pagos ------------------- */
 
+/*------------------- Armado de lista de pagos ------------------- */
 function PaymentsList({ r }) {
   const payments = getPayments(r);
   if (!payments.length) return <div className="payments-empty">Sin pagos</div>;
@@ -423,10 +408,145 @@ function PaymentsList({ r }) {
   );
 }
 
+/* --------- Nueva Línea 4: editor de toPay en USD + badge ---------- */
+function ToPayLine({ r, onRefresh }) {
+  const [open, setOpen] = useState(false);
 
+  // Borrador de edición (base, iva% o iva$, limpieza)
+  const [baseUSD, setBaseUSD] = useState(
+    (typeof r.toPay === "number" && isFinite(r.toPay)) ? String(r.toPay.toFixed(2)) : ""
+  );
+  const [ivaMode, setIvaMode] = useState("percent"); // "percent" | "amount"
+  const [ivaPercent, setIvaPercent] = useState("0");
+  const [ivaUSD, setIvaUSD] = useState("");
+  const [cleaningUSD, setCleaningUSD] = useState("");
+
+  const onOpen = () => setOpen(true);
+  const onCancel = () => setOpen(false);
+
+  const onSave = async () => {
+    const payload = {
+      baseUSD: toNum(baseUSD),
+      cleaningUSD: toNum(cleaningUSD),
+    };
+    if (ivaMode === "percent") payload.ivaPercent = toNum(ivaPercent);
+    else payload.ivaUSD = toNum(ivaUSD);
+
+    await axios.post("/api/reservationMutations", {
+      id: r.id,
+      action: "setToPay",
+      user: "host",
+      payload
+    });
+
+    setOpen(false);
+    onRefresh?.();
+  };
+
+  return (
+    <>
+      <div className="left__line4">
+        <span className="toPay-view">
+          <span className="toPay-cur">USD</span>
+          <strong>{(typeof r.toPay === "number" && isFinite(r.toPay)) ? r.toPay.toFixed(2) : "-"}</strong>
+        </span>
+        <button type="button" className="toPay-btn" onClick={onOpen}>Editar</button>
+        {payBadge(r.payment_status || "unpaid")}
+      </div>
+
+      {open && (
+        <div className="mini-popover" role="dialog" aria-label="Editar total a pagar" onClick={(e) => e.stopPropagation()}>
+          <div className="mini-popover__title">Total a pagar (USD)</div>
+
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">Base USD</label>
+            <input
+              className="mini-popover__field"
+              type="number"
+              step="0.01"
+              min="0"
+              value={baseUSD}
+              onChange={(e) => setBaseUSD(e.target.value)}
+              placeholder="0.00"
+            />
+          </div>
+
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">IVA</label>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1">
+                <input
+                  type="radio"
+                  name={`ivaMode_${r.id}`}
+                  value="percent"
+                  checked={ivaMode === "percent"}
+                  onChange={() => setIvaMode("percent")}
+                />
+                <span>%</span>
+              </label>
+              <input
+                className="mini-popover__field"
+                type="number"
+                step="0.01"
+                min="0"
+                value={ivaPercent}
+                onChange={(e) => setIvaPercent(e.target.value)}
+                placeholder="21"
+                disabled={ivaMode !== "percent"}
+                style={{ width: 90 }}
+              />
+
+              <label className="flex items-center gap-1 ml-3">
+                <input
+                  type="radio"
+                  name={`ivaMode_${r.id}`}
+                  value="amount"
+                  checked={ivaMode === "amount"}
+                  onChange={() => setIvaMode("amount")}
+                />
+                <span>USD</span>
+              </label>
+              <input
+                className="mini-popover__field"
+                type="number"
+                step="0.01"
+                min="0"
+                value={ivaUSD}
+                onChange={(e) => setIvaUSD(e.target.value)}
+                placeholder="0.00"
+                disabled={ivaMode !== "amount"}
+                style={{ width: 110 }}
+              />
+            </div>
+          </div>
+
+          <div className="mini-popover__row">
+            <label className="mini-popover__lab">Limpieza (USD)</label>
+            <input
+              className="mini-popover__field"
+              type="number"
+              step="0.01"
+              min="0"
+              value={cleaningUSD}
+              onChange={(e) => setCleaningUSD(e.target.value)}
+              placeholder="0.00"
+            />
+          </div>
+
+          <div className="mini-popover__actions">
+            <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onCancel}>Cancelar</button>
+            <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={onSave}>
+              Guardar
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
-function ReservationCard({ r, onRefresh }) {
+function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   const depto = r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—";
   const phone = r.customer_phone || r.telefono || "";
   const email = r.customer_email || "";
@@ -434,34 +554,38 @@ function ReservationCard({ r, onRefresh }) {
   const inDt = fmtDate(r.arrival_iso);
   const outDt = fmtDate(r.departure_iso);
   const channel = r.source || r.channel_name || "—";
-  const deptoTagClass = cls("tag", "tag--depto", r.checkout_at && "tag--depto--out");
+  const deptoTagClass = cls("tag","tag--depto", r.checkin_at ? "tag--depto--in" : (r.checkout_at ? "tag--depto--out" : ""));
+
+  // --- NUEVO: card activa si el popover actual empieza con su id ---
+  const isCardActive = !!activePopover && String(activePopover).startsWith(`${r.id}::`);
+  const cardClassName = cls("res-card4", isCardActive && "res-card4--active");
+
+  // ids únicos por acción en esta reserva
+  const pidNote     = `${r.id}::addNote`;
+  const pidPay      = `${r.id}::addPayment`;
+  const pidContact  = `${r.id}::contact`;
+  const pidCheckIn  = `${r.id}::checkin`;
+  const pidCheckOut = `${r.id}::checkout`;
 
   const defContactDate = DateTime.now().setZone(TZ).toISODate();
   const defContactTime = DateTime.now().setZone(TZ).toFormat("HH:mm");
-  const defInDate = r.arrival_iso || "";
+  const defInDate  = r.arrival_iso   || "";
   const defOutDate = r.departure_iso || "";
 
   return (
-    <div className="res-card4">
-      {/* CELDA 1: bloque izquierdo (3 líneas) */}
+    <div className={cardClassName} onClick={(e)=>e.stopPropagation()}>
+      {/* CELDA 1 */}
       <div className="res-cell res-cell--left">
         <div className="left__line1">
           <span className={deptoTagClass}>{depto}</span>
-          <span className={cls("name", r.contacted_at && "name--contacted")}>
-            {r.nombre_huesped || "Sin nombre"}
-          </span>
+          <span className={cls("name", r.contacted_at && "name--contacted")}>{r.nombre_huesped || "Sin nombre"}</span>
           {flag && <span className="text-sm">{flag}</span>}
         </div>
 
         <div className="left__line2">
           {phone && <span>{phone}</span>}
           {email && (
-            <a
-              className="mail-link"
-              href={`mailto:${email}`}
-              title={email}
-              onClick={(e) => e.stopPropagation()}
-            >
+            <a className="mail-link" href={`mailto:${email}`} title={email} onClick={(e)=>e.stopPropagation()}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" />
                 <path d="m22 8-10 6L2 8" />
@@ -475,63 +599,57 @@ function ReservationCard({ r, onRefresh }) {
           <span>In: {inDt} · Out: {outDt}</span>
           <span className="tag--channel">{channel}</span>
         </div>
+
+        <ToPayLine r={r} onRefresh={onRefresh} />
       </div>
 
-      {/* CELDA 2: Notas (lista + botón +) */}
+      {/* CELDA 2: Notas */}
       <div className="res-cell">
         <div className="notes-wrap">
           <div className="notes-list">
-  {(() => {
-    const list = getNotes(r).slice().reverse(); // más recientes arriba
-    return list.length ? (
-      list.map((n, i) => (
-        <div key={i} className="note-item">
-          <div className="note-head">
-            <span className="note-meta">
-              {fmtTS(n.ts)}{n.by ? ` · ${n.by}` : ""}
-            </span>
-            <span className={cls("note-badge", n.source === "wubook" ? "note-badge--w" : "note-badge--h")}>
-              {n.source === "wubook" ? "WuBook" : "Host"}
-            </span>
+            {(() => {
+              const list = getNotes(r).slice().reverse();
+              return list.length ? list.map((n, i) => (
+                <div key={i} className="note-item">
+                  <div className="note-head">
+                    <span className="note-meta">{fmtTS(n.ts)}{n.by ? ` · ${n.by}` : ""}</span>
+                    <span className={cls("note-badge", n.source === "wubook" ? "note-badge--w" : "note-badge--h")}>
+                      {n.source === "wubook" ? "WuBook" : "Host"}
+                    </span>
+                  </div>
+                  <div className="note-body">{n.text}</div>
+                  {i < list.length - 1 && <div className="note-sep" />}
+                </div>
+              )) : <div className="notes-empty">Sin notas</div>;
+            })()}
           </div>
-          <div className="note-body">{n.text}</div>
-          {i < list.length - 1 && <div className="note-sep" />}
-        </div>
-      ))
-    ) : (
-      <div className="notes-empty">Sin notas</div>
-    );
-  })()}
-</div>
 
-          {/* Botón flotante para agregar nota */}
-          <NoteAddButton r={r} onDone={() => onRefresh?.()} />
+          {/* Botón + nota con popover global */}
+          <NoteAddButton
+            r={r}
+            isOpen={activePopover === pidNote}
+            onToggle={() => onPopoverToggle(pidNote)}
+            onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
+          />
         </div>
       </div>
 
-{/* CELDA 3: Pagos (estado + lista + botón +) */}
-<div className="res-cell">
-  <div className="payments-wrap">
-    <div className="payments-box" style={{ justifyContent: "space-between", alignItems: "start", gap: ".5rem", flexDirection: "column", display: "flex" }}>
-      {/* Estado de pago */}
-      <div>
-        {r.payment_status === "paid"
-          ? <span className="badge badge--paid">Pago</span>
-          : r.payment_status === "partial"
-            ? <span className="badge badge--partial">Parcial</span>
-            : <span className="badge badge--unpaid">Impago</span>}
+      {/* CELDA 3: Pagos */}
+      <div className="res-cell">
+        <div className="payments-wrap">
+          <div className="payments-box" style={{ justifyContent: "space-between", alignItems: "start", gap: ".5rem", flexDirection: "column", display: "flex" }}>
+            <PaymentsList r={r} />
+          </div>
+          <PaymentAddButton
+            r={r}
+            isOpen={activePopover === pidPay}
+            onToggle={() => onPopoverToggle(pidPay)}
+            onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
+          />
+        </div>
       </div>
 
-      {/* Lista de pagos con grupos por moneda */}
-      <PaymentsList r={r} />
-    </div>
-
-    {/* Botón flotante para agregar pago */}
-    <PaymentAddButton r={r} onDone={() => { /* refrescamos la card desde el padre */ }} />
-  </div>
-</div>
-
-      {/* CELDA 4: 3 botones con popover */}
+      {/* CELDA 4: Estado */}
       <div className="res-cell">
         <div className="status-stack-new">
           <ActionButton
@@ -541,7 +659,9 @@ function ReservationCard({ r, onRefresh }) {
             defaultDateISO={defContactDate}
             defaultTimeHHmm={defContactTime}
             tone="amber"
-            onDone={onRefresh}
+            isOpen={activePopover === pidContact}
+            onToggle={() => onPopoverToggle(pidContact)}
+            onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
           />
           <ActionButton
             r={r}
@@ -550,7 +670,9 @@ function ReservationCard({ r, onRefresh }) {
             defaultDateISO={defInDate}
             defaultTimeHHmm={"15:00"}
             tone="sky"
-            onDone={onRefresh}
+            isOpen={activePopover === pidCheckIn}
+            onToggle={() => onPopoverToggle(pidCheckIn)}
+            onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
           />
           <ActionButton
             r={r}
@@ -559,13 +681,16 @@ function ReservationCard({ r, onRefresh }) {
             defaultDateISO={defOutDate}
             defaultTimeHHmm={"11:00"}
             tone="gray"
-            onDone={onRefresh}
+            isOpen={activePopover === pidCheckOut}
+            onToggle={() => onPopoverToggle(pidCheckOut)}
+            onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
           />
         </div>
       </div>
     </div>
   );
 }
+
 
 /* ---------- UI: BottomTable (sin cambios funcionales) ---------- */
 function BottomTable({ items, onOpen }) {
@@ -621,18 +746,42 @@ function BottomTable({ items, onOpen }) {
 }
 
 /* ---------- App ---------- */
+// App.jsx (fragmento relevante)
+import { useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import { DateTime } from "luxon";
+
+const TZ = "America/Argentina/Buenos_Aires";
+
+// ... helpers y hooks (sin cambios) ...
+
 export default function App() {
   const today = DateTime.now().setZone(TZ).toISODate();
   const [dateISO, setDateISO] = useState(today);
   const { loading, items, counts, tab, setActiveTab, page, setPage, totalPages, refetch } = useDaily(dateISO);
 
+  // --- NUEVO: estado global de popovers ---
+  const [activePopover, setActivePopover] = useState(null);
+  const handlePopoverToggle = (popoverId) => {
+    setActivePopover((curr) => (curr === popoverId ? null : popoverId));
+  };
+  const closeAllPopovers = () => setActivePopover(null);
+
+  // Cerrar con Escape
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") closeAllPopovers(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const goto = (offsetDays) => {
     const d = DateTime.fromISO(dateISO, { zone: TZ }).plus({ days: offsetDays }).toISODate();
+    closeAllPopovers();
     setDateISO(d);
   };
 
   return (
-    <div className="app">
+    <div className="app" onClick={closeAllPopovers}>
       <header className="header">
         <div className="header__bar">
           <div className="flex items-center gap-2">
@@ -641,17 +790,17 @@ export default function App() {
           </div>
           <div className="header__actions">
             <button type="button" className="btn" onClick={() => goto(-1)}>← Ayer</button>
-            <button type="button" className="btn" onClick={() => setDateISO(DateTime.now().setZone(TZ).toISODate())}>Hoy</button>
+            <button type="button" className="btn" onClick={() => { setDateISO(DateTime.now().setZone(TZ).toISODate()); closeAllPopovers(); }}>Hoy</button>
             <button type="button" className="btn" onClick={() => goto(1)}>Mañana →</button>
-            <input className="input--date" type="date" value={dateISO} onChange={(e) => setDateISO(e.target.value)} />
+            <input className="input--date" type="date" value={dateISO} onChange={(e) => { setDateISO(e.target.value); closeAllPopovers(); }} />
           </div>
         </div>
       </header>
 
-      <main className="main">
+      <main className="main" onClick={(e) => e.stopPropagation()}>
         <div className="main__top">
-          <Tabs tab={tab} onChange={setActiveTab} counts={counts} />
-          <Paginator page={page} totalPages={totalPages} onPage={setPage} />
+          <Tabs tab={tab} onChange={(t)=>{ setActiveTab(t); closeAllPopovers(); }} counts={counts} />
+          <Paginator page={page} totalPages={totalPages} onPage={(p)=>{ setPage(p); closeAllPopovers(); }} />
         </div>
 
         {loading && <div className="loader">Cargando…</div>}
@@ -660,18 +809,23 @@ export default function App() {
           <div className="list">
             {items.length === 0 && <div className="empty empty--as-card">Sin reservas</div>}
             <div className="list__grid">
-              {items.map((r) => <ReservationCard key={r.id} r={r} onRefresh={refetch} />)}
+              {items.map((r) => (
+                <ReservationCard
+                  key={r.id}
+                  r={r}
+                  onRefresh={refetch}
+                  activePopover={activePopover}
+                  onPopoverToggle={handlePopoverToggle}
+                />
+              ))}
             </div>
           </div>
         )}
       </main>
 
       <section className="bottom">
-        {/* Por ahora mantenemos la tabla “tal cual”.
-            Le pasamos un no-op al onOpen para no abrir nada. */}
-        <BottomTable items={items} onOpen={() => { }} />
+        <BottomTable items={items} onOpen={() => {}} />
       </section>
     </div>
   );
 }
-
