@@ -183,6 +183,7 @@
 
       const fullName = `${r?.customer?.name || ''} ${r?.customer?.surname || ''}`.trim() || String(r?.booker) || 'N/D';
       let sourceChannel = r?.origin?.channel && r.origin.channel !== '--' ? r.origin.channel : (r?.channel_name || 'Directo/WuBook');
+        const rsrvid =  r?.id ?? r?.rsrvid ?? r?.reservation_id ?? r?.rexid ?? r?.rid ?? null;
 
       for (const room of r?.rooms || []) {
         const idZak = String(room?.id_zak_room || room?.id_zak_room_type || '');
