@@ -208,6 +208,34 @@ function mapWubookExtrasToUnified(arr = []) {
   }).filter(x => x.name || x.note || (Number.isFinite(x.price) && x.price > 0));
 }
 
+// Quita duplicados de extras (tolera price/currency = null)
+function dedupeExtras(arr = []) {
+  const seen = new Set();
+  const out = [];
+
+  for (const e of (Array.isArray(arr) ? arr : [])) {
+    const tsVal = (e?.ts?.seconds ?? e?.ts?._seconds ?? e?.ts ?? '');
+    const name = (e?.name || '').slice(0, 60);
+    const price = Number.isFinite(e?.price) ? e.price : 'null';
+    const curr  = (e?.currency ?? 'null');           // no default a 'ARS'
+    const qty   = Number.isFinite(e?.qty) ? e.qty : 'null';
+
+    const key = e?.wubook_id
+      ? `w:${e.wubook_id}`
+      : `s:${e?.source}|t:${tsVal}|n:${name}|p:${price}|c:${curr}|q:${qty}`;
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+
+  out.sort((a, b) =>
+    (a?.ts?.seconds ?? a?.ts?._seconds ?? 0) -
+    (b?.ts?.seconds ?? b?.ts?._seconds ?? 0)
+  );
+  return out;
+}
+
 /**
  * Suma extras en USD (sin IVA):
  * - Considera USD explícito o currency null (asumimos USD)
