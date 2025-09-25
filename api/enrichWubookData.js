@@ -270,11 +270,13 @@ export default async function handler(req, res) {
           return res.status(200).json({ ok: true, message: 'No apiKey for propiedad.', processed: 0 });
         }
 
+        const rsrvid = oldDoc?.rsrvid || null;
+
         const [customerData, wubookPaysRaw, wubookNotesRaw, wubookExtrasRaw] = await Promise.all([
           fetchCustomerData(apiKey, bookerId),
           fetchPayments(apiKey, id_human),
           fetchNotes(apiKey, id_human),
-          fetchExtras(apiKey, id_human),
+          fetchExtrasKP(apiKey, rsrvid),                  // <<< KP por rsrvid
         ]);
 
         const unifiedNotesFromWubook   = mapWubookNotesToUnified(wubookNotesRaw);
