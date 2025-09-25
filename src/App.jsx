@@ -101,7 +101,7 @@ function useActiveProperties() {
   useEffect(() => {
     (async () => {
       try {
-       const { data } = await axios.get("/api/properties?active=1");
+       const { data } = await axios.get("/api/properties?");
        // Soporta {items:[...]} ó directamente [...]
        const raw = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
        const items = raw.map(p => ({
@@ -443,14 +443,41 @@ function PaymentsList({ r }) {
 
 function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
   const editBtnRef = useRef(null);
-  const [baseUSD, setBaseUSD] = useState(typeof r.toPay === "number" && isFinite(r.toPay) ? String(r.toPay.toFixed(2)) : "");
-  const [ivaMode, setIvaMode] = useState("percent");
-  const [ivaPercent, setIvaPercent] = useState("21");     // ← default 21%
-  const [ivaUSD, setIvaUSD] = useState("");
-  const [cleaningUSD, setCleaningUSD] = useState("");
+
+  // --- helpers de lectura segura
+  const bd = r?.toPay_breakdown || {};
+  const readBase   = Number.isFinite(Number(bd.baseUSD))   ? Number(bd.baseUSD)   : null;
+  const readExtras = Number.isFinite(Number(bd.extrasUSD)) ? Number(bd.extrasUSD) : (Number.isFinite(Number(r?.extrasUSD)) ? Number(r.extrasUSD) : null);
+  const readIvaAmt = Number.isFinite(Number(bd.ivaUSD))    ? Number(bd.ivaUSD)    : null;
+  const readIvaPct = Number.isFinite(Number(bd.ivaPercent))? Number(bd.ivaPercent): null;
+
+  // --- states (SIEMPRE por breakdown, nunca por toPay)
+  const [baseUSD, setBaseUSD]       = useState(readBase !== null ? String(readBase.toFixed(2)) : "");
+  const [extrasUSD, setExtrasUSD]   = useState(readExtras !== null ? String(readExtras.toFixed(2)) : "");
+  const [ivaMode, setIvaMode]       = useState(readIvaPct !== null ? "percent" : "amount");
+  const [ivaPercent, setIvaPercent] = useState(readIvaPct !== null ? String(readIvaPct) : "21");
+  const [ivaUSD, setIvaUSD]         = useState(readIvaAmt !== null ? String(readIvaAmt.toFixed(2)) : "");
+
+  // Cuando cambia la reserva o se abre el pop, re-hidratamos desde el breakdown
+  useEffect(() => {
+    const bd2 = r?.toPay_breakdown || {};
+    const b   = Number.isFinite(Number(bd2.baseUSD))   ? Number(bd2.baseUSD)   : null;
+    const e   = Number.isFinite(Number(bd2.extrasUSD)) ? Number(bd2.extrasUSD) : (Number.isFinite(Number(r?.extrasUSD)) ? Number(r.extrasUSD) : null);
+    const ia  = Number.isFinite(Number(bd2.ivaUSD))    ? Number(bd2.ivaUSD)    : null;
+    const ip  = Number.isFinite(Number(bd2.ivaPercent))? Number(bd2.ivaPercent): null;
+
+    setBaseUSD(b !== null ? String(b.toFixed(2)) : "");
+    setExtrasUSD(e !== null ? String(e.toFixed(2)) : "");
+    setIvaMode(ip !== null ? "percent" : "amount");
+    setIvaPercent(ip !== null ? String(ip) : "21");
+    setIvaUSD(ia !== null ? String(ia.toFixed(2)) : "");
+  }, [isOpen, r?.id, r?.contentHash]); // contentHash para rehidratar tras guardar
 
   const onSave = async () => {
-    const payload = { baseUSD: Number(baseUSD) || 0, cleaningUSD: Number(cleaningUSD) || 0 };
+    const payload = {
+      baseUSD: Number(baseUSD) || 0,
+      extrasUSD: Number(extrasUSD) || 0,
+    };
     if (ivaMode === "percent") payload.ivaPercent = Number(ivaPercent) || 0;
     else payload.ivaUSD = Number(ivaUSD) || 0;
 
@@ -461,12 +488,14 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
   return (
     <>
       <div className="left__line4" onClick={(e) => e.stopPropagation()}>
+        {/* Visualización del total: usa r.toPay, NO los inputs */}
         <span className="toPay-view">
           <span className="toPay-cur">USD</span>
-          <strong>{(typeof r.toPay === "number" && isFinite(r.toPay)) ? r.toPay.toFixed(2) : "-"}</strong>
+          <strong>
+            {(typeof r.toPay === "number" && isFinite(r.toPay)) ? r.toPay.toFixed(2) : "-"}
+          </strong>
         </span>
 
-        {/* botón lapicito */}
         <button
           ref={editBtnRef}
           type="button"
@@ -486,36 +515,60 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
 
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Base USD</label>
-          <input className="mini-popover__field" type="number" step="0.01" min="0" value={baseUSD}
-                 onChange={(e) => setBaseUSD(e.target.value)} placeholder="0.00" />
+          <input
+            className="mini-popover__field"
+            type="number" step="0.01" min="0"
+            value={baseUSD}
+            onChange={(e) => setBaseUSD(e.target.value)}
+            placeholder="0.00"
+          />
         </div>
 
         <div className="mini-popover__row">
           <label className="mini-popover__lab">IVA</label>
 
           <label className="flex items-center gap-1">
-            <input type="radio" name={`ivaMode_${r.id}`} value="percent"
-                   checked={ivaMode === "percent"} onChange={() => setIvaMode("percent")} />
+            <input
+              type="radio" name={`ivaMode_${r.id}`} value="percent"
+              checked={ivaMode === "percent"} onChange={() => setIvaMode("percent")}
+            />
             <span>%</span>
           </label>
-          <input className="mini-popover__field mini-popover__field--xs" type="number" step="0.01" min="0"
-                 value={ivaPercent} onChange={(e) => setIvaPercent(e.target.value)}
-                 placeholder="21" disabled={ivaMode !== "percent"} />
+          <input
+            className="mini-popover__field mini-popover__field--xs"
+            type="number" step="0.01" min="0"
+            value={ivaPercent}
+            onChange={(e) => setIvaPercent(e.target.value)}
+            placeholder="21"
+            disabled={ivaMode !== "percent"}
+          />
 
           <label className="flex items-center gap-1 ml-2">
-            <input type="radio" name={`ivaMode_${r.id}`} value="amount"
-                   checked={ivaMode === "amount"} onChange={() => setIvaMode("amount")} />
+            <input
+              type="radio" name={`ivaMode_${r.id}`} value="amount"
+              checked={ivaMode === "amount"} onChange={() => setIvaMode("amount")}
+            />
             <span>USD</span>
           </label>
-          <input className="mini-popover__field mini-popover__field--s" type="number" step="0.01" min="0"
-                 value={ivaUSD} onChange={(e) => setIvaUSD(e.target.value)}
-                 placeholder="0.00" disabled={ivaMode !== "amount"} />
+          <input
+            className="mini-popover__field mini-popover__field--s"
+            type="number" step="0.01" min="0"
+            value={ivaUSD}
+            onChange={(e) => setIvaUSD(e.target.value)}
+            placeholder="0.00"
+            disabled={ivaMode !== "amount"}
+          />
         </div>
 
         <div className="mini-popover__row">
-          <label className="mini-popover__lab">Limpieza (USD)</label>
-          <input className="mini-popover__field" type="number" step="0.01" min="0" value={cleaningUSD}
-                 onChange={(e) => setCleaningUSD(e.target.value)} placeholder="0.00" />
+          <label className="mini-popover__lab">Extras (USD)</label>
+          <input
+            className="mini-popover__field"
+            type="number" step="0.01" min="0"
+            value={extrasUSD}
+            onChange={(e) => setExtrasUSD(e.target.value)}
+            placeholder="0.00"
+          />
         </div>
 
         <div className="mini-popover__actions">
@@ -526,6 +579,7 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
     </>
   );
 }
+
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
 
 function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {

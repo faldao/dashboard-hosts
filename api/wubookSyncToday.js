@@ -8,6 +8,10 @@
 //   usan Luxon con TZ fija 'America/Argentina/Buenos_Aires' y Firestore `serverTimestamp()`.
 // - Se agrega `propiedad_id` al contexto de historial para facilitar auditoría multi-propiedad.
 // - ⚠️ Se EXCLUYEN reservas canceladas (status/flags) antes de persistir.
+//
+// 🆕 PRECIO WUBOOK + toPay_breakdown:
+// - Se agrega `wubook_price` por room (amount pre-IVA, vat, total, currency).
+// - Si currency === 'USD' -> se completa `toPay` y `toPay_breakdown` con **solo el amount** (IVA `null`, extras `null`, fxRate `null`).
 
 import axios from 'axios';
 import qs from 'qs';
@@ -21,6 +25,8 @@ const TZ = 'America/Argentina/Buenos_Aires';
 const BASE_URL = process.env.WUBOOK_BASE_URL || 'https://kapi.wubook.net/kp';
 const parseEU = (s) => DateTime.fromFormat(s, 'dd/LL/yyyy', { zone: TZ });
 const euToISO = (s) => (s ? parseEU(s).toISODate() : null);
+const round2 = (n) => Number.isFinite(Number(n)) ? +Number(n).toFixed(2) : 0;
+const cur = (c) => String(c || '').trim().toUpperCase();
 
 // ---- Respuestas HTTP ----
 function ok(res, data) {
@@ -198,6 +204,15 @@ export default async function handler(req, res) {
           const docId = `${prop.id}_${r.id_human}_${idZak}`;
           const ref = firestore.collection('Reservas').doc(docId);
 
+          // --- PRECIO WUBOOK (por room) ---
+          const roomPrice = room?.price || r?.price?.rooms || null;
+          const wubook_price = roomPrice ? {
+            amount: round2(roomPrice.amount),
+            vat: round2(roomPrice.vat),
+            total: round2(roomPrice.total),
+            currency: cur(roomPrice.currency || r?.price?.rooms?.currency || r?.price?.currency)
+          } : null;
+
           // Doc base (sin timestamps para hash)
           const baseDoc = {
             id_human: r.id_human,
@@ -215,8 +230,26 @@ export default async function handler(req, res) {
             adults: room?.occupancy?.adults ?? r?.adults ?? null,
             children: room?.occupancy?.children ?? r?.children ?? 0,
             status: normalizeStatus(r?.status || 'unknown'),
-            is_cancelled: false, // pasó filtro
+            is_cancelled: false,
+            ...(wubook_price ? { wubook_price } : {})
           };
+
+          // Si el precio viene en USD, seteamos total SOLO con el amount (IVA null, extras null)
+          if (wubook_price && wubook_price.currency === 'USD') {
+            const baseUSD  = round2(wubook_price.amount);
+            const toPayUSD = baseUSD;
+
+            baseDoc.currency = 'USD';
+            baseDoc.toPay = toPayUSD;
+            baseDoc.extrasUSD = null; // compat con front
+            baseDoc.toPay_breakdown = {
+              baseUSD,
+              ivaPercent: null,
+              ivaUSD: null,     // IVA null (como pediste)
+              extrasUSD: null,
+              fxRate: null
+            };
+          }
 
           // Leer existente y comparar
           const snap = await ref.get();
@@ -239,14 +272,9 @@ export default async function handler(req, res) {
 
           // --- Lógica de Escritura Inteligente ---
           if (!existed) {
-            // NUEVO: set completo y marcar enrichmentStatus = 'pending' SOLO al crear
-            const docToCreate = {
-              ...newDoc,
-              enrichmentStatus: 'pending',
-            };
+            const docToCreate = { ...newDoc, enrichmentStatus: 'pending' };
             batch.set(ref, docToCreate);
           } else {
-            // UPDATE: merge sin tocar enrichmentStatus
             batch.set(ref, newDoc, { merge: true });
           }
           ops++;
@@ -264,6 +292,10 @@ export default async function handler(req, res) {
             hashFrom: oldHash,
             hashTo: newHash,
             snapshotAfter: newDoc,
+            payload: {
+              wubook_price_set: Boolean(wubook_price),
+              toPay_set_auto: Boolean(baseDoc?.toPay)
+            }
           }); ops++;
 
           upserts++;
@@ -294,6 +326,7 @@ export default async function handler(req, res) {
     return bad(res, 500, err?.message || 'Error interno');
   }
 }
+
 
 
 

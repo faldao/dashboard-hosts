@@ -10,6 +10,12 @@
 // - NO se pisa `enrichmentStatus` en updates (solo se setea 'pending' al crear).
 // - Se agrega `propiedad_id` al contexto del historial.
 // - ⚠️ Se EXCLUYEN reservas canceladas (status/flags) antes de persistir.
+//
+// 🆕 PRECIO WUBOOK + toPay_breakdown:
+// - Se agrega `wubook_price` por room (amount pre-IVA, vat, total, currency).
+// - Si currency === 'USD' -> se completa `toPay` y `toPay_breakdown`:
+//     baseUSD = amount, ivaUSD = vat, extrasUSD = null, fxRate = null, currency='USD'.
+// - Si currency !== 'USD' -> NO se toca toPay/toPay_breakdown (quedan para conversión posterior).
 
 import axios from 'axios';
 import qs from 'qs';
@@ -23,6 +29,8 @@ const TZ = 'America/Argentina/Buenos_Aires';
 const BASE_URL = process.env.WUBOOK_BASE_URL || 'https://kapi.wubook.net/kp';
 const parseEU = (s) => DateTime.fromFormat(s, 'dd/LL/yyyy', { zone: TZ });
 const euToISO = (s) => (s ? parseEU(s).toISODate() : null);
+const round2 = (n) => Number.isFinite(Number(n)) ? +Number(n).toFixed(2) : 0;
+const cur = (c) => String(c || '').trim().toUpperCase();
 
 // ---- Respuestas HTTP ----
 function ok(res, data) {
@@ -189,6 +197,15 @@ async function processAndSaveReservations(reservas, prop, dryRun, meta = { sourc
       const docId = `${prop.id}_${r.id_human}_${idZak}`;
       const ref = firestore.collection('Reservas').doc(docId);
 
+      // --- PRECIO WUBOOK (por room) ---
+      const roomPrice = room?.price || r?.price?.rooms || null;
+      const wubook_price = roomPrice ? {
+        amount: round2(roomPrice.amount),
+        vat: round2(roomPrice.vat),
+        total: round2(roomPrice.total),
+        currency: cur(roomPrice.currency || r?.price?.rooms?.currency || r?.price?.currency)
+      } : null;
+
       // Construir doc nuevo (sin timestamps para el hash)
       const baseDoc = {
         id_human: r.id_human,
@@ -206,9 +223,28 @@ async function processAndSaveReservations(reservas, prop, dryRun, meta = { sourc
         adults: room?.occupancy?.adults ?? r?.adults ?? null,
         children: room?.occupancy?.children ?? r?.children ?? 0,
         status: normalizeStatus(r?.status || 'unknown'),
-        is_cancelled: false, // pasó los filtros de cancelación
-        // ⚠️ NO poner enrichmentStatus aquí: solo al crear (ver más abajo)
+        is_cancelled: false,
+        ...(wubook_price ? { wubook_price } : {})
       };
+
+      // Si el precio viene en USD, seteamos toPay y breakdown como en mutation.setToPay
+      if (wubook_price && wubook_price.currency === 'USD') {
+        const baseUSD   = round2(wubook_price.amount);
+        const ivaUSD    = null;
+        const extrasUSD = null; // no viene de WuBook a nivel room; si más adelante querés sumar, lo hacemos
+        const toPayUSD  = round2(baseUSD + ivaUSD);
+
+        baseDoc.currency = 'USD';
+        baseDoc.toPay = toPayUSD;
+        baseDoc.extrasUSD = null; // campo “único” de front
+        baseDoc.toPay_breakdown = {
+          baseUSD,
+          ivaPercent: null,
+          ivaUSD,
+          extrasUSD,
+          fxRate: null
+        };
+      }
 
       // Leer existente para comparar
       const snap = await ref.get();
@@ -254,6 +290,11 @@ async function processAndSaveReservations(reservas, prop, dryRun, meta = { sourc
           hashFrom: oldHash,
           hashTo: newHash,
           snapshotAfter: newDoc,
+          // Pequeña pista de qué campos financieros se setearon
+          payload: {
+            wubook_price_set: Boolean(wubook_price),
+            toPay_set_auto: Boolean(baseDoc?.toPay),
+          }
         };
         batch.set(histRef, histDoc); ops++;
 
@@ -339,5 +380,6 @@ export default async function handler(req, res) {
     return bad(res, 500, err?.message || 'Error interno');
   }
 }
+
 
 

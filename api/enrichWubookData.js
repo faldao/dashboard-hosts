@@ -2,9 +2,11 @@
 // OBJETIVO: Enriquecer y sincronizar datos de reservas desde WuBook.
 // MODOS: 'pending' | 'active' | forceUpdate
 //
-// ✅ Notas y Pagos unificados:
-// - notes[] es la fuente de verdad (badge source: 'wubook' | 'host')
-// - payments[] es la fuente de verdad (source: 'wubook' | 'host')
+// ✅ Notas, Pagos y Extras unificados:
+// - notes[]     es la fuente de verdad (source: 'wubook' | 'host')
+// - payments[]  es la fuente de verdad (source: 'wubook' | 'host')
+// - extras[]    es la fuente de verdad (source: 'wubook' | 'host')
+// - extrasUSD   número: único campo que usa/edita el frontend (no se pisa si ya existe)
 
 import axios from 'axios';
 import qs from 'qs';
@@ -12,14 +14,14 @@ import { firestore, FieldValue, Timestamp } from '../lib/firebaseAdmin.js';
 import crypto from 'crypto';
 import { DateTime } from 'luxon';
 
-// ===================== CONFIGURACIÓN =====================
+// ===================== CONFIG =====================
 const log = (...args) => console.log('[EnrichWubook]', ...args);
 const BASE_URL_KP   = process.env.WUBOOK_BASE_URL      || 'https://kapi.wubook.net/kp';
 const BASE_URL_KAPI = process.env.WUBOOK_BASE_URL_KAPI || 'https://kapi.wubook.net/kapi';
 const apiKeyCache = new Map();
 const TZ = 'America/Argentina/Buenos_Aires';
 
-// ===================== HASH / DIFF HELPERS =====================
+// ===================== HASH / DIFF =====================
 const IGNORE_KEYS = new Set(['updatedAt','createdAt','contentHash','enrichmentStatus','enrichedAt','lastUpdatedAt','lastUpdatedBy']);
 const sortObject = (obj) => {
   if (Array.isArray(obj)) return obj.map(sortObject);
@@ -104,7 +106,22 @@ async function fetchNotes(apiKey, rcode) {
   }
 }
 
-// ===================== NOTAS: MAP/Dedup =====================
+// 🔹 NUEVO: Extras (WuBook KAPI)
+async function fetchExtras(apiKey, rcode) {
+  try {
+    const payload = qs.stringify({ rcode });
+    // Doc: reservations/get_extras
+    const resp = await axios.post(`${BASE_URL_KAPI}/reservations/get_extras`, payload, { auth: { username: apiKey, password: '' } });
+    // Esperado: [ { exid, name, note, price, ccy, number, inclusive, created_at, ... }, ... ]
+    return resp.data?.data || [];
+  } catch (error) {
+    log(`Error fetching extras for rcode ${rcode}:`, error.response?.data || error.message);
+    return [];
+  }
+}
+
+// ===================== MAP / DEDUPE =====================
+// Notes
 function mapWubookNotesToUnified(arr = []) {
   return (Array.isArray(arr) ? arr : []).map(n => ({
     ts: n.created_at || Timestamp.now(),
@@ -128,9 +145,7 @@ function dedupeNotes(arr = []) {
   return out;
 }
 
-// ===================== PAGOS: MAP/Dedup =====================
-// Estructura unificada de payment:
-// { ts, by, source, wubook_id, amount, currency, method }
+// Payments
 function mapWubookPaymentsToUnified(arr = []) {
   return (Array.isArray(arr) ? arr : []).map(p => {
     const amt = Number(p.amount ?? p.total ?? 0);
@@ -139,7 +154,7 @@ function mapWubookPaymentsToUnified(arr = []) {
       by: 'wubook',
       source: 'wubook',
       wubook_id: p.id ?? null,
-      amount: isFinite(amt) ? amt : 0,
+      amount: Number.isFinite(amt) ? amt : 0,
       currency: String(p.currency || p.ccy || 'ARS'),
       method: String(p.method || p.type || 'unknown')
     };
@@ -158,7 +173,50 @@ function dedupePayments(arr = []) {
   return out;
 }
 
-// ===================== HANDLER PRINCIPAL =====================
+// Extras
+// Estructura unificada de extra: { ts, by, source, wubook_id, name, note, price, currency, qty, inclusive }
+function mapWubookExtrasToUnified(arr = []) {
+  return (Array.isArray(arr) ? arr : []).map(e => {
+    const price = Number(e.price ?? 0);
+    const qty   = Number(e.number ?? e.qty ?? 1);
+    return {
+      ts: e.created_at || e.date || Timestamp.now(),
+      by: 'wubook',
+      source: 'wubook',
+      wubook_id: e.exid ?? e.id ?? null,
+      name: String(e.name ?? '').trim() || null,
+      note: String(e.note ?? e.notes ?? '').trim() || null,
+      price: Number.isFinite(price) ? price : 0,
+      currency: String(e.ccy || e.currency || 'ARS'),
+      qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
+      inclusive: Boolean(e.inclusive ?? false),
+    };
+  }).filter(x => (x.name || x.note || x.price > 0));
+}
+function dedupeExtras(arr = []) {
+  const seen = new Set(); const out = [];
+  for (const e of arr) {
+    const key = e.wubook_id
+      ? `w:${e.wubook_id}`
+      : `s:${e.source}|t:${(e.ts?.seconds ?? e.ts?._seconds ?? e.ts ?? '')}|n:${(e.name||'').slice(0,60)}|p:${e.price}|c:${e.currency}|q:${e.qty}`;
+    if (seen.has(key)) continue;
+    seen.add(key); out.push(e);
+  }
+  out.sort((a,b) => (a.ts?.seconds ?? a.ts?._seconds ?? 0) - (b.ts?.seconds ?? b.ts?._seconds ?? 0));
+  return out;
+}
+
+// Suma extras en USD (si querés, acá podrías convertir otras monedas con fxRate)
+function sumExtrasUSD(extras = []) {
+  return Number(
+    (Array.isArray(extras) ? extras : [])
+      .filter(e => String(e.currency || 'USD').toUpperCase() === 'USD')
+      .reduce((acc, e) => acc + (Number(e.price || 0) * Number(e.qty || 1)), 0)
+      .toFixed(2)
+  );
+}
+
+// ===================== HANDLER =====================
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
@@ -172,6 +230,7 @@ export default async function handler(req, res) {
       query = query.where(firestore.FieldPath.documentId(), '==', reservationId);
     } else if (forceUpdate) {
       log('Mode: forceUpdate');
+      // sin filtros: procesa lo que devuelva el limit
     } else if (syncMode === 'active') {
       log('Mode: syncActive');
       const today = DateTime.now().setZone(TZ).toISODate();
@@ -202,33 +261,46 @@ export default async function handler(req, res) {
 
       log(`Processing doc ${doc.id} (rcode: ${id_human})...`);
 
-      const [customerData, wubookPaysRaw, wubookNotesRaw] = await Promise.all([
+      const [customerData, wubookPaysRaw, wubookNotesRaw, wubookExtrasRaw] = await Promise.all([
         fetchCustomerData(apiKey, bookerId),
         fetchPayments(apiKey, id_human),
-        fetchNotes(apiKey, id_human)
+        fetchNotes(apiKey, id_human),
+        fetchExtras(apiKey, id_human),
       ]);
 
-      // ======= UNIFICACIÓN DE NOTAS =======
-      const unifiedNotesFromWubook = mapWubookNotesToUnified(wubookNotesRaw);
-      const existingUnifiedNotes    = Array.isArray(oldDoc.notes) ? oldDoc.notes : [];
-      const mergedNotes             = dedupeNotes([...existingUnifiedNotes, ...unifiedNotesFromWubook]);
+      // ======= UNIFICACIÓN =======
+      const unifiedNotesFromWubook   = mapWubookNotesToUnified(wubookNotesRaw);
+      const existingUnifiedNotes     = Array.isArray(oldDoc.notes) ? oldDoc.notes : [];
+      const mergedNotes              = dedupeNotes([...existingUnifiedNotes, ...unifiedNotesFromWubook]);
 
-      // ======= UNIFICACIÓN DE PAGOS =======
-      const unifiedPaysFromWubook = mapWubookPaymentsToUnified(wubookPaysRaw);
-      const existingUnifiedPays   = Array.isArray(oldDoc.payments) ? oldDoc.payments : [];
-      const mergedPayments        = dedupePayments([...existingUnifiedPays, ...unifiedPaysFromWubook]);
+      const unifiedPaysFromWubook    = mapWubookPaymentsToUnified(wubookPaysRaw);
+      const existingUnifiedPays      = Array.isArray(oldDoc.payments) ? oldDoc.payments : [];
+      const mergedPayments           = dedupePayments([...existingUnifiedPays, ...unifiedPaysFromWubook]);
 
-      // Construimos el documento "nuevo"
-      // (mantenemos wubook_* crudos para debugging transitorio)
+      const unifiedExtrasFromWubook  = mapWubookExtrasToUnified(wubookExtrasRaw);
+      const existingUnifiedExtras    = Array.isArray(oldDoc.extras) ? oldDoc.extras : [];
+      const mergedExtras             = dedupeExtras([...existingUnifiedExtras, ...unifiedExtrasFromWubook]);
+
+      // Derivar extrasUSD si no existe aún (no pisar cambios del host)
+      const derivedExtrasUSD = sumExtrasUSD(mergedExtras);
+      const extrasUSDFinal =
+        (typeof oldDoc.extrasUSD === 'number' && isFinite(oldDoc.extrasUSD))
+          ? oldDoc.extrasUSD
+          : derivedExtrasUSD;
+
+      // Documento "nuevo" (también guardamos crudos para debug)
       const fetchedData = {
         ...customerData,
         wubook_payments: wubookPaysRaw,
         wubook_notes: wubookNotesRaw,
-        notes: mergedNotes,         // ← unificado
-        payments: mergedPayments,   // ← unificado
+        wubook_extras: wubookExtrasRaw,
+        notes: mergedNotes,
+        payments: mergedPayments,
+        extras: mergedExtras,
+        extrasUSD: extrasUSDFinal, // ← único usado por el front
       };
 
-      // Hash con notas/pagos unificados
+      // Evitar updates innecesarios
       const newDocForHash = { ...oldDoc, ...fetchedData };
       const newHash = hashDoc(newDocForHash);
       if (newHash === oldDoc.contentHash) {
@@ -295,8 +367,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     log('FATAL ERROR', error.stack);
-    return res.status(500).json({ error: 'Internal Server Error', details: error.message });
+    return res.status(500).json({ ok: false, error: error?.message || 'Unexpected error' });
   }
 }
-
 

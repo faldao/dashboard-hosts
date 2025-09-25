@@ -6,14 +6,17 @@
 //  - "contact"     : marca contactado (ídem)
 //  - "addNote"     : agrega nota de host (payload: { text })
 //  - "addPayment"  : agrega pago de host (payload: { amount, currency, method, concept?, when? })
-//  - "setToPay"    : setea total a pagar en USD con desglose (payload: { baseUSD, ivaPercent?, ivaUSD?, cleaningUSD?, fxRate? })
+//  - "setToPay"    : setea total a pagar en USD con desglose (payload: { baseUSD, ivaPercent?, ivaUSD?, extrasUSD?, fxRate? })
+//                     *Compat:* sigue aceptando cleaningUSD y lo mapea a extrasUSD si viene.
 // Todas las acciones guardan historial de cambios (subcolección 'historial') con diff.
 
 import { firestore, FieldValue, Timestamp } from '../lib/firebaseAdmin.js';
 import crypto from 'crypto';
 
 const log = (...args) => console.log('[ReservationMutations]', ...args);
-const IGNORE_KEYS = new Set(['updatedAt','createdAt','contentHash','enrichmentStatus','enrichedAt','lastUpdatedAt','lastUpdatedBy']);
+const IGNORE_KEYS = new Set([
+  'updatedAt','createdAt','contentHash','enrichmentStatus','enrichedAt','lastUpdatedAt','lastUpdatedBy'
+]);
 
 const sortObject = (obj) => {
   if (Array.isArray(obj)) return obj.map(sortObject);
@@ -53,7 +56,7 @@ function toTs(when) {
 }
 const num = (x) => {
   const n = Number(x);
-  return isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? n : 0;
 };
 
 async function getUsdArsRateByDate(dateISO) {
@@ -63,7 +66,7 @@ async function getUsdArsRateByDate(dateISO) {
     const ref = firestore.collection('fx_rates').doc(id);
     const snap = await ref.get();
     const rate = snap.exists ? Number(snap.data()?.rate) : null;
-    return isFinite(rate) && rate > 0 ? rate : null;
+    return Number.isFinite(rate) && rate > 0 ? rate : null;
   } catch (e) {
     log('WARN getUsdArsRateByDate', e?.message);
     return null;
@@ -107,7 +110,6 @@ export default async function handler(req, res) {
 
     let update = { lastUpdatedBy: user || 'host', lastUpdatedAt: nowServer };
     let historyPayload = {};
-    let changeTag = action;
 
     if (action === 'checkin') {
       update.checkin_at = toTs(payload.when ?? null);
@@ -136,11 +138,11 @@ export default async function handler(req, res) {
       historyPayload.note = unifiedNote;
 
     } else if (action === 'addPayment') {
-      const amount  = Number(payload?.amount);
+      const amount   = Number(payload?.amount);
       const currency = String(payload?.currency || 'ARS').toUpperCase();
       const method   = String(payload?.method || 'Efectivo');
-      const concept  = String(payload?.concept || '').trim() || null; // ← NUEVO
-      if (!isFinite(amount) || amount <= 0) return bad(res, 400, 'Monto inválido');
+      const concept  = String(payload?.concept || '').trim() || null;
+      if (!Number.isFinite(amount) || amount <= 0) return bad(res, 400, 'Monto inválido');
 
       const payment = {
         ts: payload?.when ? toTs(payload.when) : Timestamp.now(),
@@ -150,19 +152,19 @@ export default async function handler(req, res) {
         amount,
         currency,
         method,
-        concept, // ← NUEVO (se guarda si viene, o null)
+        concept,
       };
 
       const prevPaysUnified = Array.isArray(before.payments) ? before.payments.slice(0, 1000) : [];
       update.payments = [...prevPaysUnified, payment];
 
       try {
-        const toPayUSD = Number(before.toPay);
+        const toPayUSD  = Number(before.toPay);
         const fxDateISO = getReservationFxDateISO(before);
-        const fxRate = payload?.fxRate ? Number(payload.fxRate) : (await getUsdArsRateByDate(fxDateISO));
-        const { paidUSD } = computePaidUSD(update.payments, isFinite(fxRate) && fxRate > 0 ? fxRate : null);
+        const fxRate    = payload?.fxRate ? Number(payload.fxRate) : (await getUsdArsRateByDate(fxDateISO));
+        const { paidUSD } = computePaidUSD(update.payments, Number.isFinite(fxRate) && fxRate > 0 ? fxRate : null);
 
-        if (isFinite(toPayUSD) && toPayUSD > 0) {
+        if (Number.isFinite(toPayUSD) && toPayUSD > 0) {
           update.payment_status = paidUSD >= toPayUSD ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid');
         } else {
           update.payment_status = 'partial';
@@ -174,36 +176,132 @@ export default async function handler(req, res) {
       historyPayload.payment = payment;
 
     } else if (action === 'setToPay') {
-      const baseUSD = num(payload?.baseUSD);
-      const cleaningUSD = num(payload?.cleaningUSD);
-      let ivaUSD = num(payload?.ivaUSD);
-      const ivaPercent = num(payload?.ivaPercent);
-      if (!ivaUSD && ivaPercent) ivaUSD = +(baseUSD * (ivaPercent / 100)).toFixed(2);
+      // --- valores previos del breakdown ---
+      const prev = before?.toPay_breakdown || {};
+      const prevBase   = Number.isFinite(Number(prev.baseUSD))   ? Number(prev.baseUSD)   : 0;
+      const prevExtras = Number.isFinite(Number(prev.extrasUSD)) ? Number(prev.extrasUSD)
+                        : (Number.isFinite(Number(before?.extrasUSD)) ? Number(before.extrasUSD) : 0);
+      const prevIvaAmt = Number.isFinite(Number(prev.ivaUSD))    ? Number(prev.ivaUSD)    : 0;
+      const prevIvaPct = Number.isFinite(Number(prev.ivaPercent))? Number(prev.ivaPercent): null;
 
-      const toPayUSD = +(baseUSD + ivaUSD + cleaningUSD).toFixed(2);
-      if (!isFinite(toPayUSD) || toPayUSD < 0) return bad(res, 400, 'Total inválido');
+      // helper: distingue undefined (no mandado) vs "" (vaciar) vs número
+      const readField = (key, prevVal) => {
+        if (!(key in payload)) return { calc: prevVal, store: prevVal, fromPrev: true }; // no vino -> conserva
+        const raw = payload[key];
+        if (raw === '' || raw === null) return { calc: 0, store: null, fromPrev: false }; // vacío -> 0 y guarda null
+        const n = Number(raw);
+        return Number.isFinite(n) ? { calc: n, store: +n.toFixed(2), fromPrev: false } : { calc: 0, store: null, fromPrev: false };
+      };
 
-      update.toPay = toPayUSD;
-      update.currency = 'USD';
+      // base
+      const baseR = readField('baseUSD', prevBase);
+
+      // extras: prioridad extrasUSD si vino; si NO vino, mirar cleaningUSD (compat).
+      let extrasR;
+      if ('extrasUSD' in payload) {
+        extrasR = readField('extrasUSD', prevExtras);
+      } else if ('cleaningUSD' in payload) {
+        extrasR = readField('cleaningUSD', prevExtras);
+      } else {
+        extrasR = { calc: prevExtras, store: prevExtras, fromPrev: true };
+      }
+
+      // IVA: si viene ivaUSD, manda; si no, si viene ivaPercent, recalcula con base actual;
+      // si no viene ninguno, conserva ambos (monto y % previos).
+      let ivaUSD_calc = prevIvaAmt, ivaUSD_store = prevIvaAmt;
+      let ivaPct_calc = prevIvaPct, ivaPct_store = prevIvaPct;
+
+      if ('ivaUSD' in payload) {
+        const ivaR = readField('ivaUSD', prevIvaAmt);
+        ivaUSD_calc = ivaR.calc;
+        ivaUSD_store = ivaR.store;
+        if (!('ivaPercent' in payload)) {
+          ivaPct_store = prevIvaPct;
+          ivaPct_calc  = prevIvaPct;
+        }
+      }
+
+      if ('ivaPercent' in payload) {
+        const raw = payload.ivaPercent;
+        if (raw === '' || raw === null) {
+          ivaPct_store = null;
+          ivaPct_calc  = null;
+          if (!('ivaUSD' in payload)) {
+            ivaUSD_calc = 0; ivaUSD_store = 0;
+          }
+        } else {
+          const p = Number(raw);
+          if (Number.isFinite(p) && p >= 0) {
+            ivaPct_store = p; ivaPct_calc = p;
+            if (!('ivaUSD' in payload)) {
+              ivaUSD_calc = +(baseR.calc * (p/100)).toFixed(2);
+              ivaUSD_store = ivaUSD_calc;
+            }
+          } else {
+            ivaPct_store = null; ivaPct_calc = null;
+          }
+        }
+      }
+
+      const baseUSD   = Number.isFinite(baseR.calc)   ? +baseR.calc.toFixed(2)   : 0;
+      const extrasUSD = Number.isFinite(extrasR.calc) ? +extrasR.calc.toFixed(2) : 0;
+      const ivaUSD    = Number.isFinite(ivaUSD_calc)  ? +ivaUSD_calc.toFixed(2)  : 0;
+
+      const toPayUSD = +(baseUSD + ivaUSD + extrasUSD).toFixed(2);
+      if (!Number.isFinite(toPayUSD) || toPayUSD < 0) return bad(res, 400, 'Total inválido');
+
+      update.toPay     = toPayUSD;
+      update.currency  = 'USD';
+      // campo único de front (si usuario vació extras -> null)
+      update.extrasUSD = (extrasR.store === null) ? null : +Number(extrasR.store).toFixed(2);
+      update.toPay_breakdown = {
+        baseUSD:  (baseR.store === null) ? null : +Number(baseR.store).toFixed(2),
+        ivaPercent: (ivaPct_store === null) ? null : +Number(ivaPct_store),
+        ivaUSD:  (ivaUSD_store === null) ? null : +Number(ivaUSD_store).toFixed(2),
+        extrasUSD: (extrasR.store === null) ? null : +Number(extrasR.store).toFixed(2),
+        fxRate: null
+      };
 
       const fxDateISO = getReservationFxDateISO(before);
       const fxRate =
-        payload?.fxRate && isFinite(Number(payload.fxRate)) && Number(payload.fxRate) > 0
+        payload?.fxRate && Number.isFinite(Number(payload.fxRate)) && Number(payload.fxRate) > 0
           ? Number(payload.fxRate)
           : (await getUsdArsRateByDate(fxDateISO));
 
       try {
         const pays = Array.isArray(before.payments) ? before.payments : [];
-        const { paidUSD, rateUsed, note } = computePaidUSD(pays, isFinite(fxRate) && fxRate > 0 ? fxRate : null);
+        const { paidUSD, rateUsed, note } = computePaidUSD(pays, Number.isFinite(fxRate) && fxRate > 0 ? fxRate : null);
         update.payment_status = paidUSD >= toPayUSD ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid');
+        update.toPay_breakdown.fxRate = rateUsed || null;
 
         historyPayload.toPay = {
-          baseUSD, ivaUSD, ivaPercent: ivaPercent || null, cleaningUSD,
-          toPayUSD, fxDateISO, fxRate: rateUsed || null, fxNote: note || null
+          baseUSD,
+          ivaUSD,
+          ivaPercent: (ivaPct_store === null) ? null : +Number(ivaPct_store),
+          extrasUSD,
+          toPayUSD,
+          fxDateISO,
+          fxRate: rateUsed || null,
+          fxNote: note || null,
+          cleaningUSD_compat: ('cleaningUSD' in payload)
+            ? (payload.cleaningUSD === '' ? null : Number(payload.cleaningUSD))
+            : null
         };
       } catch {
         update.payment_status = before.payment_status || 'unpaid';
-        historyPayload.toPay = { baseUSD, ivaUSD, ivaPercent: ivaPercent || null, cleaningUSD, toPayUSD, fxDateISO, fxRate: null, fxNote: 'FX not available' };
+        historyPayload.toPay = {
+          baseUSD,
+          ivaUSD,
+          ivaPercent: (ivaPct_store === null) ? null : +Number(ivaPct_store),
+          extrasUSD,
+          toPayUSD,
+          fxDateISO,
+          fxRate: null,
+          fxNote: 'FX not available',
+          cleaningUSD_compat: ('cleaningUSD' in payload)
+            ? (payload.cleaningUSD === '' ? null : Number(payload.cleaningUSD))
+            : null
+        };
       }
 
     } else {
@@ -242,6 +340,7 @@ export default async function handler(req, res) {
   }
 }
 
+// ---- helpers de diff al final (fuera del handler) ----
 function computeDiff(a = {}, b = {}) {
   const out = {};
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
@@ -254,3 +353,4 @@ function computeDiff(a = {}, b = {}) {
   }
   return out;
 }
+
