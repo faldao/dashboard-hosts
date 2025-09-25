@@ -1,0 +1,126 @@
+﻿{
+    "data":  {
+                 "id":  24846349,
+                 "id_human":  "YW-0009",
+                 "booker":  33488509,
+                 "status":  "Confirmed",
+                 "expiration_date":  "",
+                 "origin":  {
+                                "channel":  "Booking.com"
+                            },
+                 "last_status_date":  "",
+                 "board":  "nb",
+                 "created":  "10/09/2025",
+                 "cpolicy":  "Custom Policy",
+                 "agency":  "Booking.com [3742576]",
+                 "corporate":  null,
+                 "price":  {
+                               "rooms":  {
+                                             "amount":  503.78999999999996,
+                                             "vat":  105.79589999999999,
+                                             "total":  609.5859,
+                                             "discount":  0.0,
+                                             "currency":  "USD"
+                                         },
+                               "extras":  {
+                                              "amount":  90.0,
+                                              "vat":  18.900000000000006,
+                                              "total":  108.9,
+                                              "discount":  0.0,
+                                              "currency":  "USD"
+                                          },
+                               "meals":  {
+                                             "amount":  0,
+                                             "vat":  0,
+                                             "total":  0,
+                                             "discount":  0
+                                         },
+                               "total":  718.4859
+                           },
+                 "payment":  {
+                                 "amount":  0.0,
+                                 "currency":  "USD"
+                             },
+                 "taxes":  {
+
+                           },
+                 "rooms":  [
+                               {
+                                   "id_zak_room":  12512,
+                                   "id_zak_reservation_room":  31183850,
+                                   "door_code":  null,
+                                   "id_zak_room_type":  5908,
+                                   "dfrom":  "16/09/2025",
+                                   "dto":  "19/09/2025",
+                                   "occupancy":  {
+                                                     "adults":  3,
+                                                     "teens":  0,
+                                                     "children":  0,
+                                                     "babies":  0
+                                                 },
+                                   "price":  {
+                                                 "amount":  149.16,
+                                                 "vat":  31.3236,
+                                                 "total":  180.4836,
+                                                 "discount":  0.0,
+                                                 "currency":  "USD"
+                                             },
+                                   "customers":  [
+                                                     {
+                                                         "checkin":  null,
+                                                         "checkout":  null,
+                                                         "id":  33488509
+                                                     }
+                                                 ]
+                               },
+                               {
+                                   "id_zak_room":  29156,
+                                   "id_zak_reservation_room":  31183851,
+                                   "door_code":  null,
+                                   "id_zak_room_type":  12646,
+                                   "dfrom":  "16/09/2025",
+                                   "dto":  "19/09/2025",
+                                   "occupancy":  {
+                                                     "adults":  1,
+                                                     "teens":  0,
+                                                     "children":  0,
+                                                     "babies":  0
+                                                 },
+                                   "price":  {
+                                                 "amount":  149.16,
+                                                 "vat":  31.3236,
+                                                 "total":  180.4836,
+                                                 "discount":  0.0,
+                                                 "currency":  "USD"
+                                             },
+                                   "customers":  [
+
+                                                 ]
+                               },
+                               {
+                                   "id_zak_room":  91193,
+                                   "id_zak_reservation_room":  31183852,
+                                   "door_code":  null,
+                                   "id_zak_room_type":  36388,
+                                   "dfrom":  "16/09/2025",
+                                   "dto":  "19/09/2025",
+                                   "occupancy":  {
+                                                     "adults":  1,
+                                                     "teens":  0,
+                                                     "children":  0,
+                                                     "babies":  0
+                                                 },
+                                   "price":  {
+                                                 "amount":  205.47,
+                                                 "vat":  43.14869999999999,
+                                                 "total":  248.6187,
+                                                 "discount":  0.0,
+                                                 "currency":  "USD"
+                                             },
+                                   "customers":  [
+
+                                                 ]
+                               }
+                           ]
+             }
+}

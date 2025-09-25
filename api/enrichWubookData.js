@@ -7,6 +7,7 @@
 // - payments[]  es la fuente de verdad (source: 'wubook' | 'host')
 // - extras[]    es la fuente de verdad (source: 'wubook' | 'host')
 // - extrasUSD   número: único campo que usa/edita el frontend (no se pisa si ya existe)
+// ✅ Prorrateo de extrasUSD por room cuando id_human tiene >1 rooms.
 
 import axios from 'axios';
 import qs from 'qs';
@@ -40,10 +41,10 @@ const hashDoc = (doc) => crypto.createHash('sha1').update(stableStringify(stripK
 
 function getObjectDiff(obj1, obj2) {
   const diff = {};
-  const allKeys = new Set([...Object.keys(obj1), ...Object.keys(obj2)]);
+  const allKeys = new Set([...Object.keys(obj1 || {}), ...Object.keys(obj2 || {})]);
   for (const key of allKeys) {
-    if (JSON.stringify(obj1[key]) !== JSON.stringify(obj2[key])) {
-      diff[key] = { from: obj1[key] ?? null, to: obj2[key] ?? null };
+    if (JSON.stringify(obj1?.[key]) !== JSON.stringify(obj2?.[key])) {
+      diff[key] = { from: obj1?.[key] ?? null, to: obj2?.[key] ?? null };
     }
   }
   return diff;
@@ -106,16 +107,17 @@ async function fetchNotes(apiKey, rcode) {
   }
 }
 
-// 🔹 NUEVO: Extras (WuBook KAPI)
-async function fetchExtras(apiKey, rcode) {
+// 🔹 Extras (WuBook KAPI): devuelve items a nivel reserva (no por room)
+async function fetchExtrasKP(apiKey, rsrvid) {
+  if (!rsrvid) return [];
   try {
-    const payload = qs.stringify({ rcode });
-    // Doc: reservations/get_extras
-    const resp = await axios.post(`${BASE_URL_KAPI}/reservations/get_extras`, payload, { auth: { username: apiKey, password: '' } });
-    // Esperado: [ { exid, name, note, price, ccy, number, inclusive, created_at, ... }, ... ]
+    const headers = { 'x-api-key': apiKey, 'Content-Type': 'application/x-www-form-urlencoded' };
+    const payload = qs.stringify({ rsrvid });
+    // Doc: https://kapi.wubook.net/kp/reservations/get_extras
+    const resp = await axios.post(`${BASE_URL_KP}/reservations/get_extras`, payload, { headers });
     return resp.data?.data || [];
   } catch (error) {
-    log(`Error fetching extras for rcode ${rcode}:`, error.response?.data || error.message);
+    log(`Error fetching extras (KP) for rsrvid ${rsrvid}:`, error.response?.data || error.message);
     return [];
   }
 }
@@ -186,7 +188,7 @@ function mapWubookExtrasToUnified(arr = []) {
       wubook_id: e.exid ?? e.id ?? null,
       name: String(e.name ?? '').trim() || null,
       note: String(e.note ?? e.notes ?? '').trim() || null,
-      price: Number.isFinite(price) ? price : 0,
+      price: Number.isFinite(price) ? price : 0, // SIN IVA
       currency: String(e.ccy || e.currency || 'ARS'),
       qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
       inclusive: Boolean(e.inclusive ?? false),
@@ -206,7 +208,7 @@ function dedupeExtras(arr = []) {
   return out;
 }
 
-// Suma extras en USD (si querés, acá podrías convertir otras monedas con fxRate)
+// Suma extras en USD (SIN IVA) a nivel reserva (si quisieras, acá podrías convertir otras monedas con fxRate)
 function sumExtrasUSD(extras = []) {
   return Number(
     (Array.isArray(extras) ? extras : [])
@@ -214,6 +216,26 @@ function sumExtrasUSD(extras = []) {
       .reduce((acc, e) => acc + (Number(e.price || 0) * Number(e.qty || 1)), 0)
       .toFixed(2)
   );
+}
+
+// ===================== CACHES AUXILIARES =====================
+const roomsPerReservationCache = new Map();
+/**
+ * Cuenta cuántos documentos de "Reservas" existen para el mismo rcode (id_human)
+ * y misma propiedad. Devuelve al menos 1. Cachea por (propiedad_id|id_human).
+ */
+async function getRoomsCountForReservation(propiedad_id, id_human) {
+  const key = `${propiedad_id}|${id_human}`;
+  if (roomsPerReservationCache.has(key)) return roomsPerReservationCache.get(key);
+
+  const snap = await firestore.collection('Reservas')
+    .where('propiedad_id', '==', propiedad_id)
+    .where('id_human', '==', id_human)
+    .get();
+
+  const count = Math.max(1, snap.size || 1);
+  roomsPerReservationCache.set(key, count);
+  return count;
 }
 
 // ===================== HANDLER =====================
@@ -227,7 +249,127 @@ export default async function handler(req, res) {
     let query = firestore.collection('Reservas');
 
     if (reservationId) {
-      query = query.where(firestore.FieldPath.documentId(), '==', reservationId);
+      // Nota: FieldPath.documentId() puede no estar re-exportado; si lo está:
+      try {
+        query = query.where(firestore.FieldPath.documentId(), '==', reservationId);
+      } catch {
+        // Fallback simple: .doc(reservationId).get() más abajo si falla la where
+        const snap = await firestore.collection('Reservas').doc(reservationId).get();
+        if (!snap.exists) {
+          return res.status(200).json({ ok: true, message: 'Reservation not found.', processed: 0 });
+        }
+        // Emula un snapshot con un solo doc
+        const doc = snap;
+        const singleOld = doc.data();
+        const { propiedad_id, id_human, nombre_huesped: bookerId } = singleOld || {};
+        if (!propiedad_id || !id_human) {
+          return res.status(200).json({ ok: true, message: 'Doc missing propiedad_id/id_human.', processed: 0 });
+        }
+        const apiKey = await getApiKey(propiedad_id);
+        if (!apiKey) {
+          return res.status(200).json({ ok: true, message: 'No apiKey for propiedad.', processed: 0 });
+        }
+
+        const [customerData, wubookPaysRaw, wubookNotesRaw, wubookExtrasRaw] = await Promise.all([
+          fetchCustomerData(apiKey, bookerId),
+          fetchPayments(apiKey, id_human),
+          fetchNotes(apiKey, id_human),
+          fetchExtras(apiKey, id_human),
+        ]);
+
+        const unifiedNotesFromWubook   = mapWubookNotesToUnified(wubookNotesRaw);
+        const existingUnifiedNotes     = Array.isArray(singleOld.notes) ? singleOld.notes : [];
+        const mergedNotes              = dedupeNotes([...existingUnifiedNotes, ...unifiedNotesFromWubook]);
+
+        const unifiedPaysFromWubook    = mapWubookPaymentsToUnified(wubookPaysRaw);
+        const existingUnifiedPays      = Array.isArray(singleOld.payments) ? singleOld.payments : [];
+        const mergedPayments           = dedupePayments([...existingUnifiedPays, ...unifiedPaysFromWubook]);
+
+        const unifiedExtrasFromWubook  = mapWubookExtrasToUnified(wubookExtrasRaw);
+        const existingUnifiedExtras    = Array.isArray(singleOld.extras) ? singleOld.extras : [];
+        const mergedExtras             = dedupeExtras([...existingUnifiedExtras, ...unifiedExtrasFromWubook]);
+
+        const extrasUSDTotal = sumExtrasUSD(mergedExtras);
+        const roomsCount     = await getRoomsCountForReservation(propiedad_id, id_human);
+        const extrasUSDPerRoom = Number((extrasUSDTotal / Math.max(1, roomsCount)).toFixed(2));
+        const extrasUSDFinal =
+          (typeof singleOld.extrasUSD === 'number' && isFinite(singleOld.extrasUSD))
+            ? singleOld.extrasUSD
+            : extrasUSDPerRoom;
+
+        const newDocForHash = {
+          ...singleOld,
+          ...{
+            ...customerData,
+            wubook_payments: wubookPaysRaw,
+            wubook_notes: wubookNotesRaw,
+            wubook_extras: wubookExtrasRaw,
+            notes: mergedNotes,
+            payments: mergedPayments,
+            extras: mergedExtras,
+            extrasUSD: extrasUSDFinal,
+            extras_meta: {
+              roomsCount,
+              extrasUSDTotal,
+              extrasUSDPerRoom
+            }
+          }
+        };
+        const newHash = hashDoc(newDocForHash);
+        if (newHash === singleOld.contentHash) {
+          log(`Skipping ${doc.id}, no changes detected (hash match).`);
+          return res.status(200).json({ ok: true, dryRun, processed: 0, totalFound: 1, message: 'Already up-to-date.' });
+        }
+
+        const updateData = {
+          ...customerData,
+          wubook_payments: wubookPaysRaw,
+          wubook_notes: wubookNotesRaw,
+          wubook_extras: wubookExtrasRaw,
+          notes: mergedNotes,
+          payments: mergedPayments,
+          extras: mergedExtras,
+          extrasUSD: extrasUSDFinal,
+          extras_meta: { roomsCount, extrasUSDTotal, extrasUSDPerRoom },
+          enrichmentStatus: 'completed',
+          enrichedAt: singleOld.enrichedAt || FieldValue.serverTimestamp(),
+          lastUpdatedBy: 'wubook_sync',
+          lastUpdatedAt: FieldValue.serverTimestamp(),
+          contentHash: newHash,
+        };
+
+        if (dryRun) {
+          log(`[DryRun] Would update ${doc.id} (changes detected).`);
+          return res.status(200).json({ ok: true, dryRun, processed: 1, totalFound: 1, message: 'Simulated.' });
+        }
+
+        const diff = getObjectDiff(
+          { ...stripKeys(singleOld), nombre_huesped: singleOld?.nombre_huesped },
+          stripKeys(newDocForHash)
+        );
+        const changedKeys = Object.keys(diff);
+
+        const batch = firestore.batch();
+        batch.update(doc.ref, updateData);
+        const histRef = doc.ref.collection('historial').doc(`${Date.now()}_sync`);
+        batch.set(histRef, {
+          ts: FieldValue.serverTimestamp(),
+          source: 'wubook_sync',
+          context: { scope: 'sync', mode: syncMode, propiedad_id },
+          changeType: 'updated',
+          changedKeys,
+          diff,
+          hashFrom: singleOld.contentHash || null,
+          hashTo: newHash,
+          snapshotAfter: { ...singleOld, ...updateData },
+        });
+        await batch.commit();
+
+        return res.status(200).json({
+          ok: true, dryRun, processed: 1, totalFound: 1,
+          message: 'Successfully synced 1 reservation (by id).'
+        });
+      }
     } else if (forceUpdate) {
       log('Mode: forceUpdate');
       // sin filtros: procesa lo que devuelva el limit
@@ -253,7 +395,7 @@ export default async function handler(req, res) {
 
     for (const doc of reservationsToProcess.docs) {
       const oldDoc = doc.data();
-      const { propiedad_id, id_human, nombre_huesped: bookerId } = oldDoc;
+      const { propiedad_id, id_human, nombre_huesped: bookerId } = oldDoc || {};
       if (!propiedad_id || !id_human) continue;
 
       const apiKey = await getApiKey(propiedad_id);
@@ -281,12 +423,20 @@ export default async function handler(req, res) {
       const existingUnifiedExtras    = Array.isArray(oldDoc.extras) ? oldDoc.extras : [];
       const mergedExtras             = dedupeExtras([...existingUnifiedExtras, ...unifiedExtrasFromWubook]);
 
-      // Derivar extrasUSD si no existe aún (no pisar cambios del host)
-      const derivedExtrasUSD = sumExtrasUSD(mergedExtras);
+      // ---- TOTAL de extras en USD (SIN IVA) a nivel RESERVA (rcode)
+      const extrasUSDTotal = sumExtrasUSD(mergedExtras);
+
+      // ---- CANTIDAD DE ROOMS para este rcode en nuestra colección
+      const roomsCount = await getRoomsCountForReservation(propiedad_id, id_human);
+
+      // ---- Asignación prorrateada por room
+      const extrasUSDPerRoom = Number((extrasUSDTotal / Math.max(1, roomsCount)).toFixed(2));
+
+      // ---- Mantener la regla: si el host ya cargó extrasUSD, NO se pisa
       const extrasUSDFinal =
         (typeof oldDoc.extrasUSD === 'number' && isFinite(oldDoc.extrasUSD))
           ? oldDoc.extrasUSD
-          : derivedExtrasUSD;
+          : extrasUSDPerRoom;
 
       // Documento "nuevo" (también guardamos crudos para debug)
       const fetchedData = {
@@ -296,8 +446,13 @@ export default async function handler(req, res) {
         wubook_extras: wubookExtrasRaw,
         notes: mergedNotes,
         payments: mergedPayments,
-        extras: mergedExtras,
-        extrasUSD: extrasUSDFinal, // ← único usado por el front
+        extras: mergedExtras,          // fuente de verdad unificada
+        extrasUSD: extrasUSDFinal,     // prorrateado por room
+        extras_meta: {                 // rastro útil para auditoría
+          roomsCount,
+          extrasUSDTotal,
+          extrasUSDPerRoom
+        }
       };
 
       // Evitar updates innecesarios
@@ -325,7 +480,7 @@ export default async function handler(req, res) {
 
       // --- Historial ---
       const diff = getObjectDiff(
-        { ...stripKeys(oldDoc), nombre_huesped: bookerId },
+        { ...stripKeys(oldDoc), nombre_huesped: oldDoc?.nombre_huesped },
         stripKeys(newDocForHash)
       );
       const changedKeys = Object.keys(diff);
@@ -370,4 +525,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: error?.message || 'Unexpected error' });
   }
 }
+
 

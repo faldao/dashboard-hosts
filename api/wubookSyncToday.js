@@ -216,6 +216,7 @@ export default async function handler(req, res) {
           // Doc base (sin timestamps para hash)
           const baseDoc = {
             id_human: r.id_human,
+            rsrvid, 
             propiedad_id: prop.id,
             propiedad_nombre: prop.nombre,
             nombre_huesped: fullName,
