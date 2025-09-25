@@ -444,57 +444,89 @@ function PaymentsList({ r }) {
 function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
   const editBtnRef = useRef(null);
 
-  // --- helpers de lectura segura
+  // helpers numéricos
+  const nOrNull = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const isPos = (v) => Number.isFinite(v) && v > 0;
+
+  // --- lectura segura del breakdown + fallback a top-level
   const bd = r?.toPay_breakdown || {};
-  const readBase   = Number.isFinite(Number(bd.baseUSD))   ? Number(bd.baseUSD)   : null;
-  const readExtras = Number.isFinite(Number(bd.extrasUSD)) ? Number(bd.extrasUSD) : (Number.isFinite(Number(r?.extrasUSD)) ? Number(r.extrasUSD) : null);
-  const readIvaAmt = Number.isFinite(Number(bd.ivaUSD))    ? Number(bd.ivaUSD)    : null;
-  const readIvaPct = Number.isFinite(Number(bd.ivaPercent))? Number(bd.ivaPercent): null;
 
-  // --- states (SIEMPRE por breakdown, nunca por toPay)
-  const [baseUSD, setBaseUSD]       = useState(readBase !== null ? String(readBase.toFixed(2)) : "");
-  const [extrasUSD, setExtrasUSD]   = useState(readExtras !== null ? String(readExtras.toFixed(2)) : "");
-  const [ivaMode, setIvaMode]       = useState(readIvaPct !== null ? "percent" : "amount");
-  const [ivaPercent, setIvaPercent] = useState(readIvaPct !== null ? String(readIvaPct) : "21");
-  const [ivaUSD, setIvaUSD]         = useState(readIvaAmt !== null ? String(readIvaAmt.toFixed(2)) : "");
+  const baseBD    = nOrNull(bd.baseUSD);
+  const extrasBD  = nOrNull(bd.extrasUSD);
+  const extrasTop = nOrNull(r?.extrasUSD);
+  const ivaBD     = nOrNull(bd.ivaUSD);
+  const ivaPct    = nOrNull(bd.ivaPercent);
 
-  // Cuando cambia la reserva o se abre el pop, re-hidratamos desde el breakdown
+  const baseUSD   = baseBD;
+  const extrasUSD = (extrasBD !== null ? extrasBD : extrasTop);
+
+  const ivaUSD =
+    ivaBD !== null
+      ? ivaBD
+      : (baseUSD !== null && ivaPct !== null ? Number((baseUSD * ivaPct / 100).toFixed(2)) : null);
+
+  // --- estados del editor (siempre alimentados desde breakdown / top-level)
+  const [baseUSDIn, setBaseUSDIn]       = useState(baseUSD !== null ? String(baseUSD.toFixed(2)) : "");
+  const [extrasUSDIn, setExtrasUSDIn]   = useState(extrasUSD !== null ? String(extrasUSD.toFixed(2)) : "");
+  const [ivaMode, setIvaMode]           = useState(ivaPct !== null ? "percent" : "amount");
+  const [ivaPercent, setIvaPercent]     = useState(ivaPct !== null ? String(ivaPct) : "21");
+  const [ivaUSDIn, setIvaUSDIn]         = useState(ivaUSD !== null ? String(ivaUSD.toFixed(2)) : "");
+
   useEffect(() => {
     const bd2 = r?.toPay_breakdown || {};
-    const b   = Number.isFinite(Number(bd2.baseUSD))   ? Number(bd2.baseUSD)   : null;
-    const e   = Number.isFinite(Number(bd2.extrasUSD)) ? Number(bd2.extrasUSD) : (Number.isFinite(Number(r?.extrasUSD)) ? Number(r.extrasUSD) : null);
-    const ia  = Number.isFinite(Number(bd2.ivaUSD))    ? Number(bd2.ivaUSD)    : null;
-    const ip  = Number.isFinite(Number(bd2.ivaPercent))? Number(bd2.ivaPercent): null;
+    const b   = nOrNull(bd2.baseUSD);
+    const e   = (nOrNull(bd2.extrasUSD) !== null ? nOrNull(bd2.extrasUSD) : nOrNull(r?.extrasUSD));
+    const ia  = nOrNull(bd2.ivaUSD);
+    const ip  = nOrNull(bd2.ivaPercent);
 
-    setBaseUSD(b !== null ? String(b.toFixed(2)) : "");
-    setExtrasUSD(e !== null ? String(e.toFixed(2)) : "");
+    const ivaCalc = ia !== null ? ia : (b !== null && ip !== null ? Number((b * ip / 100).toFixed(2)) : null);
+
+    setBaseUSDIn(b !== null ? String(b.toFixed(2)) : "");
+    setExtrasUSDIn(e !== null ? String(e.toFixed(2)) : "");
     setIvaMode(ip !== null ? "percent" : "amount");
     setIvaPercent(ip !== null ? String(ip) : "21");
-    setIvaUSD(ia !== null ? String(ia.toFixed(2)) : "");
-  }, [isOpen, r?.id, r?.contentHash]); // contentHash para rehidratar tras guardar
+    setIvaUSDIn(ivaCalc !== null ? String(ivaCalc.toFixed(2)) : "");
+  }, [isOpen, r?.id, r?.contentHash]);
 
   const onSave = async () => {
     const payload = {
-      baseUSD: Number(baseUSD) || 0,
-      extrasUSD: Number(extrasUSD) || 0,
+      baseUSD: Number(baseUSDIn) || 0,
+      extrasUSD: Number(extrasUSDIn) || 0,
     };
     if (ivaMode === "percent") payload.ivaPercent = Number(ivaPercent) || 0;
-    else payload.ivaUSD = Number(ivaUSD) || 0;
+    else payload.ivaUSD = Number(ivaUSDIn) || 0;
 
     await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
     onDone?.(); onRefresh?.();
   };
 
+  // --- texto de desglose (sólo partes > 0)
+  const parts = [];
+  if (isPos(baseUSD))   parts.push(baseUSD.toFixed(2));
+  if (isPos(extrasUSD)) parts.push(`+ ${extrasUSD.toFixed(2)}`);
+  if (isPos(ivaUSD))    parts.push(`VAT ${ivaUSD.toFixed(2)}`);
+  const breakdownText = parts.join(" ");
+
   return (
     <>
       <div className="left__line4" onClick={(e) => e.stopPropagation()}>
-        {/* Visualización del total: usa r.toPay, NO los inputs */}
+        {/* Total */}
         <span className="toPay-view">
           <span className="toPay-cur">USD</span>
           <strong>
             {(typeof r.toPay === "number" && isFinite(r.toPay)) ? r.toPay.toFixed(2) : "-"}
           </strong>
         </span>
+
+        {/* Desglose condicional */}
+        {breakdownText && (
+          <span className="toPay-breakdown" style={{ marginLeft: 8, opacity: 0.8, fontSize: 12 }}>
+            {breakdownText}
+          </span>
+        )}
 
         <button
           ref={editBtnRef}
@@ -518,8 +550,8 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
           <input
             className="mini-popover__field"
             type="number" step="0.01" min="0"
-            value={baseUSD}
-            onChange={(e) => setBaseUSD(e.target.value)}
+            value={baseUSDIn === "" ? "" : baseUSDIn}
+            onChange={(e) => setBaseUSDIn(e.target.value)}
             placeholder="0.00"
           />
         </div>
@@ -553,8 +585,8 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
           <input
             className="mini-popover__field mini-popover__field--s"
             type="number" step="0.01" min="0"
-            value={ivaUSD}
-            onChange={(e) => setIvaUSD(e.target.value)}
+            value={ivaUSDIn === "" ? "" : ivaUSDIn}
+            onChange={(e) => setIvaUSDIn(e.target.value)}
             placeholder="0.00"
             disabled={ivaMode !== "amount"}
           />
@@ -565,8 +597,8 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
           <input
             className="mini-popover__field"
             type="number" step="0.01" min="0"
-            value={extrasUSD}
-            onChange={(e) => setExtrasUSD(e.target.value)}
+            value={extrasUSDIn === "" ? "" : extrasUSDIn}
+            onChange={(e) => setExtrasUSDIn(e.target.value)}
             placeholder="0.00"
           />
         </div>
@@ -579,6 +611,7 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
     </>
   );
 }
+
 
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
 
