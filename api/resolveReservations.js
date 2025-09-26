@@ -24,7 +24,7 @@ function bad(res, code, error) {
 const isCancelled = (d = {}) => {
   const s = String(d.status || d.state || d.reservation_status || '').toLowerCase();
   if (d.is_cancelled === true || d.cancelled === true) return true;
-  if (s.includes('cancel')) return true;         // canc, cancelled, cancelada...
+  if (s.includes('cancel')) return true;
   if (String(d?.cancellation?.status || '').toLowerCase().includes('cancel')) return true;
   return false;
 };
@@ -37,38 +37,40 @@ const normalizeForFront = (raw = {}) => {
   if (!Array.isArray(d.notes))    d.notes = [];
   if (!Array.isArray(d.payments)) d.payments = [];
 
+  // leer extras top-level sin forzar 0
+  const topExtras = Number.isFinite(Number(d.extrasUSD)) ? Number(d.extrasUSD) : null;
+
   // breakdown esperable por el editor de total
   if (!d.toPay_breakdown || typeof d.toPay_breakdown !== 'object') {
     d.toPay_breakdown = {
-      baseUSD: null,
+      baseUSD:    null,
       ivaPercent: null,
-      ivaUSD: null,
-      extrasUSD: null,
-      fxRate: null,
+      ivaUSD:     null,
+      extrasUSD:  topExtras,  // <-- usa nivel superior si existe
+      fxRate:     null,
     };
   } else {
-    // Aseguramos todas las keys
-   // ==================================================================
     const b = d.toPay_breakdown;
-    const topLevelExtras = Number.isFinite(Number(d.extrasUSD)) ? Number(d.extrasUSD) : null;
-
     d.toPay_breakdown = {
       baseUSD:    Number.isFinite(Number(b.baseUSD))    ? Number(b.baseUSD)    : null,
       ivaPercent: Number.isFinite(Number(b.ivaPercent)) ? Number(b.ivaPercent) : null,
       ivaUSD:     Number.isFinite(Number(b.ivaUSD))     ? Number(b.ivaUSD)     : null,
-      // Prioridad: 1. Breakdown existente, 2. Nivel superior, 3. Null
-      extrasUSD:  Number.isFinite(Number(b.extrasUSD))  ? Number(b.extrasUSD)  : topLevelExtras,
+      // prioridad: breakdown.extrasUSD, luego top-level, luego null
+      extrasUSD:  Number.isFinite(Number(b.extrasUSD))  ? Number(b.extrasUSD)  : topExtras,
       fxRate:     Number.isFinite(Number(b.fxRate))     ? Number(b.fxRate)     : null,
     };
-    // ==================================================================
   }
 
-  // extrasUSD: si falta completamente en el doc, exponemos null (NUNCA 0 por default)
+  // extrasUSD top-level: exponer null si no está presente o no es numérico
   if (!Object.prototype.hasOwnProperty.call(d, 'extrasUSD')) {
     d.extrasUSD = null;
+  } else if (!Number.isFinite(Number(d.extrasUSD))) {
+    d.extrasUSD = null;
+  } else {
+    d.extrasUSD = Number(d.extrasUSD);
   }
 
-  // toPay: dejar tal cual si viene; si no, null (el front lo muestra como "-")
+  // toPay: dejar numérico o null
   if (!Object.prototype.hasOwnProperty.call(d, 'toPay') || !Number.isFinite(Number(d.toPay))) {
     d.toPay = null;
   } else {
@@ -104,15 +106,9 @@ export default async function handler(req, res) {
         snaps.forEach((s) => {
           if (!s.exists) return;
           const d = s.data();
-
-          // filtrar canceladas
-          if (isCancelled(d)) return;
-
-          // normalizar para el front
-          const norm = normalizeForFront(d);
-
-          // guardamos por id para luego respetar el orden
-          out.set(s.id, { id: s.id, ...norm });
+          if (isCancelled(d)) return;              // filtrar canceladas
+          const norm = normalizeForFront(d);       // normalizar para el front
+          out.set(s.id, { id: s.id, ...norm });    // guardar por id
         });
         return out;
       } catch {
@@ -120,7 +116,7 @@ export default async function handler(req, res) {
       }
     }));
 
-    // Reconstituimos en EXACTO orden de entrada
+    // Reconstruir en el EXACTO orden de entrada
     const merged = new Map();
     for (const m of maps) for (const [k, v] of m.entries()) merged.set(k, v);
 
@@ -132,4 +128,5 @@ export default async function handler(req, res) {
     return bad(res, 500, e?.message || 'Error');
   }
 }
+
 

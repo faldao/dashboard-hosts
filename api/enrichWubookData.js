@@ -8,7 +8,8 @@
 // - extras[]    es la fuente de verdad (source: 'wubook' | 'host')
 // - extrasUSD   número: único campo que usa/edita el frontend
 //   • Se calcula como TOTAL extras (sin IVA) EN USD / #rooms del mismo id_human
-//   • Si el host lo fijó (incluye 0) NO se pisa (lastUpdatedBy !== 'wubook_sync').
+//   • Si el host lo fijó (incluye 0) y el doc es "host-owned", NO se pisa
+//   • Se sincroniza toPay y toPay_breakdown.extrasUSD
 
 import axios from 'axios';
 import qs from 'qs';
@@ -49,6 +50,23 @@ function getObjectDiff(obj1, obj2) {
     }
   }
   return diff;
+}
+
+// === helpers numéricos para toPay ===
+const numOrZero = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const numOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+
+/** Recalcula total a pagar (base + iva + extras). El IVA se aplica SOLO a la base. */
+function recomputeToPayFrom(breakdown, extrasUSDFinal) {
+  const b = numOrZero(breakdown?.baseUSD);
+  const ivaPct = numOrNull(breakdown?.ivaPercent);
+  let ivaUSD = numOrNull(breakdown?.ivaUSD);
+  if (ivaUSD === null && ivaPct !== null && b > 0) {
+    ivaUSD = Number((b * ivaPct / 100).toFixed(2));
+  }
+  const e = numOrZero(extrasUSDFinal);
+  const total = Number((b + (ivaUSD || 0) + e).toFixed(2));
+  return { total, baseUSD: b, ivaPercent: ivaPct, ivaUSD: (ivaUSD ?? 0), extrasUSD: e };
 }
 
 // ===================== API HELPERS =====================
@@ -158,7 +176,7 @@ function mapWubookPaymentsToUnified(arr = []) {
       source: 'wubook',
       wubook_id: p.id ?? null,
       amount: Number.isFinite(amt) ? amt : 0,
-      currency: String(p.currency || p.ccy || 'USD'), // pagos suelen venir con currency
+      currency: String(p.currency || p.ccy || 'USD'),
       method: String(p.method || p.type || 'unknown')
     };
   }).filter(p => p.amount > 0);
@@ -176,17 +194,15 @@ function dedupePayments(arr = []) {
   return out;
 }
 
-// Extras (KP anidado)
-// Estructura unificada: { ts, by, source, wubook_id, name, note, price, currency, qty, inclusive }
+// Extras (KP anidado) — estructura unificada: { ts, by, source, wubook_id, name, note, price, currency, qty, inclusive }
 function mapWubookExtrasToUnified(arr = []) {
   return (Array.isArray(arr) ? arr : []).map(e => {
     const rawAmount = e?.price?.amount ?? e?.price;
-    const price = Number.isFinite(Number(rawAmount)) ? Number(rawAmount) : null; // SIN IVA; null si no hay
+    const price = Number.isFinite(Number(rawAmount)) ? Number(rawAmount) : null; // SIN IVA
     const qtyRaw = e?.extra_info?.number ?? e?.number ?? e?.qty ?? 1;
     const qty = Number.isFinite(Number(qtyRaw)) && Number(qtyRaw) > 0 ? Number(qtyRaw) : 1;
 
-    // Nunca defaultear a 'ARS'; si no viene, dejamos null
-    const currency = (e?.price?.currency ?? e?.ccy ?? e?.currency) || null;
+    const currency = (e?.price?.currency ?? e?.ccy ?? e?.currency) || null; // no default a ARS
     const name = (String(e?.extra_info?.name ?? e?.name ?? '') || '').trim() || null;
     const note = (String(e?.note ?? e?.notes ?? '') || '').trim() || null;
 
@@ -200,8 +216,8 @@ function mapWubookExtrasToUnified(arr = []) {
       wubook_id: e?.exid ?? e?.id ?? null,
       name,
       note,
-      price,                            // null si no hubo amount válido
-      currency,                         // null si no vino
+      price,        // null si no hay amount válido
+      currency,     // null si no vino
       qty,
       inclusive: Boolean(e?.inclusive ?? false),
     };
@@ -210,26 +226,20 @@ function mapWubookExtrasToUnified(arr = []) {
 
 // Quita duplicados de extras (tolera price/currency = null)
 function dedupeExtras(arr = []) {
-  const seen = new Set();
-  const out = [];
-
+  const seen = new Set(); const out = [];
   for (const e of (Array.isArray(arr) ? arr : [])) {
     const tsVal = (e?.ts?.seconds ?? e?.ts?._seconds ?? e?.ts ?? '');
     const name = (e?.name || '').slice(0, 60);
     const price = Number.isFinite(e?.price) ? e.price : 'null';
-    const curr  = (e?.currency ?? 'null');           // no default a 'ARS'
+    const curr  = (e?.currency ?? 'null');
     const qty   = Number.isFinite(e?.qty) ? e.qty : 'null';
-
     const key = e?.wubook_id
       ? `w:${e.wubook_id}`
       : `s:${e?.source}|t:${tsVal}|n:${name}|p:${price}|c:${curr}|q:${qty}`;
-
     if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(e);
+    seen.add(key); out.push(e);
   }
-
-  out.sort((a, b) =>
+  out.sort((a,b) =>
     (a?.ts?.seconds ?? a?.ts?._seconds ?? 0) -
     (b?.ts?.seconds ?? b?.ts?._seconds ?? 0)
   );
@@ -239,14 +249,12 @@ function dedupeExtras(arr = []) {
 /**
  * Suma extras en USD (sin IVA):
  * - Considera USD explícito o currency null (asumimos USD)
- * - Devuelve null si no hay nada para sumar (nunca 0)
+ * - Devuelve null si no hay nada para sumar
  */
 function sumExtrasUSD(extras = []) {
   if (!Array.isArray(extras) || extras.length === 0) return null;
-
   let sum = 0;
   let hadAny = false;
-
   for (const e of extras) {
     const isUSD = (e.currency == null) || (String(e.currency).toUpperCase() === 'USD');
     if (!isUSD) continue;
@@ -256,7 +264,6 @@ function sumExtrasUSD(extras = []) {
       hadAny = true;
     }
   }
-
   if (!hadAny) return null;
   if (sum <= 0) return null;
   return Number(sum.toFixed(2));
@@ -264,19 +271,14 @@ function sumExtrasUSD(extras = []) {
 
 // ===================== CACHES AUXILIARES =====================
 const roomsPerReservationCache = new Map();
-/**
- * Cuenta cuántos documentos de "Reservas" existen para el mismo rcode (id_human)
- * y misma propiedad. Devuelve al menos 1. Cachea por (propiedad_id|id_human).
- */
+/** Cuenta cuántos docs 'Reservas' existen para el mismo rcode (id_human) y propiedad. */
 async function getRoomsCountForReservation(propiedad_id, id_human) {
   const key = `${propiedad_id}|${id_human}`;
   if (roomsPerReservationCache.has(key)) return roomsPerReservationCache.get(key);
-
   const snap = await firestore.collection('Reservas')
     .where('propiedad_id', '==', propiedad_id)
     .where('id_human', '==', id_human)
     .get();
-
   const count = Math.max(1, snap.size || 1);
   roomsPerReservationCache.set(key, count);
   return count;
@@ -296,143 +298,124 @@ export default async function handler(req, res) {
     const { limit = 10, dryRun = false, forceUpdate = false, reservationId = null, syncMode = 'pending' } = req.body;
     log('INIT', { limit, dryRun, forceUpdate, reservationId, syncMode });
 
-    let query = firestore.collection('Reservas');
-
+    // ---- Si viene reservationId, procesamos ese doc puntual (más robusto que where por docId)
     if (reservationId) {
-      // Nota: FieldPath.documentId() puede no estar re-exportado; si lo está:
-      try {
-        query = query.where(firestore.FieldPath.documentId(), '==', reservationId);
-      } catch {
-        // Fallback simple: .doc(reservationId).get() más abajo si falla la where
-        const snap = await firestore.collection('Reservas').doc(reservationId).get();
-        if (!snap.exists) {
-          return res.status(200).json({ ok: true, message: 'Reservation not found.', processed: 0 });
-        }
-        // Emula un snapshot con un solo doc
-        const doc = snap;
-        const singleOld = doc.data();
-        const { propiedad_id, id_human, nombre_huesped: bookerId } = singleOld || {};
-        if (!propiedad_id || !id_human) {
-          return res.status(200).json({ ok: true, message: 'Doc missing propiedad_id/id_human.', processed: 0 });
-        }
-        const apiKey = await getApiKey(propiedad_id);
-        if (!apiKey) {
-          return res.status(200).json({ ok: true, message: 'No apiKey for propiedad.', processed: 0 });
-        }
-
-        const rsrvid = singleOld?.rsrvid || null;
-
-        const [customerData, wubookPaysRaw, wubookNotesRaw, wubookExtrasRaw] = await Promise.all([
-          fetchCustomerData(apiKey, bookerId),
-          fetchPayments(apiKey, id_human),
-          fetchNotes(apiKey, id_human),
-          fetchExtrasKP(apiKey, rsrvid), // KP por rsrvid
-        ]);
-
-        const unifiedNotesFromWubook   = mapWubookNotesToUnified(wubookNotesRaw);
-        const existingUnifiedNotes     = Array.isArray(singleOld.notes) ? singleOld.notes : [];
-        const mergedNotes              = dedupeNotes([...existingUnifiedNotes, ...unifiedNotesFromWubook]);
-
-        const unifiedPaysFromWubook    = mapWubookPaymentsToUnified(wubookPaysRaw);
-        const existingUnifiedPays      = Array.isArray(singleOld.payments) ? singleOld.payments : [];
-        const mergedPayments           = dedupePayments([...existingUnifiedPays, ...unifiedPaysFromWubook]);
-
-        const unifiedExtrasFromWubook  = mapWubookExtrasToUnified(wubookExtrasRaw);
-        const existingUnifiedExtras    = Array.isArray(singleOld.extras) ? singleOld.extras : [];
-        const mergedExtras             = dedupeExtras([...existingUnifiedExtras, ...unifiedExtrasFromWubook]);
-
-        // ---- TOTAL y prorrateo
-        const extrasUSDTotal   = sumExtrasUSD(mergedExtras);
-        const roomsCount       = await getRoomsCountForReservation(propiedad_id, id_human);
-        const extrasUSDPerRoom = (extrasUSDTotal != null)
-          ? Number((extrasUSDTotal / Math.max(1, roomsCount)).toFixed(2))
-          : null;
-
-        // ---- Preservar valor del host (incluye 0)
-        const hasExtrasField = (d) => Object.prototype.hasOwnProperty.call(d || {}, 'extrasUSD');
-        const extrasUSDFinal =
-          (isHostOwned(singleOld) && hasExtrasField(singleOld))
-            ? singleOld.extrasUSD
-            : extrasUSDPerRoom;
-
-        const newDocForHash = {
-          ...singleOld,
-          ...{
-            ...customerData,
-            wubook_payments: wubookPaysRaw,
-            wubook_notes: wubookNotesRaw,
-            wubook_extras: wubookExtrasRaw,
-            notes: mergedNotes,
-            payments: mergedPayments,
-            extras: mergedExtras,
-            extrasUSD: extrasUSDFinal,
-            extras_meta: {
-              roomsCount,
-              extrasUSDTotal: extrasUSDTotal ?? null,
-              extrasUSDPerRoom: extrasUSDPerRoom ?? null
-            }
-          }
-        };
-        const newHash = hashDoc(newDocForHash);
-        if (newHash === singleOld.contentHash) {
-          log(`Skipping ${doc.id}, no changes detected (hash match).`);
-          return res.status(200).json({ ok: true, dryRun, processed: 0, totalFound: 1, message: 'Already up-to-date.' });
-        }
-
-        const updateData = {
-          ...customerData,
-          wubook_payments: wubookPaysRaw,
-          wubook_notes: wubookNotesRaw,
-          wubook_extras: wubookExtrasRaw,
-          notes: mergedNotes,
-          payments: mergedPayments,
-          extras: mergedExtras,
-          extrasUSD: extrasUSDFinal,
-          extras_meta: {
-            roomsCount,
-            extrasUSDTotal: extrasUSDTotal ?? null,
-            extrasUSDPerRoom: extrasUSDPerRoom ?? null
-          },
-          enrichmentStatus: 'completed',
-          enrichedAt: singleOld.enrichedAt || FieldValue.serverTimestamp(),
-          lastUpdatedBy: 'wubook_sync',
-          lastUpdatedAt: FieldValue.serverTimestamp(),
-          contentHash: newHash,
-        };
-
-        if (dryRun) {
-          log(`[DryRun] Would update ${doc.id} (changes detected).`);
-          return res.status(200).json({ ok: true, dryRun, processed: 1, totalFound: 1, message: 'Simulated.' });
-        }
-
-        const diff = getObjectDiff(
-          { ...stripKeys(singleOld), nombre_huesped: singleOld?.nombre_huesped },
-          stripKeys(newDocForHash)
-        );
-        const changedKeys = Object.keys(diff);
-
-        const batch = firestore.batch();
-        batch.update(doc.ref, updateData);
-        const histRef = doc.ref.collection('historial').doc(`${Date.now()}_sync`);
-        batch.set(histRef, {
-          ts: FieldValue.serverTimestamp(),
-          source: 'wubook_sync',
-          context: { scope: 'sync', mode: syncMode, propiedad_id },
-          changeType: 'updated',
-          changedKeys,
-          diff,
-          hashFrom: singleOld.contentHash || null,
-          hashTo: newHash,
-          snapshotAfter: { ...singleOld, ...updateData },
-        });
-        await batch.commit();
-
-        return res.status(200).json({
-          ok: true, dryRun, processed: 1, totalFound: 1,
-          message: 'Successfully synced 1 reservation (by id).'
-        });
+      const doc = await firestore.collection('Reservas').doc(String(reservationId)).get();
+      if (!doc.exists) {
+        return res.status(200).json({ ok: true, message: 'Reservation not found.', processed: 0 });
       }
-    } else if (forceUpdate) {
+      const singleOld = doc.data();
+      const { propiedad_id, id_human, nombre_huesped: bookerId } = singleOld || {};
+      if (!propiedad_id || !id_human) {
+        return res.status(200).json({ ok: true, message: 'Doc missing propiedad_id/id_human.', processed: 0 });
+      }
+      const apiKey = await getApiKey(propiedad_id);
+      if (!apiKey) {
+        return res.status(200).json({ ok: true, message: 'No apiKey for propiedad.', processed: 0 });
+      }
+      const rsrvid = singleOld?.rsrvid || null;
+
+      const [customerData, wubookPaysRaw, wubookNotesRaw, wubookExtrasRaw] = await Promise.all([
+        fetchCustomerData(apiKey, bookerId),
+        fetchPayments(apiKey, id_human),
+        fetchNotes(apiKey, id_human),
+        fetchExtrasKP(apiKey, rsrvid),
+      ]);
+
+      const unifiedNotesFromWubook   = mapWubookNotesToUnified(wubookNotesRaw);
+      const existingUnifiedNotes     = Array.isArray(singleOld.notes) ? singleOld.notes : [];
+      const mergedNotes              = dedupeNotes([...existingUnifiedNotes, ...unifiedNotesFromWubook]);
+
+      const unifiedPaysFromWubook    = mapWubookPaymentsToUnified(wubookPaysRaw);
+      const existingUnifiedPays      = Array.isArray(singleOld.payments) ? singleOld.payments : [];
+      const mergedPayments           = dedupePayments([...existingUnifiedPays, ...unifiedPaysFromWubook]);
+
+      const unifiedExtrasFromWubook  = mapWubookExtrasToUnified(wubookExtrasRaw);
+      const existingUnifiedExtras    = Array.isArray(singleOld.extras) ? singleOld.extras : [];
+      const mergedExtras             = dedupeExtras([...existingUnifiedExtras, ...unifiedExtrasFromWubook]);
+
+      const extrasUSDTotal   = sumExtrasUSD(mergedExtras);
+      const roomsCount       = await getRoomsCountForReservation(propiedad_id, id_human);
+      const extrasUSDPerRoom = (extrasUSDTotal != null) ? Number((extrasUSDTotal / Math.max(1, roomsCount)).toFixed(2)) : null;
+
+      const hasExtrasField = (d) => Object.prototype.hasOwnProperty.call(d || {}, 'extrasUSD');
+      const extrasUSDFinal = (isHostOwned(singleOld) && hasExtrasField(singleOld)) ? singleOld.extrasUSD : extrasUSDPerRoom;
+
+      // Recalcular total + sincronizar breakdown.extrasUSD
+      const currentBD = singleOld?.toPay_breakdown || {};
+      const { total: newToPay } = recomputeToPayFrom(currentBD, extrasUSDFinal);
+      const newBreakdown = { ...currentBD, extrasUSD: (extrasUSDFinal ?? null) };
+
+      const fetchedData = {
+        ...customerData,
+        wubook_payments: wubookPaysRaw,
+        wubook_notes: wubookNotesRaw,
+        wubook_extras: wubookExtrasRaw,
+        notes: mergedNotes,
+        payments: mergedPayments,
+        extras: mergedExtras,
+        extrasUSD: extrasUSDFinal,
+        toPay: newToPay,
+        toPay_breakdown: newBreakdown,
+        extras_meta: {
+          roomsCount,
+          extrasUSDTotal: extrasUSDTotal ?? null,
+          extrasUSDPerRoom: extrasUSDPerRoom ?? null
+        }
+      };
+
+      const newDocForHash = { ...singleOld, ...fetchedData };
+      const newHash = hashDoc(newDocForHash);
+      if (newHash === singleOld.contentHash) {
+        log(`Skipping ${doc.id}, no changes detected (hash match).`);
+        return res.status(200).json({ ok: true, dryRun, processed: 0, totalFound: 1, message: 'Already up-to-date.' });
+      }
+
+      const updateData = {
+        ...fetchedData,
+        enrichmentStatus: 'completed',
+        enrichedAt: singleOld.enrichedAt || FieldValue.serverTimestamp(),
+        lastUpdatedBy: 'wubook_sync',
+        lastUpdatedAt: FieldValue.serverTimestamp(),
+        contentHash: newHash,
+      };
+
+      if (dryRun) {
+        log(`[DryRun] Would update ${doc.id} (changes detected).`);
+        return res.status(200).json({ ok: true, dryRun, processed: 1, totalFound: 1, message: 'Simulated.' });
+      }
+
+      const diff = getObjectDiff(
+        { ...stripKeys(singleOld), nombre_huesped: singleOld?.nombre_huesped },
+        stripKeys(newDocForHash)
+      );
+      const changedKeys = Object.keys(diff);
+
+      const batch = firestore.batch();
+      batch.update(doc.ref, updateData);
+      const histRef = doc.ref.collection('historial').doc(`${Date.now()}_sync`);
+      batch.set(histRef, {
+        ts: FieldValue.serverTimestamp(),
+        source: 'wubook_sync',
+        context: { scope: 'sync', mode: syncMode, propiedad_id },
+        changeType: 'updated',
+        changedKeys,
+        diff,
+        hashFrom: singleOld.contentHash || null,
+        hashTo: newHash,
+        snapshotAfter: { ...singleOld, ...updateData },
+      });
+      await batch.commit();
+
+      return res.status(200).json({
+        ok: true, dryRun, processed: 1, totalFound: 1,
+        message: 'Successfully synced 1 reservation (by id).'
+      });
+    }
+
+    // ---- Query por modo
+    let query = firestore.collection('Reservas');
+    if (forceUpdate) {
       log('Mode: forceUpdate');
       // sin filtros: procesa lo que devuelva el limit
     } else if (syncMode === 'active') {
@@ -445,7 +428,6 @@ export default async function handler(req, res) {
     }
 
     const reservationsToProcess = await query.limit(limit).get();
-
     if (reservationsToProcess.empty) {
       log('DONE - No reservations found for the selected mode.');
       return res.status(200).json({ ok: true, message: 'No reservations found for the selected mode.', processed: 0 });
@@ -471,7 +453,7 @@ export default async function handler(req, res) {
         fetchCustomerData(apiKey, bookerId),
         fetchPayments(apiKey, id_human),
         fetchNotes(apiKey, id_human),
-        fetchExtrasKP(apiKey, rsrvid), // KP por rsrvid
+        fetchExtrasKP(apiKey, rsrvid),
       ]);
 
       // ======= UNIFICACIÓN =======
@@ -487,39 +469,23 @@ export default async function handler(req, res) {
       const existingUnifiedExtras    = Array.isArray(oldDoc.extras) ? oldDoc.extras : [];
       const mergedExtras             = dedupeExtras([...existingUnifiedExtras, ...unifiedExtrasFromWubook]);
 
-      // ---- TOTAL y prorrateo
       const extrasUSDTotal   = sumExtrasUSD(mergedExtras);
       const roomsCount       = await getRoomsCountForReservation(propiedad_id, id_human);
       const extrasUSDPerRoom = (extrasUSDTotal != null)
         ? Number((extrasUSDTotal / Math.max(1, roomsCount)).toFixed(2))
         : null;
 
-      // ---- Preservar valor del host (incluye 0)
       const hasExtrasField = (d) => Object.prototype.hasOwnProperty.call(d || {}, 'extrasUSD');
       const extrasUSDFinal =
         (isHostOwned(oldDoc) && hasExtrasField(oldDoc))
           ? oldDoc.extrasUSD
           : extrasUSDPerRoom;
 
-          // ==================================================================
-      const bd = oldDoc.toPay_breakdown || {};
-      const baseUSD = Number.isFinite(Number(bd.baseUSD)) ? Number(bd.baseUSD) : 0;
-      
-      // El IVA se calcula sobre la base, no sobre los extras.
-      // Si hay un ivaUSD explícito en el breakdown, lo respetamos.
-      const ivaPercent = Number.isFinite(Number(bd.ivaPercent)) ? Number(bd.ivaPercent) : null;
-      let ivaUSD = Number.isFinite(Number(bd.ivaUSD)) ? Number(bd.ivaUSD) : 0;
-      if (ivaUSD === 0 && ivaPercent !== null && baseUSD > 0) {
-        ivaUSD = Number((baseUSD * ivaPercent / 100).toFixed(2));
-      }
-      
-      const extras = Number.isFinite(extrasUSDFinal) ? extrasUSDFinal : 0;
-      
-      // El nuevo total es la suma de las partes.
-      const newToPay = Number((baseUSD + ivaUSD + extras).toFixed(2));
-      // ==================================================================
+      // Recalcular total + sincronizar breakdown.extrasUSD
+      const currentBD = oldDoc?.toPay_breakdown || {};
+      const { total: newToPay } = recomputeToPayFrom(currentBD, extrasUSDFinal);
+      const newBreakdown = { ...currentBD, extrasUSD: (extrasUSDFinal ?? null) };
 
-      // Documento "nuevo" (también guardamos crudos para debug)
       const fetchedData = {
         ...customerData,
         wubook_payments: wubookPaysRaw,
@@ -529,6 +495,8 @@ export default async function handler(req, res) {
         payments: mergedPayments,
         extras: mergedExtras,          // fuente de verdad unificada
         extrasUSD: extrasUSDFinal,     // prorrateado por room o preservado del host
+        toPay: newToPay,
+        toPay_breakdown: newBreakdown,
         extras_meta: {
           roomsCount,
           extrasUSDTotal: extrasUSDTotal ?? null,
@@ -602,7 +570,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    log('FATAL ERROR', error.stack);
+    log('FATAL ERROR', error?.stack || error?.message);
     return res.status(500).json({ ok: false, error: error?.message || 'Unexpected error' });
   }
 }
