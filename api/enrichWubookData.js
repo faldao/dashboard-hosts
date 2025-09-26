@@ -501,6 +501,24 @@ export default async function handler(req, res) {
           ? oldDoc.extrasUSD
           : extrasUSDPerRoom;
 
+          // ==================================================================
+      const bd = oldDoc.toPay_breakdown || {};
+      const baseUSD = Number.isFinite(Number(bd.baseUSD)) ? Number(bd.baseUSD) : 0;
+      
+      // El IVA se calcula sobre la base, no sobre los extras.
+      // Si hay un ivaUSD explícito en el breakdown, lo respetamos.
+      const ivaPercent = Number.isFinite(Number(bd.ivaPercent)) ? Number(bd.ivaPercent) : null;
+      let ivaUSD = Number.isFinite(Number(bd.ivaUSD)) ? Number(bd.ivaUSD) : 0;
+      if (ivaUSD === 0 && ivaPercent !== null && baseUSD > 0) {
+        ivaUSD = Number((baseUSD * ivaPercent / 100).toFixed(2));
+      }
+      
+      const extras = Number.isFinite(extrasUSDFinal) ? extrasUSDFinal : 0;
+      
+      // El nuevo total es la suma de las partes.
+      const newToPay = Number((baseUSD + ivaUSD + extras).toFixed(2));
+      // ==================================================================
+
       // Documento "nuevo" (también guardamos crudos para debug)
       const fetchedData = {
         ...customerData,

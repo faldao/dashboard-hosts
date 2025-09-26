@@ -48,14 +48,19 @@ const normalizeForFront = (raw = {}) => {
     };
   } else {
     // Aseguramos todas las keys
+   // ==================================================================
     const b = d.toPay_breakdown;
+    const topLevelExtras = Number.isFinite(Number(d.extrasUSD)) ? Number(d.extrasUSD) : null;
+
     d.toPay_breakdown = {
-      baseUSD:     Number.isFinite(Number(b.baseUSD))   ? Number(b.baseUSD)   : null,
-      ivaPercent:  Number.isFinite(Number(b.ivaPercent))? Number(b.ivaPercent): null,
-      ivaUSD:      Number.isFinite(Number(b.ivaUSD))    ? Number(b.ivaUSD)    : null,
-      extrasUSD:   Number.isFinite(Number(b.extrasUSD)) ? Number(b.extrasUSD) : null,
-      fxRate:      Number.isFinite(Number(b.fxRate))    ? Number(b.fxRate)    : null,
+      baseUSD:    Number.isFinite(Number(b.baseUSD))    ? Number(b.baseUSD)    : null,
+      ivaPercent: Number.isFinite(Number(b.ivaPercent)) ? Number(b.ivaPercent) : null,
+      ivaUSD:     Number.isFinite(Number(b.ivaUSD))     ? Number(b.ivaUSD)     : null,
+      // Prioridad: 1. Breakdown existente, 2. Nivel superior, 3. Null
+      extrasUSD:  Number.isFinite(Number(b.extrasUSD))  ? Number(b.extrasUSD)  : topLevelExtras,
+      fxRate:     Number.isFinite(Number(b.fxRate))     ? Number(b.fxRate)     : null,
     };
+    // ==================================================================
   }
 
   // extrasUSD: si falta completamente en el doc, exponemos null (NUNCA 0 por default)
