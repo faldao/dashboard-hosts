@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   plugins: [react(), tailwindcss(), splitVendorChunkPlugin()],
   root: '.',
-  base: './',                 // rutas relativas (si tu hosting lo necesita)
+  base: '/',                 // rutas relativas (si tu hosting lo necesita)
   server: { port: 5173 },
   optimizeDeps: {
     include: ['exceljs', 'file-saver', 'luxon'], // prebundle para dev

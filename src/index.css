@@ -2,7 +2,7 @@
 @import "tailwindcss";
 
 /* Importá tus utilidades para que Tailwind procese @apply, si las usás */
-@import "./App.css";
+@import "./pages/PlanillaHostsPage.css";
 
 /* (Opcional) variables/estilos globales */
 :root {
