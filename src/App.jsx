@@ -444,71 +444,86 @@ function PaymentsList({ r }) {
 function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
   const editBtnRef = useRef(null);
 
-  // helpers numéricos
-  const nOrNull = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  };
-  const isPos = (v) => Number.isFinite(v) && v > 0;
+// helpers locales
+const nOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+const isPos   = (n) => typeof n === "number" && isFinite(n) && n > 0;
 
-  // --- lectura segura del breakdown + fallback a top-level
-  const bd = r?.toPay_breakdown || {};
+// --- lectura segura del breakdown + fallback a top-level
+const bd = r?.toPay_breakdown || {};
 
-  const baseBD    = nOrNull(bd.baseUSD);
-  const extrasBD  = nOrNull(bd.extrasUSD);
-  const extrasTop = nOrNull(r?.extrasUSD);
-  const ivaBD     = nOrNull(bd.ivaUSD);
-  const ivaPct    = nOrNull(bd.ivaPercent);
+const baseBD    = nOrNull(bd.baseUSD);
+const extrasBD  = nOrNull(bd.extrasUSD);
+const extrasTop = nOrNull(r?.extrasUSD);
+const ivaBD     = nOrNull(bd.ivaUSD);
+const ivaPct    = nOrNull(bd.ivaPercent);
 
-  const baseUSD   = baseBD;
-  const extrasUSD = (extrasBD !== null ? extrasBD : extrasTop);
+const baseUSD   = baseBD;
+const extrasUSD = (extrasBD !== null ? extrasBD : extrasTop);
 
-  const ivaUSD =
-    ivaBD !== null
-      ? ivaBD
-      : (baseUSD !== null && ivaPct !== null ? Number((baseUSD * ivaPct / 100).toFixed(2)) : null);
+const ivaUSD =
+  ivaBD !== null
+    ? ivaBD
+    : (baseUSD !== null && ivaPct !== null ? Number((baseUSD * ivaPct / 100).toFixed(2)) : null);
 
-  // --- estados del editor (siempre alimentados desde breakdown / top-level)
-  const [baseUSDIn, setBaseUSDIn]       = useState(baseUSD !== null ? String(baseUSD.toFixed(2)) : "");
-  const [extrasUSDIn, setExtrasUSDIn]   = useState(extrasUSD !== null ? String(extrasUSD.toFixed(2)) : "");
-  const [ivaMode, setIvaMode]           = useState(ivaPct !== null ? "percent" : "amount");
-  const [ivaPercent, setIvaPercent]     = useState(ivaPct !== null ? String(ivaPct) : "21");
-  const [ivaUSDIn, setIvaUSDIn]         = useState(ivaUSD !== null ? String(ivaUSD.toFixed(2)) : "");
+// --- estados del editor (siempre alimentados desde breakdown / top-level)
+const [baseUSDIn, setBaseUSDIn]       = useState(baseUSD !== null ? String(baseUSD.toFixed(2)) : "");
+const [extrasUSDIn, setExtrasUSDIn]   = useState(extrasUSD !== null ? String(extrasUSD.toFixed(2)) : "");
+const [ivaMode, setIvaMode]           = useState(ivaPct !== null ? "percent" : "amount");
+const [ivaPercent, setIvaPercent]     = useState(ivaPct !== null ? String(ivaPct) : "21");
+const [ivaUSDIn, setIvaUSDIn]         = useState(ivaUSD !== null ? String(ivaUSD.toFixed(2)) : "");
 
-  useEffect(() => {
-    const bd2 = r?.toPay_breakdown || {};
-    const b   = nOrNull(bd2.baseUSD);
-    const e   = (nOrNull(bd2.extrasUSD) !== null ? nOrNull(bd2.extrasUSD) : nOrNull(r?.extrasUSD));
-    const ia  = nOrNull(bd2.ivaUSD);
-    const ip  = nOrNull(bd2.ivaPercent);
+useEffect(() => {
+  const bd2 = r?.toPay_breakdown || {};
+  const b   = nOrNull(bd2.baseUSD);
+  const e   = (nOrNull(bd2.extrasUSD) !== null ? nOrNull(bd2.extrasUSD) : nOrNull(r?.extrasUSD));
+  const ia  = nOrNull(bd2.ivaUSD);
+  const ip  = nOrNull(bd2.ivaPercent);
 
-    const ivaCalc = ia !== null ? ia : (b !== null && ip !== null ? Number((b * ip / 100).toFixed(2)) : null);
+  const ivaCalc = ia !== null ? ia : (b !== null && ip !== null ? Number((b * ip / 100).toFixed(2)) : null);
 
-    setBaseUSDIn(b !== null ? String(b.toFixed(2)) : "");
-    setExtrasUSDIn(e !== null ? String(e.toFixed(2)) : "");
-    setIvaMode(ip !== null ? "percent" : "amount");
-    setIvaPercent(ip !== null ? String(ip) : "21");
-    setIvaUSDIn(ivaCalc !== null ? String(ivaCalc.toFixed(2)) : "");
-  }, [isOpen, r?.id, r?.contentHash]);
+  setBaseUSDIn(b !== null ? String(b.toFixed(2)) : "");
+  setExtrasUSDIn(e !== null ? String(e.toFixed(2)) : "");
+  setIvaMode(ip !== null ? "percent" : "amount");
+  setIvaPercent(ip !== null ? String(ip) : "21");
+  setIvaUSDIn(ivaCalc !== null ? String(ivaCalc.toFixed(2)) : "");
+}, [isOpen, r?.id, r?.contentHash]);
 
-  const onSave = async () => {
-    const payload = {
-      baseUSD: Number(baseUSDIn) || 0,
-      extrasUSD: Number(extrasUSDIn) || 0,
-    };
-    if (ivaMode === "percent") payload.ivaPercent = Number(ivaPercent) || 0;
-    else payload.ivaUSD = Number(ivaUSDIn) || 0;
+// ✨ parsea sin forzar 0 por defecto
+const toNumOrNull = (s) => {
+  if (s === "" || s === null || s === undefined) return null; // vacío -> null
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;                       // "0" -> 0, "0.00" -> 0
+};
 
-    await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
-    onDone?.(); onRefresh?.();
-  };
+const onSave = async () => {
+  const payload = {};
+  const b = toNumOrNull(baseUSDIn);
+  const e = toNumOrNull(extrasUSDIn);
 
-  // --- texto de desglose (sólo partes > 0)
-  const parts = [];
-  if (isPos(baseUSD))   parts.push(baseUSD.toFixed(2));
-  if (isPos(extrasUSD)) parts.push(`+ ${extrasUSD.toFixed(2)}`);
-  if (isPos(ivaUSD))    parts.push(`VAT ${ivaUSD.toFixed(2)}`);
-  const breakdownText = parts.join(" ");
+  if (b !== null) payload.baseUSD = b;        // solo incluye si el usuario definió valor
+  if (e !== null) payload.extrasUSD = e;      // idem (0 válido si lo escribió)
+
+  if (ivaMode === "percent") {
+    const p = toNumOrNull(ivaPercent);
+    if (p !== null) payload.ivaPercent = p;
+  } else {
+    const a = toNumOrNull(ivaUSDIn);
+    if (a !== null) payload.ivaUSD = a;
+  }
+
+  await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
+  onDone?.(); onRefresh?.();
+};
+
+// --- texto de desglose (sólo partes > 0)
+const parts = [];
+if (isPos(baseUSD))   parts.push(baseUSD.toFixed(2));
+if (isPos(extrasUSD)) parts.push(`+ ${extrasUSD.toFixed(2)}`);
+if (isPos(ivaUSD))    parts.push(`VAT ${ivaUSD.toFixed(2)}`);
+const breakdownText = parts.join(" ");
+
+// ... (resto del JSX sin cambios)
+
 
   return (
     <>
