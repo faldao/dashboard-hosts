@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/dolarByDate?lastDays=3&casa=oficial",
+      "schedule": "10 13 * * *"
+    },
+    {
+      "path": "/api/dolarByDate?lastDays=3&casa=oficial",
+      "schedule": "10 16 * * *"
+    },
+    {
+      "path": "/api/cronOrchestrator",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}

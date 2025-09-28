@@ -18,6 +18,10 @@ import qs from 'qs';
 import crypto from 'crypto';
 import { firestore, FieldValue } from '../lib/firebaseAdmin.js';
 import { DateTime } from 'luxon';
+import { getPropertiesAndRoomMaps } from '../lib/fetchPropertiesAndRoomMaps.js';
+
+
+
 
 // ===================== CONFIGURACIÓN Y UTILIDADES =====================
 const log = (...args) => console.log(`[SyncToday]`, ...args);
@@ -91,35 +95,6 @@ const isCancelledReservation = (r) => {
   return false;
 };
 
-// ===================== Firestore: propiedades y mapeo de rooms =====================
-async function getPropertiesAndRoomMaps(propertyIds) {
-  const propsCol = firestore.collection('propiedades');
-  let propDocs = [];
-  if (Array.isArray(propertyIds) && propertyIds.length) {
-    const snaps = await Promise.all(propertyIds.map((id) => propsCol.doc(id).get()));
-    propDocs = snaps.filter((s) => s.exists);
-  } else {
-    const snap = await propsCol.get();
-    propDocs = snap.docs;
-  }
-  const list = [];
-  for (const d of propDocs) {
-    const data = d.data();
-    const apiKey = data?.api_key || data?.integraciones?.wubook_apiKey || data?.integraciones?.wubook?.apiKey;
-    if (!apiKey) { continue; }
-    const roomMap = new Map();
-    const depsSnap = await d.ref.collection('departamentos').get();
-    for (const dep of depsSnap.docs) {
-      const v = dep.data(); const idZak = dep.id;
-      const codigo_depto = v?.codigo_depto || v?.wubook_shortname || dep.id;
-      const nombre_depto = v?.nombre || v?.name || '';
-      roomMap.set(idZak, { codigo_depto, nombre_depto });
-    }
-    log('Mapeo de Departamentos para', { propId: d.id, count: roomMap.size });
-    list.push({ id: d.id, nombre: data?.nombre || d.id, apiKey, roomMap });
-  }
-  return list;
-}
 
 // ===================== HANDLER PRINCIPAL =====================
 export default async function handler(req, res) {
@@ -130,7 +105,11 @@ export default async function handler(req, res) {
     const { propertyIds, dryRun = false } = (req.body && req.method === 'POST') ? req.body : {};
     log('INIT', { propertyIds, dryRun });
 
-    const propiedades = await getPropertiesAndRoomMaps(propertyIds);
+    const propiedades = await getPropertiesAndRoomMaps({
+  propertyIds,
+  onlyActiveIfNoIds: true,
+  log,
+});
     if (!propiedades.length) { return bad(res, 400, 'No se encontraron propiedades con api_key de WuBook.'); }
 
     const summary = [];
