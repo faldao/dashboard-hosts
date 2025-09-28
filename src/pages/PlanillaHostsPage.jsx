@@ -147,7 +147,10 @@ function useDaily(dateISO, propertyId) {
       setItems([]);
       return;
     }
-    const { data } = await axios.post("/api/resolveReservations", { ids });
+    //const { data } = await axios.post("/api/resolveReservations", { ids }); ------ sacado porque no refresca props
+     const body = { ids };
+ if (propertyId && propertyId !== "all") body.propiedad_id = propertyId; //agregado por refresh props
+ const { data } = await axios.post("/api/resolveReservations", body); //agregado por refresh props
     setItems(data.items || []);
   };
 
@@ -155,10 +158,14 @@ const loadDay = async (t = tab) => {
   setLoading(true);
   try {
     const q = new URLSearchParams({ date: dateISO });
-    const propParam = propertyId && propertyId !== "all" ? propertyId : "all";
-    q.set("property", propParam);
-    // opcional (solo si tu backend también mira 'propiedad_id'):
+    /*const propParam = propertyId && propertyId !== "all" ? propertyId : "all";
+    q.set("property", propParam);* --------- comentado porque no refresca propiedad */
+      // opcional (solo si tu backend también mira 'propiedad_id'):
     // q.set("propiedad_id", propParam);
+   if (propertyId && propertyId !== "all") {
+    q.set("propiedad_id", propertyId); // nombre que suelen leer tus APIs
+     q.set("property", propertyId);     // compat si el handler viejo mira este
+   }
 
     const { data } = await axios.get(`/api/dailyIndex?${q.toString()}`);
     setIdx(data);

@@ -1,3 +1,4 @@
+// /api/dailyIndex.js
 import { firestore, FieldValue } from '../lib/firebaseAdmin.js';
 import { DateTime } from 'luxon';
 
@@ -56,7 +57,7 @@ function groupByPropAndDept(docsByBucket) {
     for (const d of docsByBucket[b]) {
       const id = d.id;
       const data = d.data();
-      const propId = data?.propiedad_id || 'unknown';
+      const propId = String(data?.propiedad_id || 'unknown');
       const propName = data?.propiedad_nombre || null;
       const codigo_depto = data?.codigo_depto || data?.id_zak || 'unknown';
       const nombre_depto = data?.depto_nombre || data?.nombre_depto || null;
@@ -79,16 +80,26 @@ export default async function handler(req, res) {
 
     const dateParam = (req.query.date || req.body?.date || '').trim();
     const rebuild = (req.query.rebuild || req.body?.rebuild || '') === '1';
-    const propParam = String(req.query.property || req.body?.property || 'all').trim(); // 'all' | '<propId>'
-    const dateISO = dateParam ? toISODateAR(dateParam) : DateTime.now().setZone(TZ).toISODate();
 
+    // ⬅️ aceptar ambos nombres, en query y body
+    const propParamRaw =
+      req.query?.propiedad_id ??
+      req.query?.property ??
+      req.body?.propiedad_id ??
+      req.body?.property ??
+      '';
+
+    const propParam = String(propParamRaw).trim();
+    const hasPropFilter = propParam !== '' && propParam.toLowerCase() !== 'all';
+
+    const dateISO = dateParam ? toISODateAR(dateParam) : DateTime.now().setZone(TZ).toISODate();
     const rootRef = firestore.collection('DailyIndex').doc(dateISO);
 
     // ---------- FAST PATH: cache ----------
     if (!rebuild) {
       const existing = await rootRef.get();
       if (existing.exists) {
-        if (propParam && propParam !== 'all') {
+        if (hasPropFilter) {
           const propSnap = await rootRef.collection('props').doc(propParam).get();
           if (propSnap.exists) {
             const pd = propSnap.data() || {};
@@ -215,7 +226,7 @@ export default async function handler(req, res) {
     if (ops > 0) await flush();
 
     // ---------- RESPONSE acorde al filtro ----------
-    if (propParam && propParam !== 'all') {
+    if (hasPropFilter) {
       const b = byProp[propParam] || { checkins: [], stays: [], checkouts: [], propiedad_nombre: null };
       return ok(res, {
         ok: true,
@@ -241,6 +252,7 @@ export default async function handler(req, res) {
     return bad(res, 500, e.message || 'Error building daily index');
   }
 }
+
 
 
 

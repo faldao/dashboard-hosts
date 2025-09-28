@@ -4,6 +4,7 @@
 //  - excluir canceladas (varias variantes de status/flags)
 //  - normalizar campos esperados por el front (extrasUSD, arrays, breakdown)
 //  - preservar el ORDEN de los IDs de entrada
+//  - (opcional) filtrar por propiedad: req.body.propiedad_id o req.body.property
 
 import { firestore } from '../lib/firebaseAdmin.js';
 
@@ -46,7 +47,7 @@ const normalizeForFront = (raw = {}) => {
       baseUSD:    null,
       ivaPercent: null,
       ivaUSD:     null,
-      extrasUSD:  topExtras,  // <-- usa nivel superior si existe
+      extrasUSD:  topExtras,  // usa nivel superior si existe
       fxRate:     null,
     };
   } else {
@@ -86,6 +87,8 @@ export default async function handler(req, res) {
 
   try {
     const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const propFilter = String(req.body?.propiedad_id || req.body?.property || '').trim();
+
     const ids = rawIds
       .map(x => String(x || '').trim())
       .filter(x => x.length > 0)
@@ -98,23 +101,29 @@ export default async function handler(req, res) {
     const chunks = [];
     for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
 
-    const maps = await Promise.all(chunks.map(async (c) => {
-      try {
-        const refs = c.map(id => firestore.collection('Reservas').doc(id));
-        const snaps = await firestore.getAll(...refs);
-        const out = new Map();
-        snaps.forEach((s) => {
-          if (!s.exists) return;
-          const d = s.data();
-          if (isCancelled(d)) return;              // filtrar canceladas
-          const norm = normalizeForFront(d);       // normalizar para el front
-          out.set(s.id, { id: s.id, ...norm });    // guardar por id
-        });
-        return out;
-      } catch {
-        return new Map();
-      }
-    }));
+    const maps = await Promise.all(
+      chunks.map(async (c) => {
+        try {
+          const refs = c.map(id => firestore.collection('Reservas').doc(id));
+          const snaps = await firestore.getAll(...refs);
+          const out = new Map();
+          snaps.forEach((s) => {
+            if (!s.exists) return;
+            const d = s.data();
+            if (isCancelled(d)) return; // filtrar canceladas
+
+            // si se pide filtrar por propiedad, respetarlo
+            if (propFilter && String(d?.propiedad_id || '') !== propFilter) return;
+
+            const norm = normalizeForFront(d);   // normalizar para el front
+            out.set(s.id, { id: s.id, ...norm }); // guardar por id
+          });
+          return out;
+        } catch {
+          return new Map();
+        }
+      })
+    );
 
     // Reconstruir en el EXACTO orden de entrada
     const merged = new Map();
@@ -123,10 +132,14 @@ export default async function handler(req, res) {
     const items = [];
     for (const id of ids) if (merged.has(id)) items.push(merged.get(id));
 
-    return ok(res, { items });
+    return ok(res, {
+      items,
+      // _debug: { propFilter, in: ids.length, out: items.length } // opcional para debug
+    });
   } catch (e) {
     return bad(res, 500, e?.message || 'Error');
   }
 }
+
 
 
