@@ -34,7 +34,7 @@ export default function LoginPage() {
         {/* Podrías poner tu logo aquí */}
         {/* <img src="/path/to/your/logo.svg" alt="Logo" className="login-logo" /> */}
         
-        <h1 className="login-title">Portal de Hosts</h1>
+        <h1 className="login-title">Portal Viproomer</h1>
         <p className="login-subtitle">Iniciá sesión para gestionar tus aplicaciones</p>
         
         <div className="login-button-wrapper">

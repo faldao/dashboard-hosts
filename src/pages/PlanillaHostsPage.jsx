@@ -3,6 +3,7 @@ import axios from "axios";
 import { DateTime } from "luxon";
 import PopoverPortal from "../components/PopoverPortal";
 import ExportBottomExcel from "../components/ExportBottomExcel"; 
+import { Link } from 'react-router-dom';
 
 
 const TZ = "America/Argentina/Buenos_Aires";
@@ -16,7 +17,17 @@ const toFlag = (cc) => {
   const up = cc.toUpperCase();
   return String.fromCodePoint(...[...up].map((c) => c.charCodeAt(0) + A));
 };
-
+/*-------------------------- Puertita ------------------------------*/
+const ExitIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    {/* puerta */}
+    <path d="M4 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4" />
+    {/* flecha salir */}
+    <path d="M12 12h8" />
+    <path d="M17 7l5 5-5 5" />
+  </svg>
+);
 
 /* --------------------- Lapicito--------------------------*/
 const PencilIcon = (props) => (
@@ -522,7 +533,6 @@ if (isPos(extrasUSD)) parts.push(`+ ${extrasUSD.toFixed(2)}`);
 if (isPos(ivaUSD))    parts.push(`VAT ${ivaUSD.toFixed(2)}`);
 const breakdownText = parts.join(" ");
 
-// ... (resto del JSX sin cambios)
 
 
   return (
@@ -955,6 +965,7 @@ export default function App() {
 
   return (
     <div className="app" onClick={closeAllPopovers}>
+
       <header className="header">
         <div className="header__bar">
           <div className="flex items-center gap-2">
@@ -981,6 +992,9 @@ export default function App() {
             <button type="button" className="btn" onClick={() => goto(1)}>Mañana →</button>
             <input className="input--date" type="date" value={dateISO}
                    onChange={(e) => { setDateISO(e.target.value); closeAllPopovers(); }} />
+                     <Link to="/dashboard" className="icon-btn" title="Volver al Portal" aria-label="Volver al Portal">
+    <ExitIcon />
+  </Link>
           </div>
         </div>
       </header>

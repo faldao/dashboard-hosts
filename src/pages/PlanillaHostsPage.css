@@ -191,8 +191,9 @@
 .mini-popover__btn--muted { @apply bg-gray-100 text-gray-800 border border-gray-300; }
 .mini-popover__btn--ok { @apply bg-black text-white; }
 
-/* Evitar recortes por contenedores */
-.list, .res-card4, .res-cell, .panel { overflow: visible; }
+/* Evitar recortes por contenedores 
+.list, .res-card4, .res-cell, .panel { overflow: visible; }*/
+.list { @apply flex-1 min-h-0; padding-top:.25rem; padding-left:.375rem; padding-right:.375rem; background:var(--panel-bg); overflow:auto; }
 
 /* Ocultar stack viejo */
 .status-stack { display:none; }
@@ -239,5 +240,21 @@
 .modal-overlay { @apply hidden; }
 .modal { @apply hidden; }
 
+
+/* ======================================================
+Icono de salida
+========================================================== */
+.icon-btn { @apply inline-flex items-center justify-center w-7 h-7 rounded-full border bg-white text-gray-700 hover:bg-gray-50; }
+.icon-btn svg { width:16px; height:16px; }
+/* ======================================================
+BARRA DE NAVEGACIÓN (Dentro de una App)
+========================================================== 
+.portal-link-bar { background-color: #f9fafb; padding: 0.5rem 1.5rem; border-bottom: 1px solid #e5e7eb; }
+.portal-link-bar a { color: #3b82f6; font-weight: 500; text-decoration: none; }
+.portal-link-bar a:hover { text-decoration: underline; }*/
+
+/* Asegura que el área de arriba y la tabla “repartan” el alto sin pisarse */
+.main  { @apply flex-1 flex flex-col min-h-0; z-index:0; }
+.bottom { @apply h-[30%] p-3 min-h-0; position:relative; z-index:1; }
 
 
