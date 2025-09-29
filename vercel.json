@@ -11,6 +11,8 @@
     {
       "path": "/api/cronOrchestrator",
       "schedule": "*/30 * * * *"
-    }
+    },
+    { "path": "/api/rebuildDailyIndexes", 
+    "schedule": "*/30 * * * *" }
   ]
 }

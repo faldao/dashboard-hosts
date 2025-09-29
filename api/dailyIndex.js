@@ -78,28 +78,33 @@ export default async function handler(req, res) {
     if (req.method === 'OPTIONS') return ok(res, { ok: true });
     if (req.method !== 'GET') return bad(res, 405, 'Método no permitido');
 
-    const dateParam = (req.query.date || req.body?.date || '').trim();
-    const rebuild = (req.query.rebuild || req.body?.rebuild || '') === '1';
+    const dateParam = (req.query?.date || req.body?.date || '').trim();
 
-    // ⬅️ aceptar ambos nombres, en query y body
+    // Aceptar ambos nombres (query/body) y tratar ''/'all' como sin filtro
     const propParamRaw =
       req.query?.propiedad_id ??
       req.query?.property ??
       req.body?.propiedad_id ??
       req.body?.property ??
       '';
-
     const propParam = String(propParamRaw).trim();
     const hasPropFilter = propParam !== '' && propParam.toLowerCase() !== 'all';
 
+    // Politica de rebuild
+    let rebuild = (req.query?.rebuild || req.body?.rebuild || '') === '1';
     const dateISO = dateParam ? toISODateAR(dateParam) : DateTime.now().setZone(TZ).toISODate();
+    const todayISO = DateTime.now().setZone(TZ).toISODate();
+    const isTodayOrFuture = dateISO >= todayISO;
+    if (!rebuild && isTodayOrFuture) rebuild = true; // auto-rebuild para hoy y futuros
+
     const rootRef = firestore.collection('DailyIndex').doc(dateISO);
 
-    // ---------- FAST PATH: cache ----------
+    // ---------- FAST PATH: cache (sólo si NO rebuild) ----------
     if (!rebuild) {
       const existing = await rootRef.get();
       if (existing.exists) {
         if (hasPropFilter) {
+          // Si falta el subdoc, NO devolvemos vacío: caemos a BUILD
           const propSnap = await rootRef.collection('props').doc(propParam).get();
           if (propSnap.exists) {
             const pd = propSnap.data() || {};
@@ -115,21 +120,13 @@ export default async function handler(req, res) {
               fromCache: true
             });
           }
-          // si no existe el subdoc, devolvemos vacío consistente
-          return ok(res, {
-            ok: true,
-            date: dateISO,
-            propiedad_id: propParam,
-            propiedad_nombre: null,
-            counts: { checkins: 0, stays: 0, checkouts: 0 },
-            checkins: [], stays: [], checkouts: [],
-            fromCache: true
-          });
+          // sin subdoc -> seguimos al BUILD
+        } else {
+          // Global (válido para fechas pasadas)
+          return ok(res, { ok: true, date: dateISO, ...existing.data(), fromCache: true });
         }
-
-        // Global
-        return ok(res, { ok: true, date: dateISO, ...existing.data(), fromCache: true });
       }
+      // si no existe el global -> seguimos al BUILD
     }
 
     // ---------- BUILD ----------
@@ -252,6 +249,7 @@ export default async function handler(req, res) {
     return bad(res, 500, e.message || 'Error building daily index');
   }
 }
+
 
 
 
