@@ -257,4 +257,15 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
 .main  { @apply flex-1 flex flex-col min-h-0; z-index:0; }
 .bottom { @apply h-[30%] p-3 min-h-0; position:relative; z-index:1; }
 
+/* agrupación por propiedad en tarjetas */
+.prop-group { margin: 16px 0 24px; }
+.prop-group__title {
+  font-size: 14px; font-weight: 600; opacity: .75;
+  margin: 8px 0 12px; border-left: 3px solid #ddd; padding-left: 8px;
+}
+
+/* tabla: fila de grupo y separadores */
+.btr--group td { border-top: 2px solid #000; }
+.btr--res-sep td { border-top: 1px solid #111; }
+
 

@@ -147,36 +147,51 @@ function useDaily(dateISO, propertyId) {
       setItems([]);
       return;
     }
-    //const { data } = await axios.post("/api/resolveReservations", { ids }); ------ sacado porque no refresca props
-     const body = { ids };
- if (propertyId && propertyId !== "all") body.propiedad_id = propertyId; //agregado por refresh props
- const { data } = await axios.post("/api/resolveReservations", body); //agregado por refresh props
-    setItems(data.items || []);
+    // Pasamos propiedad_id al backend para que (si quiere) use ese dato
+    const body = { ids };
+    if (propertyId && propertyId !== "all") body.propiedad_id = propertyId;
+
+    const { data } = await axios.post("/api/resolveReservations", body);
+    const list = Array.isArray(data.items) ? data.items : [];
+
+    // Orden natural por propiedad (sólo en "Todas")
+    const norm = (s) => (s ? String(s).toLowerCase() : "");
+    const cmp = (a, b) => {
+      const pa = norm(a.propiedad_nombre) || norm(a.propiedad_id);
+      const pb = norm(b.propiedad_nombre) || norm(b.propiedad_id);
+      if (pa !== pb) return pa.localeCompare(pb);
+
+      const da = norm(a.depto_nombre || a.nombre_depto || a.codigo_depto || a.id_zak);
+      const db = norm(b.depto_nombre || b.nombre_depto || b.codigo_depto || b.id_zak);
+      if (da !== db) return da.localeCompare(db);
+
+      const aa = a.arrival_iso || "";
+      const ab = b.arrival_iso || "";
+      if (aa !== ab) return aa < ab ? -1 : 1;
+
+      return String(a.id_human || a.id).localeCompare(String(b.id_human || b.id));
+    };
+
+    const sorted = propertyId === "all" ? [...list].sort(cmp) : list;
+    setItems(sorted);
   };
 
-const loadDay = async (t = tab) => {
-  setLoading(true);
-  try {
-    const q = new URLSearchParams({ date: dateISO });
-    /*const propParam = propertyId && propertyId !== "all" ? propertyId : "all";
-    q.set("property", propParam);* --------- comentado porque no refresca propiedad */
-      // opcional (solo si tu backend también mira 'propiedad_id'):
-    // q.set("propiedad_id", propParam);
-   if (propertyId && propertyId !== "all") {
-    q.set("propiedad_id", propertyId); // nombre que suelen leer tus APIs
-     q.set("property", propertyId);     // compat si el handler viejo mira este
-   }
+  const loadDay = async (t = tab) => {
+    setLoading(true);
+    try {
+      const q = new URLSearchParams({ date: dateISO });
+      const propParam = propertyId && propertyId !== "all" ? propertyId : "all";
+      q.set("property", propParam);
 
-    const { data } = await axios.get(`/api/dailyIndex?${q.toString()}`);
-    setIdx(data);
-    await fetchTab(t, data);
-  } finally {
-    setLoading(false);
-  }
-};
+      const { data } = await axios.get(`/api/dailyIndex?${q.toString()}`);
+      setIdx(data);
+      await fetchTab(t, data);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => { loadDay(); /* eslint-disable-next-line */ }, [dateISO, propertyId]);
-
 
   const setActiveTab = async (t) => {
     setTab(t);
@@ -197,6 +212,7 @@ const loadDay = async (t = tab) => {
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
   return { loading, idx, items: paged, counts: idx?.counts || {}, tab, setActiveTab, page, setPage, totalPages, refetch };
 }
+
 
 /* ---------- UI: Tabs ---------- */
 function Tabs({ tab, onChange, counts }) {
@@ -804,8 +820,9 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
 
 
 /* ---------- UI: BottomTable (nuevo formato + export Excel) ---------- */
+
+
 function BottomTable({ items }) {
-  // Helpers locales (no tocan tus helpers globales)
   const fmtDay = (iso) =>
     iso ? DateTime.fromISO(iso, { zone: TZ }).toFormat("dd/MM/yyyy") : "-";
 
@@ -829,44 +846,60 @@ function BottomTable({ items }) {
     return `${v.toFixed(2)} ${c}`;
   };
 
-  // Aplana reservas -> filas (primera fila con datos; filas extra sólo pagos)
-  const rows = [];
-  items.forEach((r, idx) => {
-    const pays = getPayments(r);
-    rows.push({
-      _sepTop: idx > 0, // línea negra arriba al iniciar nueva reserva
-      // datos visibles
-      depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—",
-      pax: r.adults ?? "-",
-      nombre: r.nombre_huesped || "-",
-      tel: r.customer_phone || r.telefono || "-",
-      checkin: fmtDay(r.arrival_iso),
-      hora_in: fmtHourTS(r.checkin_at),
-      checkout: fmtDay(r.departure_iso),
-      hora_out: fmtHourTS(r.checkout_at),
-      agencia: r.source || r.channel_name || "-",
-      toPay: money(r.toPay, "USD"),
-      pago: pays[0] ? money(pays[0].amount, pays[0].currency) : "",
-      metodo: pays[0]?.method || "",
-      concepto: pays[0]?.concept || "",
-      // flags de color (solo se aplican en la 1ª fila)
-      hasCheckin: !!r.checkin_at,
-      wasContacted: !!r.contacted_at,
-      payStatus: String(r.payment_status || "unpaid").toLowerCase(),
-    });
+  // --- agrupar por propiedad (si hay varias, muestra headers)
+  const groupsMap = new Map();
+  for (const r of items) {
+    const key = r.propiedad_id || "sin_prop";
+    const name = r.propiedad_nombre || key;
+    if (!groupsMap.has(key)) groupsMap.set(key, { name, list: [] });
+    groupsMap.get(key).list.push(r);
+  }
+  const groups = Array.from(groupsMap.values()).sort((a, b) =>
+    String(a.name).localeCompare(String(b.name))
+  );
 
-    for (let i = 1; i < pays.length; i++) {
-      const p = pays[i];
+  const rows = [];
+  let idx = 0;
+
+  groups.forEach((g) => {
+    // fila de sección
+    rows.push({ _group: true, label: g.name });
+    g.list.forEach((r) => {
+      idx += 1;
+      const pays = getPayments(r);
       rows.push({
-        _payRow: true, // subfila de pago (no coloreamos nada acá)
-        depto: "", pax: "", nombre: "", tel: "",
-        checkin: "", hora_in: "", checkout: "", hora_out: "",
-        agencia: "", toPay: "",
-        pago: money(p.amount, p.currency),
-        metodo: p.method || "",
-        concepto: p.concept || "",
+        _sepTop: true, // línea separadora entre reservas
+        depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—",
+        pax: r.adults ?? "-",
+        nombre: r.nombre_huesped || "-",
+        tel: r.customer_phone || r.telefono || "-",
+        checkin: fmtDay(r.arrival_iso),
+        hora_in: fmtHourTS(r.checkin_at),
+        checkout: fmtDay(r.departure_iso),
+        hora_out: fmtHourTS(r.checkout_at),
+        agencia: r.source || r.channel_name || "-",
+        toPay: money(r.toPay, "USD"),
+        pago: pays[0] ? money(pays[0].amount, pays[0].currency) : "",
+        metodo: pays[0]?.method || "",
+        concepto: pays[0]?.concept || "",
+        hasCheckin: !!r.checkin_at,
+        wasContacted: !!r.contacted_at,
+        payStatus: String(r.payment_status || "unpaid").toLowerCase(),
       });
-    }
+
+      for (let i = 1; i < pays.length; i++) {
+        const p = pays[i];
+        rows.push({
+          _payRow: true,
+          depto: "", pax: "", nombre: "", tel: "",
+          checkin: "", hora_in: "", checkout: "", hora_out: "",
+          agencia: "", toPay: "",
+          pago: money(p.amount, p.currency),
+          metodo: p.method || "",
+          concepto: p.concept || "",
+        });
+      }
+    });
   });
 
   return (
@@ -895,6 +928,16 @@ function BottomTable({ items }) {
         </thead>
         <tbody>
           {rows.map((r, i) => {
+            if (r._group) {
+              return (
+                <tr key={"g_" + i} className="btr--group">
+                  <td className="td" colSpan={13} style={{ fontWeight: 600, background: "#fafafa" }}>
+                    {r.label}
+                  </td>
+                </tr>
+              );
+            }
+
             const tdDeptoCls = cls("td", !r._payRow && r.hasCheckin && "td--depto-in");
             const tdNameCls  = cls("td", !r._payRow && r.wasContacted && "td--name-contacted");
             const tdPagoCls  = cls(
@@ -938,26 +981,24 @@ function BottomTable({ items }) {
   );
 }
 
-
 /* ---------- App ---------- */
 
 export default function App() {
   const today = DateTime.now().setZone(TZ).toISODate();
   const { list: propsList } = useActiveProperties();
-  const [propertyId, setPropertyId] = useState("all");     // NUEVO
+  const [propertyId, setPropertyId] = useState("all");
 
   const [dateISO, setDateISO] = useState(today);
   const { loading, items, counts, tab, setActiveTab, page, setPage, totalPages, refetch } =
-    useDaily(dateISO, propertyId); 
+    useDaily(dateISO, propertyId);
 
-  // --- NUEVO: estado global de popovers ---
+  // Popovers global
   const [activePopover, setActivePopover] = useState(null);
   const handlePopoverToggle = (popoverId) => {
     setActivePopover((curr) => (curr === popoverId ? null : popoverId));
   };
   const closeAllPopovers = () => setActivePopover(null);
 
-  // Cerrar con Escape
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") closeAllPopovers(); };
     window.addEventListener("keydown", onKey);
@@ -970,9 +1011,20 @@ export default function App() {
     setDateISO(d);
   };
 
+  // util para agrupar items por propiedad (ya vienen ordenados si "all")
+  const buildGroups = (arr) => {
+    const map = new Map();
+    for (const r of arr) {
+      const key = r.propiedad_id || "sin_prop";
+      const name = r.propiedad_nombre || key;
+      if (!map.has(key)) map.set(key, { name, list: [] });
+      map.get(key).list.push(r);
+    }
+    return Array.from(map.values());
+  };
+
   return (
     <div className="app" onClick={closeAllPopovers}>
-
       <header className="header">
         <div className="header__bar">
           <div className="flex items-center gap-2">
@@ -981,9 +1033,8 @@ export default function App() {
           </div>
 
           <div className="header__actions">
-            {/* Selector de propiedad */}
             <select
-              className="input--date"                   // mismo estilo que el date
+              className="input--date"
               value={propertyId}
               onChange={(e) => { setPropertyId(e.target.value); closeAllPopovers(); }}
               title="Propiedad"
@@ -999,9 +1050,9 @@ export default function App() {
             <button type="button" className="btn" onClick={() => goto(1)}>Mañana →</button>
             <input className="input--date" type="date" value={dateISO}
                    onChange={(e) => { setDateISO(e.target.value); closeAllPopovers(); }} />
-                     <Link to="/dashboard" className="icon-btn" title="Volver al Portal" aria-label="Volver al Portal">
-    <ExitIcon />
-  </Link>
+            <Link to="/dashboard" className="icon-btn" title="Volver al Portal" aria-label="Volver al Portal">
+              <ExitIcon />
+            </Link>
           </div>
         </div>
       </header>
@@ -1017,24 +1068,45 @@ export default function App() {
         {!loading && (
           <div className="list">
             {items.length === 0 && <div className="empty empty--as-card">Sin reservas</div>}
-            <div className="list__grid">
-              {items.map((r) => (
-                <ReservationCard
-                  key={r.id}
-                  r={r}
-                  onRefresh={refetch}
-                  activePopover={activePopover}
-                  onPopoverToggle={handlePopoverToggle}
-                />
-              ))}
-            </div>
+
+            {propertyId !== "all" ? (
+              <div className="list__grid">
+                {items.map((r) => (
+                  <ReservationCard
+                    key={r.id}
+                    r={r}
+                    onRefresh={refetch}
+                    activePopover={activePopover}
+                    onPopoverToggle={handlePopoverToggle}
+                  />
+                ))}
+              </div>
+            ) : (
+              buildGroups(items).map((g, gi) => (
+                <section key={gi} className="prop-group">
+                  <h2 className="prop-group__title">{g.name}</h2>
+                  <div className="list__grid">
+                    {g.list.map((r) => (
+                      <ReservationCard
+                        key={r.id}
+                        r={r}
+                        onRefresh={refetch}
+                        activePopover={activePopover}
+                        onPopoverToggle={handlePopoverToggle}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))
+            )}
           </div>
         )}
       </main>
 
       <section className="bottom">
-        <BottomTable items={items} onOpen={() => { }} />
+        <BottomTable items={items} />
       </section>
     </div>
   );
 }
+
