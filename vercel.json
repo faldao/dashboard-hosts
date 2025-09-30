@@ -1,18 +1,33 @@
 {
   "crons": [
     {
-      "path": "/api/dolarByDate?lastDays=3&casa=oficial",
+      "path": "/api/dolarByDate?lastDays=3&casa=oficial&fallback=previous",
+      "schedule": "55 12 * * *"
+    },
+    {
+      "path": "/api/dolarByDate?monedas=USD,EUR,BRL,CLP,UYU",
       "schedule": "10 13 * * *"
     },
     {
-      "path": "/api/dolarByDate?lastDays=3&casa=oficial",
+      "path": "/api/dolarByDate?monedas=USD,EUR,BRL,CLP,UYU",
       "schedule": "10 16 * * *"
+    },
+    {
+      "path": "/api/linkUsdFxToReservations?range=today&dryRun=false",
+      "schedule": "15 13 * * *"
+    },
+    {
+      "path": "/api/linkUsdFxToReservations?range=today&dryRun=false",
+      "schedule": "15 16 * * *"
     },
     {
       "path": "/api/cronOrchestrator",
       "schedule": "*/30 * * * *"
     },
-    { "path": "/api/rebuildDailyIndexes", 
-    "schedule": "*/30 * * * *" }
+    {
+      "path": "/api/rebuildDailyIndexes?mode=auto",
+      "schedule": "*/30 * * * *"
+    }
   ]
 }
+
