@@ -201,11 +201,24 @@ async function updateReservationsForDate({
   let totalSkippedExisting = 0;
   let totalUpdated = 0;
 
+  log("DATE START", {
+    dateISO,
+    dryRun,
+    force,
+    propertyIdsCount: Array.isArray(propertyIds) ? propertyIds.length : 0,
+    pageSize
+  });
+
   for (const sub of chunks) {
     let q = baseQuery;
     if (Array.isArray(sub)) {
       q = q.where("propiedad_id", "in", sub);
     }
+
+    log("CHUNK", {
+      dateISO,
+      filterPropIds: Array.isArray(sub) ? sub : "ALL"
+    });
 
     let cursor = null;
     while (true) {
@@ -214,7 +227,16 @@ async function updateReservationsForDate({
       if (cursor) qry = qry.startAfter(cursor);
 
       const snap = await qry.get();
-      if (snap.empty) break;
+      if (snap.empty) {
+        log("PAGE", { dateISO, page: "empty" });
+        break;
+      }
+
+      log("PAGE", {
+        dateISO,
+        pageSize: snap.size,
+        matchedSoFar: totalMatched
+      });
 
       let batch = firestore.batch();
       let ops = 0;
@@ -251,6 +273,7 @@ async function updateReservationsForDate({
         totalUpdated++;
 
         if (ops >= 450) {
+          log("BATCH FLUSH", { dateISO, ops });
           await batch.commit();
           batch = firestore.batch();
           ops = 0;
@@ -263,6 +286,13 @@ async function updateReservationsForDate({
       if (snap.size < pageSize) break; // última página
     }
   }
+
+  log("DATE DONE", {
+    dateISO,
+    matched: totalMatched,
+    skippedExisting: totalSkippedExisting,
+    updated: totalUpdated
+  });
 
   return { dateISO, matched: totalMatched, skippedExisting: totalSkippedExisting, updated: totalUpdated };
 }
@@ -325,7 +355,14 @@ export default async function handler(req, res) {
       });
     }
 
-    log("INIT", { start, end, dryRun, force, propertyIdsCount: propertyIds.length, pageSize });
+    log("INIT", {
+      start,
+      end,
+      dryRun,
+      force,
+      propertyIdsCount: propertyIds.length,
+      pageSize
+    });
 
     const perDate = [];
     for (const d of dateRangeIterator(start, end)) {
@@ -342,7 +379,13 @@ export default async function handler(req, res) {
         dryRun,
         pageSize,
       });
-      perDate.push({ date: d, status: "ok", matched: r.matched, skippedExisting: r.skippedExisting, updated: r.updated });
+      perDate.push({
+        date: d,
+        status: "ok",
+        matched: r.matched,
+        skippedExisting: r.skippedExisting,
+        updated: r.updated
+      });
     }
 
     // Actualizamos meta.lastLinkedDate si no es dryRun
@@ -370,6 +413,8 @@ export default async function handler(req, res) {
       },
       perDate,
     };
+
+    log("DONE", { range: { start, end }, totals: summary.totals });
 
     return ok(res, summary);
   } catch (e) {

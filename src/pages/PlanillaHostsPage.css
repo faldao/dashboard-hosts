@@ -268,4 +268,6 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
 .btr--group td { border-top: 2px solid #000; }
 .btr--res-sep td { border-top: 1px solid #111; }
 
-
+/* boton switch dolares a pesos*/
+.toPay-btn--switch{font-size:12px;padding:2px 8px;border:1px solid #e5e7eb;border-radius:9999px;background:#fff;line-height:1;cursor:pointer} 
+.toPay-btn--switch:hover{background:#f8fafc}

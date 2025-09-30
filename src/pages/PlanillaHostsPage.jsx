@@ -9,6 +9,30 @@ import { Link } from 'react-router-dom';
 const TZ = "America/Argentina/Buenos_Aires";
 
 /* ---------- helpers ---------- */
+
+// Lee el TC desde r.usd_fx_on_checkin y devuelve: { rate, date, casa }
+const getUsdFx = (r) => {
+  const fx = r?.usd_fx_on_checkin || {};
+  const buy = Number(fx.compra);
+  const sell = Number(fx.venta);
+  let rate = null;
+  if (Number.isFinite(buy) && Number.isFinite(sell)) rate = (buy + sell) / 2;
+  else if (Number.isFinite(sell)) rate = sell;
+  else if (Number.isFinite(buy)) rate = buy;
+  return {
+    rate,
+    date: fx.fecha || null,
+    casa: fx.casa || "oficial",
+  };
+};
+
+// Formatea dinero sin símbolo fijo (dejo el sufijo de moneda afuera)
+const money = (n) => {
+  const v = Number(n);
+  return Number.isFinite(v) ? v.toFixed(2) : "-";
+};
+
+
 const fmtDate = (iso) => (iso ? DateTime.fromISO(iso, { zone: TZ }).toISODate() : "");
 const cls = (...xs) => xs.filter(Boolean).join(" ");
 const toFlag = (cc) => {
@@ -475,98 +499,99 @@ function PaymentsList({ r }) {
 /* --------- Nueva Línea 4: editor de toPay en USD + badge ---------- */
 
 
-function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone }) {
+function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onToggleCurrency }) {
   const editBtnRef = useRef(null);
 
-// helpers locales
-const nOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
-const isPos   = (n) => typeof n === "number" && isFinite(n) && n > 0;
+  // helpers locales
+  const nOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  const isPos = (n) => typeof n === "number" && isFinite(n) && n > 0;
 
-// --- lectura segura del breakdown + fallback a top-level
-const bd = r?.toPay_breakdown || {};
+  // --- lectura segura del breakdown + fallback a top-level
+  const bd = r?.toPay_breakdown || {};
 
-const baseBD    = nOrNull(bd.baseUSD);
-const extrasBD  = nOrNull(bd.extrasUSD);
-const extrasTop = nOrNull(r?.extrasUSD);
-const ivaBD     = nOrNull(bd.ivaUSD);
-const ivaPct    = nOrNull(bd.ivaPercent);
+  const baseBD    = nOrNull(bd.baseUSD);
+  const extrasBD  = nOrNull(bd.extrasUSD);
+  const extrasTop = nOrNull(r?.extrasUSD);
+  const ivaBD     = nOrNull(bd.ivaUSD);
+  const ivaPct    = nOrNull(bd.ivaPercent);
 
-const baseUSD   = baseBD;
-const extrasUSD = (extrasBD !== null ? extrasBD : extrasTop);
+  const baseUSD   = baseBD;
+  const extrasUSD = (extrasBD !== null ? extrasBD : extrasTop);
 
-const ivaUSD =
-  ivaBD !== null
-    ? ivaBD
-    : (baseUSD !== null && ivaPct !== null ? Number((baseUSD * ivaPct / 100).toFixed(2)) : null);
+  const ivaUSD =
+    ivaBD !== null
+      ? ivaBD
+      : (baseUSD !== null && ivaPct !== null ? Number((baseUSD * ivaPct / 100).toFixed(2)) : null);
 
-// --- estados del editor (siempre alimentados desde breakdown / top-level)
-const [baseUSDIn, setBaseUSDIn]       = useState(baseUSD !== null ? String(baseUSD.toFixed(2)) : "");
-const [extrasUSDIn, setExtrasUSDIn]   = useState(extrasUSD !== null ? String(extrasUSD.toFixed(2)) : "");
-const [ivaMode, setIvaMode]           = useState(ivaPct !== null ? "percent" : "amount");
-const [ivaPercent, setIvaPercent]     = useState(ivaPct !== null ? String(ivaPct) : "21");
-const [ivaUSDIn, setIvaUSDIn]         = useState(ivaUSD !== null ? String(ivaUSD.toFixed(2)) : "");
+  // --- estados del editor
+  const [baseUSDIn, setBaseUSDIn]     = useState(baseUSD !== null ? String(baseUSD.toFixed(2)) : "");
+  const [extrasUSDIn, setExtrasUSDIn] = useState(extrasUSD !== null ? String(extrasUSD.toFixed(2)) : "");
+  const [ivaMode, setIvaMode]         = useState(ivaPct !== null ? "percent" : "amount");
+  const [ivaPercent, setIvaPercent]   = useState(ivaPct !== null ? String(ivaPct) : "21");
+  const [ivaUSDIn, setIvaUSDIn]       = useState(ivaUSD !== null ? String(ivaUSD.toFixed(2)) : "");
 
-useEffect(() => {
-  const bd2 = r?.toPay_breakdown || {};
-  const b   = nOrNull(bd2.baseUSD);
-  const e   = (nOrNull(bd2.extrasUSD) !== null ? nOrNull(bd2.extrasUSD) : nOrNull(r?.extrasUSD));
-  const ia  = nOrNull(bd2.ivaUSD);
-  const ip  = nOrNull(bd2.ivaPercent);
+  useEffect(() => {
+    const bd2 = r?.toPay_breakdown || {};
+    const b   = nOrNull(bd2.baseUSD);
+    const e   = (nOrNull(bd2.extrasUSD) !== null ? nOrNull(bd2.extrasUSD) : nOrNull(r?.extrasUSD));
+    const ia  = nOrNull(bd2.ivaUSD);
+    const ip  = nOrNull(bd2.ivaPercent);
 
-  const ivaCalc = ia !== null ? ia : (b !== null && ip !== null ? Number((b * ip / 100).toFixed(2)) : null);
+    const ivaCalc = ia !== null ? ia : (b !== null && ip !== null ? Number((b * ip / 100).toFixed(2)) : null);
 
-  setBaseUSDIn(b !== null ? String(b.toFixed(2)) : "");
-  setExtrasUSDIn(e !== null ? String(e.toFixed(2)) : "");
-  setIvaMode(ip !== null ? "percent" : "amount");
-  setIvaPercent(ip !== null ? String(ip) : "21");
-  setIvaUSDIn(ivaCalc !== null ? String(ivaCalc.toFixed(2)) : "");
-}, [isOpen, r?.id, r?.contentHash]);
+    setBaseUSDIn(b !== null ? String(b.toFixed(2)) : "");
+    setExtrasUSDIn(e !== null ? String(e.toFixed(2)) : "");
+    setIvaMode(ip !== null ? "percent" : "amount");
+    setIvaPercent(ip !== null ? String(ip) : "21");
+    setIvaUSDIn(ivaCalc !== null ? String(ivaCalc.toFixed(2)) : "");
+  }, [isOpen, r?.id, r?.contentHash]);
 
-// ✨ parsea sin forzar 0 por defecto
-const toNumOrNull = (s) => {
-  if (s === "" || s === null || s === undefined) return null; // vacío -> null
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;                       // "0" -> 0, "0.00" -> 0
-};
+  const toNumOrNull = (s) => {
+    if (s === "" || s === null || s === undefined) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
 
-const onSave = async () => {
-  const payload = {};
-  const b = toNumOrNull(baseUSDIn);
-  const e = toNumOrNull(extrasUSDIn);
+  const onSave = async () => {
+    const payload = {};
+    const b = toNumOrNull(baseUSDIn);
+    const e = toNumOrNull(extrasUSDIn);
 
-  if (b !== null) payload.baseUSD = b;        // solo incluye si el usuario definió valor
-  if (e !== null) payload.extrasUSD = e;      // idem (0 válido si lo escribió)
+    if (b !== null) payload.baseUSD = b;
+    if (e !== null) payload.extrasUSD = e;
 
-  if (ivaMode === "percent") {
-    const p = toNumOrNull(ivaPercent);
-    if (p !== null) payload.ivaPercent = p;
-  } else {
-    const a = toNumOrNull(ivaUSDIn);
-    if (a !== null) payload.ivaUSD = a;
-  }
+    if (ivaMode === "percent") {
+      const p = toNumOrNull(ivaPercent);
+      if (p !== null) payload.ivaPercent = p;
+    } else {
+      const a = toNumOrNull(ivaUSDIn);
+      if (a !== null) payload.ivaUSD = a;
+    }
 
-  await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
-  onDone?.(); onRefresh?.();
-};
+    await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
+    onDone?.(); onRefresh?.();
+  };
 
-// --- texto de desglose (sólo partes > 0)
-const parts = [];
-if (isPos(baseUSD))   parts.push(baseUSD.toFixed(2));
-if (isPos(extrasUSD)) parts.push(`+ ${extrasUSD.toFixed(2)}`);
-if (isPos(ivaUSD))    parts.push(`VAT ${ivaUSD.toFixed(2)}`);
-const breakdownText = parts.join(" ");
+  // --- desglose
+  const parts = [];
+  if (isPos(baseUSD))   parts.push(baseUSD.toFixed(2));
+  if (isPos(extrasUSD)) parts.push(`+ ${extrasUSD.toFixed(2)}`);
+  if (isPos(ivaUSD))    parts.push(`VAT ${ivaUSD.toFixed(2)}`);
+  const breakdownText = parts.join(" ");
 
-
+  // --- totales con TC
+  const totalUSD = (typeof r.toPay === "number" && isFinite(r.toPay)) ? r.toPay : null;
+  const fxRate = Number(fx?.rate);
+  const totalARS = (totalUSD !== null && Number.isFinite(fxRate)) ? totalUSD * fxRate : null;
+  const showUSD = currency === "USD";
 
   return (
     <>
-      <div className="left__line4" onClick={(e) => e.stopPropagation()}>
+      <div className="left__line4" onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {/* Total */}
-        <span className="toPay-view">
-          <span className="toPay-cur">USD</span>
-          <strong>
-            {(typeof r.toPay === "number" && isFinite(r.toPay)) ? r.toPay.toFixed(2) : "-"}
-          </strong>
+        <span className="toPay-view" style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+          <span className="toPay-cur">{showUSD ? "USD" : "ARS"}</span>
+          <strong>{money(showUSD ? totalUSD : totalARS)}</strong>
         </span>
 
         {/* Desglose condicional */}
@@ -576,6 +601,20 @@ const breakdownText = parts.join(" ");
           </span>
         )}
 
+        {/* Toggle USD ⇄ ARS */}
+        <button
+          type="button"
+          className="toPay-btn toPay-btn--switch"
+          onClick={onToggleCurrency}
+          title="Cambiar moneda"
+          style={{ marginLeft: 8 }}
+        >
+          <span style={{ fontWeight: showUSD ? 700 : 400 }}>USD</span>
+          <span aria-hidden style={{ padding: "0 6px" }}>↔</span>
+          <span style={{ fontWeight: showUSD ? 400 : 700, opacity: showUSD ? 0.6 : 1 }}>ARS</span>
+        </button>
+
+        {/* Edit pencil */}
         <button
           ref={editBtnRef}
           type="button"
@@ -588,6 +627,17 @@ const breakdownText = parts.join(" ");
         </button>
 
         {payBadge(r.payment_status || "unpaid")}
+
+        {/* Chip de tipo de cambio, alineado a la derecha */}
+        {Number.isFinite(fxRate) && (
+          <span
+            className="chip chip--off"
+            title={`TC ${fxRate.toFixed(2)} (${fx?.casa || "oficial"} · ${fx?.date || "-"})`}
+            style={{ marginLeft: "auto" }}
+          >
+            TC: {fxRate.toFixed(2)}
+          </span>
+        )}
       </div>
 
       <PopoverPortal anchorRef={editBtnRef} open={isOpen} onClose={onToggle} placement="bottom-left" maxWidth={360}>
@@ -660,7 +710,6 @@ const breakdownText = parts.join(" ");
   );
 }
 
-
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
 
 function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
@@ -673,11 +722,11 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   const channel = r.source || r.channel_name || "—";
   const deptoTagClass = cls("tag", "tag--depto", r.checkin_at ? "tag--depto--in" : (r.checkout_at ? "tag--depto--out" : ""));
 
-  // --- NUEVO: card activa si el popover actual empieza con su id ---
+  // Popover activo por card
   const isCardActive = !!activePopover && String(activePopover).startsWith(`${r.id}::`);
   const cardClassName = cls("res-card4", isCardActive && "res-card4--active");
 
-  // ids únicos por acción en esta reserva
+  // ids únicos
   const pidNote = `${r.id}::addNote`;
   const pidPay = `${r.id}::addPayment`;
   const pidContact = `${r.id}::contact`;
@@ -689,6 +738,11 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   const defContactTime = DateTime.now().setZone(TZ).toFormat("HH:mm");
   const defInDate = r.arrival_iso || "";
   const defOutDate = r.departure_iso || "";
+
+  // === NUEVO: estado local de moneda (USD por defecto) y TC de la reserva
+  const [currency, setCurrency] = useState("USD");
+  const fx = getUsdFx(r);
+  const toggleCurrency = () => setCurrency((c) => (c === "USD" ? "ARS" : "USD"));
 
   return (
     <div className={cardClassName} onClick={(e) => e.stopPropagation()}>
@@ -718,8 +772,12 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
           <span className="tag--channel">{channel}</span>
         </div>
 
+        {/* Línea 4: total + toggle + chip de TC (promedio) */}
         <ToPayLine
           r={r}
+          fx={fx}
+          currency={currency}
+          onToggleCurrency={toggleCurrency}
           isOpen={activePopover === pidToPay}
           onToggle={() => onPopoverToggle(pidToPay)}
           onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
@@ -747,14 +805,20 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
             })()}
           </div>
 
-          {/* Botón + nota con popover global */}
-          <div className="panel__toolbar">
-          <NoteAddButton
-            r={r}
-            isOpen={activePopover === pidNote}
-            onToggle={() => onPopoverToggle(pidNote)}
-            onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
-          />
+          {/* Toolbar de notas */}
+          <div className="panel__toolbar" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <NoteAddButton
+              r={r}
+              isOpen={activePopover === pidNote}
+              onToggle={() => onPopoverToggle(pidNote)}
+              onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
+            />
+            {/* También mostramos aquí el TC como referencia */}
+            {Number.isFinite(Number(fx.rate)) && (
+              <span className="chip chip--off" title={`TC ${fx.rate.toFixed(2)} (${fx.casa || "oficial"} · ${fx.date || "-"})`}>
+                TC {fx.rate.toFixed(2)} · {fx.casa || "oficial"}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -763,18 +827,19 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
       <div className="res-cell">
         <div className="panel">
           <div className="panel__list">
-          <PaymentsList r={r} />
+            <PaymentsList r={r} />
           </div>
           <div className="panel__toolbar">
-          <PaymentAddButton
-            r={r}
-            isOpen={activePopover === pidPay}
-            onToggle={() => onPopoverToggle(pidPay)}
-            onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
-          />
+            <PaymentAddButton
+              r={r}
+              isOpen={activePopover === pidPay}
+              onToggle={() => onPopoverToggle(pidPay)}
+              onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
+            />
           </div>
         </div>
       </div>
+
       {/* CELDA 4: Estado */}
       <div className="res-cell">
         <div className="status-stack-new">
@@ -817,169 +882,6 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   );
 }
 
-
-
-/* ---------- UI: BottomTable (nuevo formato + export Excel) ---------- */
-
-
-function BottomTable({ items }) {
-  const fmtDay = (iso) =>
-    iso ? DateTime.fromISO(iso, { zone: TZ }).toFormat("dd/MM/yyyy") : "-";
-
-  const fmtHourTS = (ts) => {
-    if (!ts) return "-";
-    if (ts.seconds || ts._seconds) {
-      const s = ts.seconds ?? ts._seconds;
-      return DateTime.fromSeconds(Number(s), { zone: TZ }).toFormat("HH:mm");
-    }
-    try {
-      const d = DateTime.fromISO(String(ts), { zone: TZ });
-      if (d.isValid) return d.toFormat("HH:mm");
-    } catch {}
-    return "-";
-  };
-
-  const money = (n, cur) => {
-    const v = Number(n);
-    if (!Number.isFinite(v)) return "-";
-    const c = (cur || "USD").toString().toUpperCase();
-    return `${v.toFixed(2)} ${c}`;
-  };
-
-  // --- agrupar por propiedad (si hay varias, muestra headers)
-  const groupsMap = new Map();
-  for (const r of items) {
-    const key = r.propiedad_id || "sin_prop";
-    const name = r.propiedad_nombre || key;
-    if (!groupsMap.has(key)) groupsMap.set(key, { name, list: [] });
-    groupsMap.get(key).list.push(r);
-  }
-  const groups = Array.from(groupsMap.values()).sort((a, b) =>
-    String(a.name).localeCompare(String(b.name))
-  );
-
-  const rows = [];
-  let idx = 0;
-
-  groups.forEach((g) => {
-    // fila de sección
-    rows.push({ _group: true, label: g.name });
-    g.list.forEach((r) => {
-      idx += 1;
-      const pays = getPayments(r);
-      rows.push({
-        _sepTop: true, // línea separadora entre reservas
-        depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—",
-        pax: r.adults ?? "-",
-        nombre: r.nombre_huesped || "-",
-        tel: r.customer_phone || r.telefono || "-",
-        checkin: fmtDay(r.arrival_iso),
-        hora_in: fmtHourTS(r.checkin_at),
-        checkout: fmtDay(r.departure_iso),
-        hora_out: fmtHourTS(r.checkout_at),
-        agencia: r.source || r.channel_name || "-",
-        toPay: money(r.toPay, "USD"),
-        pago: pays[0] ? money(pays[0].amount, pays[0].currency) : "",
-        metodo: pays[0]?.method || "",
-        concepto: pays[0]?.concept || "",
-        hasCheckin: !!r.checkin_at,
-        wasContacted: !!r.contacted_at,
-        payStatus: String(r.payment_status || "unpaid").toLowerCase(),
-      });
-
-      for (let i = 1; i < pays.length; i++) {
-        const p = pays[i];
-        rows.push({
-          _payRow: true,
-          depto: "", pax: "", nombre: "", tel: "",
-          checkin: "", hora_in: "", checkout: "", hora_out: "",
-          agencia: "", toPay: "",
-          pago: money(p.amount, p.currency),
-          metodo: p.method || "",
-          concepto: p.concept || "",
-        });
-      }
-    });
-  });
-
-  return (
-    <div className="tablewrap">
-      <div className="btable__toolbar">
-        <ExportBottomExcel items={items} />
-      </div>
-
-      <table className="table btable">
-        <thead>
-          <tr>
-            <th className="th">Unidad</th>
-            <th className="th">PAX</th>
-            <th className="th">Nombre</th>
-            <th className="th">Teléfono</th>
-            <th className="th">Check in</th>
-            <th className="th">Hora in</th>
-            <th className="th">Check out</th>
-            <th className="th">Hora out</th>
-            <th className="th">Agencia</th>
-            <th className="th">A pagar</th>
-            <th className="th">Pago</th>
-            <th className="th">Forma de pago</th>
-            <th className="th">Concepto</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => {
-            if (r._group) {
-              return (
-                <tr key={"g_" + i} className="btr--group">
-                  <td className="td" colSpan={13} style={{ fontWeight: 600, background: "#fafafa" }}>
-                    {r.label}
-                  </td>
-                </tr>
-              );
-            }
-
-            const tdDeptoCls = cls("td", !r._payRow && r.hasCheckin && "td--depto-in");
-            const tdNameCls  = cls("td", !r._payRow && r.wasContacted && "td--name-contacted");
-            const tdPagoCls  = cls(
-              "td td--money-dim",
-              !r._payRow &&
-                (r.payStatus === "paid"
-                  ? "td--pay-paid"
-                  : r.payStatus === "partial"
-                  ? "td--pay-partial"
-                  : "td--pay-unpaid")
-            );
-
-            return (
-              <tr
-                key={i}
-                className={cls(
-                  "tr",
-                  r._sepTop && "btr--res-sep",
-                  r._payRow && "btr--pay"
-                )}
-              >
-                <td className={tdDeptoCls}>{r.depto}</td>
-                <td className="td">{r.pax}</td>
-                <td className={tdNameCls}>{r.nombre}</td>
-                <td className="td">{r.tel}</td>
-                <td className="td">{r.checkin}</td>
-                <td className="td">{r.hora_in}</td>
-                <td className="td">{r.checkout}</td>
-                <td className="td">{r.hora_out}</td>
-                <td className="td">{r.agencia}</td>
-                <td className="td td--money-strong">{r.toPay}</td>
-                <td className={tdPagoCls}>{r.pago}</td>
-                <td className="td">{r.metodo}</td>
-                <td className="td">{r.concepto}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 /* ---------- App ---------- */
 
