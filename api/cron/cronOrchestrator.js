@@ -6,7 +6,13 @@
 // 4) /api/enrichWubookData        (POST { limit:100, dryRun, syncMode:"active" })
 
 const log = (...xs) => console.log("[CronOrchestrator]", ...xs);
-const BASE = process.env.PUBLIC_BASE_URL || "https://dashboard-hosts.vercel.app";
+//const BASE = process.env.PUBLIC_BASE_URL || "https://dashboard-hosts.vercel.app";
+
+const BASE =
+  process.env.PUBLIC_BASE_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+
+if (!BASE) throw new Error("No RESCUE_BASE_URL/VERCEL_URL available");
 
 // ---- Helpers HTTP ----
 function ok(res, data) {

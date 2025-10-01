@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { DateTime } from "luxon";
 import PopoverPortal from "../components/PopoverPortal";
-import ExportBottomExcel from "../components/ExportBottomExcel"; 
+import ExportBottomExcel from "../components/ExportBottomExcel";
 import { Link } from 'react-router-dom';
+import { money, numFmt, safeNum } from "../../lib/money";
 
 
 const TZ = "America/Argentina/Buenos_Aires";
@@ -26,11 +27,17 @@ const getUsdFx = (r) => {
   };
 };
 
+
+// evita multiplicar * null
+//const safeNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+const safeFixed = (v, dec = 2) => (Number.isFinite(Number(v)) ? Number(v).toFixed(dec) : null);
+
+
 // Formatea dinero sin símbolo fijo (dejo el sufijo de moneda afuera)
-const money = (n) => {
+/*const money = (n) => {
   const v = Number(n);
   return Number.isFinite(v) ? v.toFixed(2) : "-";
-};
+};*/
 
 
 const fmtDate = (iso) => (iso ? DateTime.fromISO(iso, { zone: TZ }).toISODate() : "");
@@ -44,7 +51,7 @@ const toFlag = (cc) => {
 /*-------------------------- Puertita ------------------------------*/
 const ExitIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-       strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
     {/* puerta */}
     <path d="M4 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4" />
     {/* flecha salir */}
@@ -108,7 +115,7 @@ const fmtTS = (ts) => {
   return "";
 };
 
-// === Helpers de pago (badge y normalización numérica)
+// === Helpers de pago (badge y normalización numéric
 const payBadge = (status) =>
   status === "paid" ? <span className="badge badge--paid">Pago</span> :
     status === "partial" ? <span className="badge badge--partial">Parcial</span> :
@@ -127,8 +134,8 @@ const Chip = ({ label, active, tone = "sky" }) => {
 
 /* ---------- data hook ---------- */
 
-        // Endpoint mínimo del backend que devuelva { items: [{id, nombre}] }
-        // Lectura de la colección 'propiedades' con filtro activo=true.
+// Endpoint mínimo del backend que devuelva { items: [{id, nombre}] }
+// Lectura de la colección 'propiedades' con filtro activo=true.
 function useActiveProperties() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -136,13 +143,13 @@ function useActiveProperties() {
   useEffect(() => {
     (async () => {
       try {
-       const { data } = await axios.get("/api/properties?");
-       // Soporta {items:[...]} ó directamente [...]
-       const raw = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
-       const items = raw.map(p => ({
-         id: p.id || p?.uid || p?.docId,
-        nombre: p.nombre || p?.name || String(p.id || p?.uid || p?.docId || "")
-       })).filter(p => p.id);
+        const { data } = await axios.get("/api/properties?");
+        // Soporta {items:[...]} ó directamente [...]
+        const raw = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
+        const items = raw.map(p => ({
+          id: p.id || p?.uid || p?.docId,
+          nombre: p.nombre || p?.name || String(p.id || p?.uid || p?.docId || "")
+        })).filter(p => p.id);
         const seen = new Set();
         const clean = items.filter(p => p?.id && !seen.has(p.id) && (seen.add(p.id), true));
         setList(clean);
@@ -385,7 +392,7 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Monto</label>
           <input className="mini-popover__field" type="number" step="0.01" min="0"
-                 value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+            value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
         </div>
 
         <div className="mini-popover__row">
@@ -405,13 +412,13 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Concepto</label>
           <input className="mini-popover__field" type="text" maxLength={80}
-                 value={concept} onChange={(e) => setConcept(e.target.value)} placeholder="Ej. seña, saldo, limpieza…" />
+            value={concept} onChange={(e) => setConcept(e.target.value)} placeholder="Ej. seña, saldo, limpieza…" />
         </div>
 
         <div className="mini-popover__actions">
           <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
           <button type="button" className="mini-popover__btn mini-popover__btn--ok"
-                  onClick={save} disabled={!(Number(amount) > 0) || sending}>
+            onClick={save} disabled={!(Number(amount) > 0) || sending}>
             {sending ? "Guardando…" : "Guardar"}
           </button>
         </div>
@@ -474,7 +481,7 @@ function PaymentsList({ r }) {
         <div key={cur}>
           <div className="pay-group-head">
             <span>Moneda: <span className="pay-cur">{cur}</span></span>
-            <span className="pay-total">Subtotal: {sumAmount(list).toFixed(2)} {cur}</span>
+            <span className="pay-total">Subtotal: {numFmt(sumAmount(list), 2)} {cur}</span>
           </div>
 
           {list.map((p, i) => (
@@ -484,7 +491,7 @@ function PaymentsList({ r }) {
                 {p.concept ? <span className="chip chip--off">{p.concept}</span> : null}
                 <span className="pay-meta">{p.by ? p.by : "host"} · {fmtTS(p.ts)}</span>
               </div>
-              <div className="pay-amt">{Number(p.amount || 0).toFixed(2)} {cur}</div>
+              <div className="pay-amt">{numFmt(p.amount || 0, 2)} {cur}</div>
             </div>
           ))}
 
@@ -501,44 +508,46 @@ function PaymentsList({ r }) {
 
 function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onToggleCurrency }) {
   const editBtnRef = useRef(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // helpers locales
   const nOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
-  const isPos = (n) => typeof n === "number" && isFinite(n) && n > 0;
+  const isPos = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+  //const safeNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
-  // --- lectura segura del breakdown + fallback a top-level
+  // --- lectura segura del breakdown
   const bd = r?.toPay_breakdown || {};
-
-  const baseBD    = nOrNull(bd.baseUSD);
-  const extrasBD  = nOrNull(bd.extrasUSD);
+  const baseBD = nOrNull(bd.baseUSD);
+  const extrasBD = nOrNull(bd.extrasUSD);
   const extrasTop = nOrNull(r?.extrasUSD);
-  const ivaBD     = nOrNull(bd.ivaUSD);
-  const ivaPct    = nOrNull(bd.ivaPercent);
+  const ivaBD = nOrNull(bd.ivaUSD);
+  const ivaPct = nOrNull(bd.ivaPercent);
 
-  const baseUSD   = baseBD;
+
+
+  const baseUSD = baseBD;
   const extrasUSD = (extrasBD !== null ? extrasBD : extrasTop);
-
   const ivaUSD =
     ivaBD !== null
       ? ivaBD
-      : (baseUSD !== null && ivaPct !== null ? Number((baseUSD * ivaPct / 100).toFixed(2)) : null);
+      : (baseUSD !== null && ivaPct !== null
+        ? Number(((safeNum(baseUSD) || 0) * (safeNum(ivaPct) || 0) / 100).toFixed(2))
+        : null);
 
   // --- estados del editor
-  const [baseUSDIn, setBaseUSDIn]     = useState(baseUSD !== null ? String(baseUSD.toFixed(2)) : "");
+  const [baseUSDIn, setBaseUSDIn] = useState(baseUSD !== null ? String(baseUSD.toFixed(2)) : "");
   const [extrasUSDIn, setExtrasUSDIn] = useState(extrasUSD !== null ? String(extrasUSD.toFixed(2)) : "");
-  const [ivaMode, setIvaMode]         = useState(ivaPct !== null ? "percent" : "amount");
-  const [ivaPercent, setIvaPercent]   = useState(ivaPct !== null ? String(ivaPct) : "21");
-  const [ivaUSDIn, setIvaUSDIn]       = useState(ivaUSD !== null ? String(ivaUSD.toFixed(2)) : "");
+  const [ivaMode, setIvaMode] = useState(ivaPct !== null ? "percent" : "amount");
+  const [ivaPercent, setIvaPercent] = useState(ivaPct !== null ? String(ivaPct) : "21");
+  const [ivaUSDIn, setIvaUSDIn] = useState(ivaUSD !== null ? String(ivaUSD.toFixed(2)) : "");
 
   useEffect(() => {
     const bd2 = r?.toPay_breakdown || {};
-    const b   = nOrNull(bd2.baseUSD);
-    const e   = (nOrNull(bd2.extrasUSD) !== null ? nOrNull(bd2.extrasUSD) : nOrNull(r?.extrasUSD));
-    const ia  = nOrNull(bd2.ivaUSD);
-    const ip  = nOrNull(bd2.ivaPercent);
-
-    const ivaCalc = ia !== null ? ia : (b !== null && ip !== null ? Number((b * ip / 100).toFixed(2)) : null);
-
+    const b = nOrNull(bd2.baseUSD);
+    const e = (nOrNull(bd2.extrasUSD) !== null ? nOrNull(bd2.extrasUSD) : nOrNull(r?.extrasUSD));
+    const ia = nOrNull(bd2.ivaUSD);
+    const ip = nOrNull(bd2.ivaPercent);
+    const ivaCalc = ia !== null ? ia : (b !== null && ip !== null ? Number(((safeNum(b) || 0) * (safeNum(ip) || 0) / 100).toFixed(2)) : null);
     setBaseUSDIn(b !== null ? String(b.toFixed(2)) : "");
     setExtrasUSDIn(e !== null ? String(e.toFixed(2)) : "");
     setIvaMode(ip !== null ? "percent" : "amount");
@@ -546,75 +555,104 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onTog
     setIvaUSDIn(ivaCalc !== null ? String(ivaCalc.toFixed(2)) : "");
   }, [isOpen, r?.id, r?.contentHash]);
 
-  const toNumOrNull = (s) => {
-    if (s === "" || s === null || s === undefined) return null;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  };
 
   const onSave = async () => {
-    const payload = {};
-    const b = toNumOrNull(baseUSDIn);
-    const e = toNumOrNull(extrasUSDIn);
+    if (!baseUSDIn && !extrasUSDIn && !ivaPercent && !ivaUSDIn) return;
+    setSubmitting(true);
+    try {
+      const payload = {};
+      const toNumOrNull = (s) => {
+        if (s === "" || s === null || s === undefined) return null;
+        const n = Number(s);
+        return Number.isFinite(n) ? n : null;
+      };
 
-    if (b !== null) payload.baseUSD = b;
-    if (e !== null) payload.extrasUSD = e;
+      // Se agregan base y extras de la misma forma
+      payload.baseUSD = toNumOrNull(baseUSDIn) ?? 0;
+      payload.extrasUSD = toNumOrNull(extrasUSDIn) ?? 0;
 
-    if (ivaMode === "percent") {
-      const p = toNumOrNull(ivaPercent);
-      if (p !== null) payload.ivaPercent = p;
-    } else {
-      const a = toNumOrNull(ivaUSDIn);
-      if (a !== null) payload.ivaUSD = a;
+      // --- LÓGICA CORREGIDA PARA EL IVA ---
+      // Ahora siempre se envía la información del IVA, usando 0 como valor por defecto.
+      if (ivaMode === "percent") {
+        payload.ivaPercent = toNumOrNull(ivaPercent) ?? 0;
+        // Para mayor seguridad, enviamos el otro modo como null para limpiar cualquier valor previo
+        payload.ivaUSD = null;
+      } else { // ivaMode === "amount"
+        payload.ivaUSD = toNumOrNull(ivaUSDIn) ?? 0;
+        // Se envía el otro modo como null
+        payload.ivaPercent = null;
+      }
+
+      await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
+
+      onDone?.();
+      onRefresh?.();
+    } catch (error) {
+      console.error("Error al guardar el total a pagar:", error);
+      alert("No se pudo guardar la información. Por favor, intente de nuevo.");
+    } finally {
+      setSubmitting(false);
     }
-
-    await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
-    onDone?.(); onRefresh?.();
   };
 
-  // --- desglose
-  const parts = [];
-  if (isPos(baseUSD))   parts.push(baseUSD.toFixed(2));
-  if (isPos(extrasUSD)) parts.push(`+ ${extrasUSD.toFixed(2)}`);
-  if (isPos(ivaUSD))    parts.push(`VAT ${ivaUSD.toFixed(2)}`);
-  const breakdownText = parts.join(" ");
-
-  // --- totales con TC
-  const totalUSD = (typeof r.toPay === "number" && isFinite(r.toPay)) ? r.toPay : null;
-  const fxRate = Number(fx?.rate);
-  const totalARS = (totalUSD !== null && Number.isFinite(fxRate)) ? totalUSD * fxRate : null;
+  // --- totales y desglose dinámicos
   const showUSD = currency === "USD";
+  const totalUSD = (typeof r.toPay === "number" && Number.isFinite(r.toPay)) ? r.toPay : null;
+  const fxRate = safeNum(fx?.rate);
+  const totalARS = (totalUSD !== null && fxRate) ? totalUSD * fxRate : null;
+
+  // --- NUEVA LÓGICA PARA EL DESGLOSE DINÁMICO ---
+  const breakdownText = useMemo(() => {
+    const parts = [];
+    if (showUSD) {
+      if (isPos(baseUSD)) parts.push(money(baseUSD));
+      if (isPos(extrasUSD)) parts.push(`+ ${money(extrasUSD)}`);
+      if (isPos(ivaUSD)) parts.push(`IVA ${money(ivaUSD)}`);
+    } else {
+      // Solo muestra el desglose en ARS si existe un tipo de cambio
+      if (fxRate) {
+        const baseARS = baseUSD !== null ? baseUSD * fxRate : null;
+        const extrasARS = extrasUSD !== null ? extrasUSD * fxRate : null;
+        const ivaARS = ivaUSD !== null ? ivaUSD * fxRate : null;
+
+        if (isPos(baseARS)) parts.push(money(baseARS));
+        if (isPos(extrasARS)) parts.push(`+ ${money(extrasARS)}`);
+        if (isPos(ivaARS)) parts.push(`IVA ${money(ivaARS)}`);
+      }
+    }
+    return parts.join(" ");
+  }, [showUSD, fxRate, baseUSD, extrasUSD, ivaUSD]);
 
   return (
     <>
       <div className="left__line4" onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {/* Total */}
-        <span className="toPay-view" style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-          <span className="toPay-cur">{showUSD ? "USD" : "ARS"}</span>
-          <strong>{money(showUSD ? totalUSD : totalARS)}</strong>
-        </span>
-
-        {/* Desglose condicional */}
-        {breakdownText && (
-          <span className="toPay-breakdown" style={{ marginLeft: 8, opacity: 0.8, fontSize: 12 }}>
-            {breakdownText}
-          </span>
-        )}
-
-        {/* Toggle USD ⇄ ARS */}
+        {/* Botón de cambio de moneda */}
         <button
           type="button"
           className="toPay-btn toPay-btn--switch"
           onClick={onToggleCurrency}
           title="Cambiar moneda"
-          style={{ marginLeft: 8 }}
         >
           <span style={{ fontWeight: showUSD ? 700 : 400 }}>USD</span>
           <span aria-hidden style={{ padding: "0 6px" }}>↔</span>
           <span style={{ fontWeight: showUSD ? 400 : 700, opacity: showUSD ? 0.6 : 1 }}>ARS</span>
         </button>
 
-        {/* Edit pencil */}
+        {/* Total a pagar */}
+        <span className="toPay-view" style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+          <strong>
+            {money(showUSD ? totalUSD : totalARS)}
+          </strong>
+        </span>
+
+        {/* Desglose (ahora dinámico) */}
+        {breakdownText && (
+          <span className="toPay-breakdown" style={{ marginLeft: 4, opacity: 0.8, fontSize: 12 }}>
+            ({breakdownText})
+          </span>
+        )}
+
+        {/* Botón para editar */}
         <button
           ref={editBtnRef}
           type="button"
@@ -626,84 +664,44 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onTog
           <PencilIcon />
         </button>
 
+        {/* Badge de estado de pago */}
         {payBadge(r.payment_status || "unpaid")}
 
-        {/* Chip de tipo de cambio, alineado a la derecha */}
-        {Number.isFinite(fxRate) && (
+        {/* Chip de TC */}
+        {Number.isFinite(Number(fxRate)) && fxRate > 0 && (
           <span
             className="chip chip--off"
-            title={`TC ${fxRate.toFixed(2)} (${fx?.casa || "oficial"} · ${fx?.date || "-"})`}
+            title={`TC ${numFmt(fxRate, 2)} (${fx?.casa || "oficial"} · ${fx?.date || "-"})`}
             style={{ marginLeft: "auto" }}
           >
-            TC: {fxRate.toFixed(2)}
+            TC: {numFmt(fxRate, 2)}
           </span>
         )}
       </div>
 
       <PopoverPortal anchorRef={editBtnRef} open={isOpen} onClose={onToggle} placement="bottom-left" maxWidth={360}>
         <div className="mini-popover__title">Total a pagar (USD)</div>
-
+        {/* ... el resto del popover no cambia ... */}
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Base USD</label>
-          <input
-            className="mini-popover__field"
-            type="number" step="0.01" min="0"
-            value={baseUSDIn === "" ? "" : baseUSDIn}
-            onChange={(e) => setBaseUSDIn(e.target.value)}
-            placeholder="0.00"
-          />
+          <input className="mini-popover__field" type="number" step="0.01" min="0" value={baseUSDIn} onChange={(e) => setBaseUSDIn(e.target.value)} placeholder="0.00" />
         </div>
-
         <div className="mini-popover__row">
           <label className="mini-popover__lab">IVA</label>
-
-          <label className="flex items-center gap-1">
-            <input
-              type="radio" name={`ivaMode_${r.id}`} value="percent"
-              checked={ivaMode === "percent"} onChange={() => setIvaMode("percent")}
-            />
-            <span>%</span>
-          </label>
-          <input
-            className="mini-popover__field mini-popover__field--xs"
-            type="number" step="0.01" min="0"
-            value={ivaPercent}
-            onChange={(e) => setIvaPercent(e.target.value)}
-            placeholder="21"
-            disabled={ivaMode !== "percent"}
-          />
-
-          <label className="flex items-center gap-1 ml-2">
-            <input
-              type="radio" name={`ivaMode_${r.id}`} value="amount"
-              checked={ivaMode === "amount"} onChange={() => setIvaMode("amount")}
-            />
-            <span>USD</span>
-          </label>
-          <input
-            className="mini-popover__field mini-popover__field--s"
-            type="number" step="0.01" min="0"
-            value={ivaUSDIn === "" ? "" : ivaUSDIn}
-            onChange={(e) => setIvaUSDIn(e.target.value)}
-            placeholder="0.00"
-            disabled={ivaMode !== "amount"}
-          />
+          <label className="flex items-center gap-1"><input type="radio" name={`ivaMode_${r.id}`} value="percent" checked={ivaMode === "percent"} onChange={() => setIvaMode("percent")} /><span>%</span></label>
+          <input className="mini-popover__field mini-popover__field--xs" type="number" step="0.01" min="0" value={ivaPercent} onChange={(e) => setIvaPercent(e.target.value)} placeholder="21" disabled={ivaMode !== "percent"} />
+          <label className="flex items-center gap-1 ml-2"><input type="radio" name={`ivaMode_${r.id}`} value="amount" checked={ivaMode === "amount"} onChange={() => setIvaMode("amount")} /><span>USD</span></label>
+          <input className="mini-popover__field mini-popover__field--s" type="number" step="0.01" min="0" value={ivaUSDIn} onChange={(e) => setIvaUSDIn(e.target.value)} placeholder="0.00" disabled={ivaMode !== "amount"} />
         </div>
-
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Extras (USD)</label>
-          <input
-            className="mini-popover__field"
-            type="number" step="0.01" min="0"
-            value={extrasUSDIn === "" ? "" : extrasUSDIn}
-            onChange={(e) => setExtrasUSDIn(e.target.value)}
-            placeholder="0.00"
-          />
+          <input className="mini-popover__field" type="number" step="0.01" min="0" value={extrasUSDIn} onChange={(e) => setExtrasUSDIn(e.target.value)} placeholder="0.00" />
         </div>
-
         <div className="mini-popover__actions">
-          <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
-          <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={onSave}>Guardar</button>
+          <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle} disabled={submitting}>Cancelar</button>
+          <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={onSave} disabled={submitting}>
+            {submitting ? "Guardando…" : "Guardar"}
+          </button>
         </div>
       </PopoverPortal>
     </>
@@ -813,12 +811,7 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
               onToggle={() => onPopoverToggle(pidNote)}
               onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
             />
-            {/* También mostramos aquí el TC como referencia */}
-            {Number.isFinite(Number(fx.rate)) && (
-              <span className="chip chip--off" title={`TC ${fx.rate.toFixed(2)} (${fx.casa || "oficial"} · ${fx.date || "-"})`}>
-                TC {fx.rate.toFixed(2)} · {fx.casa || "oficial"}
-              </span>
-            )}
+
           </div>
         </div>
       </div>
@@ -882,6 +875,154 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   );
 }
 
+/* ---------- UI: BottomTable (resumen inferior + export) ---------- */
+function BottomTable({ items }) {
+  const fmtDay = (iso) =>
+    iso ? DateTime.fromISO(iso, { zone: TZ }).toFormat("dd/MM/yyyy") : "-";
+
+  const fmtHourTS = (ts) => {
+    if (!ts) return "-";
+    if (ts.seconds || ts._seconds) {
+      const s = ts.seconds ?? ts._seconds;
+      return DateTime.fromSeconds(Number(s), { zone: TZ }).toFormat("HH:mm");
+    }
+    try {
+      const d = DateTime.fromISO(String(ts), { zone: TZ });
+      if (d.isValid) return d.toFormat("HH:mm");
+    } catch { }
+    return "-";
+  };
+
+  const moneyCell = (n, cur) => {
+   const v = Number(n);
+   if (!Number.isFinite(v)) return "-";
+   const c = (cur || "USD").toString().toUpperCase();
+   return `${money(v)} ${c}`; // usa el helper con miles
+ };
+
+  // agrupar por propiedad
+  const groupsMap = new Map();
+  for (const r of items) {
+    const key = r.propiedad_id || "sin_prop";
+    const name = r.propiedad_nombre || key;
+    if (!groupsMap.has(key)) groupsMap.set(key, { name, list: [] });
+    groupsMap.get(key).list.push(r);
+  }
+  const groups = Array.from(groupsMap.values()).sort((a, b) =>
+    String(a.name).localeCompare(String(b.name))
+  );
+
+  const rows = [];
+  groups.forEach((g) => {
+    rows.push({ _group: true, label: g.name });
+    g.list.forEach((r) => {
+      const pays = getPayments(r);
+      rows.push({
+        _sepTop: true,
+        depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—",
+        pax: r.adults ?? "-",
+        nombre: r.nombre_huesped || "-",
+        tel: r.customer_phone || r.telefono || "-",
+        checkin: fmtDay(r.arrival_iso),
+        hora_in: fmtHourTS(r.checkin_at),
+        checkout: fmtDay(r.departure_iso),
+        hora_out: fmtHourTS(r.checkout_at),
+        agencia: r.source || r.channel_name || "-",
+        toPay: moneyCell(r.toPay, "USD"),
+        pago: pays[0] ? moneyCell(pays[0].amount, pays[0].currency) : "",
+        metodo: pays[0]?.method || "",
+        concepto: pays[0]?.concept || "",
+        payStatus: String(r.payment_status || "unpaid").toLowerCase(),
+        hasCheckin: !!r.checkin_at,
+        wasContacted: !!r.contacted_at,
+      });
+
+      for (let i = 1; i < pays.length; i++) {
+        const p = pays[i];
+        rows.push({
+          _payRow: true,
+          depto: "", pax: "", nombre: "", tel: "",
+          checkin: "", hora_in: "", checkout: "", hora_out: "",
+          agencia: "", toPay: "",
+          pago: moneyCell(p.amount, p.currency),
+          metodo: p.method || "",
+          concepto: p.concept || "",
+        });
+      }
+    });
+  });
+
+  return (
+    <div className="tablewrap">
+      <div className="btable__toolbar">
+        <ExportBottomExcel items={items} />
+      </div>
+
+      <table className="table btable">
+        <thead>
+          <tr>
+            <th className="th">Unidad</th>
+            <th className="th">PAX</th>
+            <th className="th">Nombre</th>
+            <th className="th">Teléfono</th>
+            <th className="th">Check in</th>
+            <th className="th">Hora in</th>
+            <th className="th">Check out</th>
+            <th className="th">Hora out</th>
+            <th className="th">Agencia</th>
+            <th className="th">A pagar</th>
+            <th className="th">Pago</th>
+            <th className="th">Forma de pago</th>
+            <th className="th">Concepto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            if (r._group) {
+              return (
+                <tr key={"g_" + i} className="btr--group">
+                  <td className="td" colSpan={13} style={{ fontWeight: 600, background: "#fafafa" }}>
+                    {r.label}
+                  </td>
+                </tr>
+              );
+            }
+
+            const tdDeptoCls = cls("td", !r._payRow && r.hasCheckin && "td--depto-in");
+            const tdNameCls = cls("td", !r._payRow && r.wasContacted && "td--name-contacted");
+            const tdPagoCls = cls(
+              "td td--money-dim",
+              !r._payRow &&
+              (r.payStatus === "paid"
+                ? "td--pay-paid"
+                : r.payStatus === "partial"
+                  ? "td--pay-partial"
+                  : "td--pay-unpaid")
+            );
+
+            return (
+              <tr key={i} className={cls("tr", r._sepTop && "btr--res-sep", r._payRow && "btr--pay")}>
+                <td className={tdDeptoCls}>{r.depto}</td>
+                <td className="td">{r.pax}</td>
+                <td className={tdNameCls}>{r.nombre}</td>
+                <td className="td">{r.tel}</td>
+                <td className="td">{r.checkin}</td>
+                <td className="td">{r.hora_in}</td>
+                <td className="td">{r.checkout}</td>
+                <td className="td">{r.hora_out}</td>
+                <td className="td">{r.agencia}</td>
+                <td className="td td--money-strong">{r.toPay}</td>
+                <td className={tdPagoCls}>{r.pago}</td>
+                <td className="td">{r.metodo}</td>
+                <td className="td">{r.concepto}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 /* ---------- App ---------- */
 
@@ -951,7 +1092,7 @@ export default function App() {
             <button type="button" className="btn" onClick={() => { setDateISO(DateTime.now().setZone(TZ).toISODate()); closeAllPopovers(); }}>Hoy</button>
             <button type="button" className="btn" onClick={() => goto(1)}>Mañana →</button>
             <input className="input--date" type="date" value={dateISO}
-                   onChange={(e) => { setDateISO(e.target.value); closeAllPopovers(); }} />
+              onChange={(e) => { setDateISO(e.target.value); closeAllPopovers(); }} />
             <Link to="/dashboard" className="icon-btn" title="Volver al Portal" aria-label="Volver al Portal">
               <ExitIcon />
             </Link>
@@ -1012,3 +1153,175 @@ export default function App() {
   );
 }
 
+/* ---------- UI: BottomTable (nuevo formato + export Excel) ----------
+BottomTable({ items }) {
+const fmtDay = (iso) =>
+  iso ? DateTime.fromISO(iso, { zone: TZ }).toFormat("dd/MM/yyyy") : "-";
+
+const fmtHourTS = (ts) => {
+  if (!ts) return "-";
+  if (ts.seconds || ts._seconds) {
+    const s = ts.seconds ?? ts._seconds;
+    return DateTime.fromSeconds(Number(s), { zone: TZ }).toFormat("HH:mm");
+  }
+  try {
+    const d = DateTime.fromISO(String(ts), { zone: TZ });
+    if (d.isValid) return d.toFormat("HH:mm");
+  } catch {}
+  return "-";
+};
+
+const money = (n, cur) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "-";
+  const c = (cur || "USD").toString().toUpperCase();
+  return `${v.toFixed(2)} ${c}`;
+};
+
+// --- agrupar por propiedad (si hay varias, muestra headers)
+const groupsMap = new Map();
+for (const r of items) {
+  const key = r.propiedad_id || "sin_prop";
+  const name = r.propiedad_nombre || key;
+  if (!groupsMap.has(key)) {
+    groupsMap.set(key, { name, list: [] });
+  }
+  groupsMap.get(key).list.push(r);
+}
+
+const groups = Array.from(groupsMap.values()).sort((a, b) =>
+  String(a.name).localeCompare(String(b.name))
+);
+
+const rows = [];
+let idx = 0;
+groups.forEach((g) => {
+  // fila de sección
+  rows.push({ _group: true, label: g.name });
+
+  g.list.forEach((r) => {
+    idx += 1;
+    const pays = getPayments(r);
+    rows.push({
+      _sepTop: true, // línea separadora entre reservas
+      depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—",
+      pax: r.adults ?? "-",
+      nombre: r.nombre_huesped || "-",
+      tel: r.customer_phone || r.telefono || "-",
+      checkin: fmtDay(r.arrival_iso),
+      hora_in: fmtHourTS(r.checkin_at),
+      checkout: fmtDay(r.departure_iso),
+      hora_out: fmtHourTS(r.checkout_at),
+      agencia: r.source || r.channel_name || "-",
+      toPay: money(r.toPay, "USD"),
+      pago: pays[0] ? money(pays[0].amount, pays[0].currency) : "",
+      metodo: pays[0]?.method || "",
+      concepto: pays[0]?.concept || "",
+      hasCheckin: !!r.checkin_at,
+      wasContacted: !!r.contacted_at,
+      payStatus: String(r.payment_status || "unpaid").toLowerCase(),
+    });
+
+    for (let i = 1; i < pays.length; i++) {
+      const p = pays[i];
+      rows.push({
+        _payRow: true,
+        depto: "",
+        pax: "",
+        nombre: "",
+        tel: "",
+        checkin: "",
+        hora_in: "",
+        checkout: "",
+        hora_out: "",
+        agencia: "",
+        toPay: "",
+        pago: money(p.amount, p.currency),
+        metodo: p.method || "",
+        concepto: p.concept || "",
+      });
+    }
+  });
+});
+
+return (
+  <div className="tablewrap">
+    <div className="btable__toolbar">
+      <ExportBottomExcel items={items} />
+    </div>
+    <table className="table btable">
+      <thead>
+        <tr>
+          <th className="th">Unidad</th>
+          <th className="th">PAX</th>
+          <th className="th">Nombre</th>
+          <th className="th">Teléfono</th>
+          <th className="th">Check in</th>
+          <th className="th">Hora in</th>
+          <th className="th">Check out</th>
+          <th className="th">Hora out</th>
+          <th className="th">Agencia</th>
+          <th className="th">A pagar</th>
+          <th className="th">Pago</th>
+          <th className="th">Forma de pago</th>
+          <th className="th">Concepto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => {
+          if (r._group) {
+            return (
+              <tr key={"g_" + i} className="btr--group">
+                <td
+                  className="td"
+                  colSpan={13}
+                  style={{ fontWeight: 600, background: "#fafafa" }}
+                >
+                  {r.label}
+                </td>
+              </tr>
+            );
+          }
+
+          const tdDeptoCls = cls("td", !r._payRow && r.hasCheckin && "td--depto-in");
+          const tdNameCls = cls("td", !r._payRow && r.wasContacted && "td--name-contacted");
+          const tdPagoCls = cls(
+            "td td--money-dim",
+            !r._payRow &&
+              (r.payStatus === "paid"
+                ? "td--pay-paid"
+                : r.payStatus === "partial"
+                ? "td--pay-partial"
+                : "td--pay-unpaid")
+          );
+
+          return (
+            <tr
+              key={i}
+              className={cls(
+                "tr",
+                r._sepTop && "btr--res-sep",
+                r._payRow && "btr--pay"
+              )}
+            >
+              <td className={tdDeptoCls}>{r.depto}</td>
+              <td className="td">{r.pax}</td>
+              <td className={tdNameCls}>{r.nombre}</td>
+              <td className="td">{r.tel}</td>
+              <td className="td">{r.checkin}</td>
+              <td className="td">{r.hora_in}</td>
+              <td className="td">{r.checkout}</td>
+              <td className="td">{r.hora_out}</td>
+              <td className="td">{r.agencia}</td>
+              <td className="td td--money-strong">{r.toPay}</td>
+              <td className={tdPagoCls}>{r.pago}</td>
+              <td className="td">{r.metodo}</td>
+              <td className="td">{r.concepto}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
+} */

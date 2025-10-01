@@ -12,47 +12,45 @@
  *   Para cada reserva con `arrival_iso == YYYY-MM-DD`, se escribe:
  *     usd_fx_on_checkin: {
  *       casa, fecha, compra, venta,
- *       fuente: "cotizaciones:firestore",
+ *       fuente,             // "cotizaciones:firestore" o "cotizaciones:firestore:fallback"
+ *       origen_fecha,       // fecha real de la cotización usada (puede diferir de fecha check-in)
  *       setAt: serverTimestamp()
  *     }
  *
  *   Solo se escribe si el campo NO existe (idempotente) o si `force=true`.
  *
+ * FUNCIONALIDAD ADICIONAL
+ *   - Si para el día de hoy no hay cotización en Firestore y ya pasaron las
+ *     10:10 AM (hora AR), se usa la última cotización previa encontrada.
+ *     En ese caso:
+ *       • fuente = "cotizaciones:firestore:fallback"
+ *       • origen_fecha = fecha de la cotización efectivamente usada
+ *     Esto evita que reservas con check-in hoy queden sin tipo de cambio.
+ *
  * ESTRATEGIA GENERAL
  *   1) Consulta/usa un meta de progreso: `cotizaciones_meta / USD`
  *        { lastQuoteDate: "YYYY-MM-DD", lastLinkedDate: "YYYY-MM-DD" }
  *
- *      - `lastQuoteDate` es la última fecha con cotización USD guardada.
- *         → Se mantiene al día desde tu endpoint /api/dolarByDate.js
- *         → Si no existe, se infiere buscando hacia atrás (hasta 365 días).
- *      - `lastLinkedDate` es la última fecha hasta la que linkeaste reservas.
- *
- *   2) Determina un rango a procesar:
- *      - Si el request pasa `since`/`until`, usa ese rango (acotado a hoy y
- *        a `lastQuoteDate`).
- *      - Si NO, usa:
- *            start = lastLinkedDate + 1    (o  lastQuoteDate - backfillDays  si no hay lastLinkedDate)
- *            end   = min(hoy, lastQuoteDate)
+ *   2) Determina un rango a procesar (según params o meta).
  *
  *   3) Para cada fecha del rango:
- *      - Lee cotización en `cotizaciones/USD/yyyy/mm/dd/cot`
- *      - Si no hay cotización → marca `no_quote` para ese día.
- *      - Si hay, busca reservas:
- *            Reservas.where("arrival_iso","==",fechaISO)
- *            (opcional) .where("propiedad_id","in",[...]) en sublotes de 10
- *        • Pagina de a `pageSize` docs (default 500)
- *        • Escribe `usd_fx_on_checkin` si no existe o si `force=true`
+ *        • Si hay cotización → se usa.
+ *        • Si es HOY y no hay cotización y ya pasaron las 10:10 AR →
+ *             se busca la última cotización previa y se usa como fallback.
+ *        • Si no hay cotización ni fallback → marca `no_quote`.
  *
- *   4) Al finalizar, si `dryRun=false`, actualiza `cotizaciones_meta/USD.lastLinkedDate = end`.
+ *   4) Actualiza `usd_fx_on_checkin` en reservas, respetando `force`/`dryRun`.
+ *
+ *   5) Al finalizar, si `dryRun=false`, actualiza `cotizaciones_meta/USD.lastLinkedDate = end`.
  *
  * PARÁMETROS (query o body, GET/POST)
  *   - since=YYYY-MM-DD       Inicio del rango (opcional)
  *   - until=YYYY-MM-DD       Fin del rango (opcional, default: hoy)
- *   - propertyIds=100,101    Filtro opcional de propiedades (se procesa en sublotes de 10 p/consulta)
- *   - force=true|false       Reescribe aunque ya exista `usd_fx_on_checkin` (default: false)
- *   - dryRun=true|false      No escribe, solo simula. (default: true)
- *   - pageSize=500           Lecturas por página de reservas (50..1000)
- *   - backfillDays=7         Backfill inicial si no hay lastLinkedDate (0..60, default: 7)
+ *   - propertyIds=100,101    Filtro opcional de propiedades
+ *   - force=true|false       Reescribe aunque ya exista (default: false)
+ *   - dryRun=true|false      No escribe, solo simula (default: true)
+ *   - pageSize=500           Lecturas por página (50..1000)
+ *   - backfillDays=7         Backfill inicial si no hay lastLinkedDate (0..60)
  *
  * RESPUESTA (resumen)
  *   {
@@ -62,37 +60,17 @@
  *     lastQuoteDate,
  *     lastLinkedDateBefore,
  *     propertyIdsCount,
- *     totals: {
- *       dates, updated, matched, skippedExisting, no_quote_days
- *     },
- *     perDate: [
- *       { date, status: "ok", matched, skippedExisting, updated }
- *       | { date, status: "no_quote" }
- *     ]
+ *     totals: { dates, updated, matched, skippedExisting, no_quote_days },
+ *     perDate: [ { date, status, matched?, skippedExisting?, updated? } ]
  *   }
  *
- * EJEMPLOS
- *   • Dry-run automático (usa meta):
- *       GET  /api/linkUsdFxToReservations
- *
- *   • Ejecutar con escritura real:
- *       POST /api/linkUsdFxToReservations
- *       { "dryRun": false }
- *
- *   • Rango específico + propiedades:
- *       GET  /api/linkUsdFxToReservations?since=2025-08-01&until=2025-09-30&propertyIds=100,106&dryRun=false
- *
- *   • Forzar reescritura aunque ya exista:
- *       GET  /api/linkUsdFxToReservations?force=true&dryRun=false
- *
  * CRON SUGERIDO
- *   - Diario 10:15 AR (después de persistir cotizaciones): /api/linkUsdFxToReservations?dryRun=false
- *   - (Opcional) refuerzo 13:15 AR.
+ *   - Diario 10:15 AR (después de persistir cotizaciones)
+ *   - Refuerzo opcional 13:15 AR.
  *
  * NOTAS
- *   - Este proceso NO genera nuevas cotizaciones; solo linkea desde lo que ya
- *     existe en Firestore. Asegurate de correr /api/dolarByDate.js antes.
- *   - Pensado para correr repetidamente sin duplicar trabajo (idempotente).
+ *   - Este proceso NO genera nuevas cotizaciones; solo linkea desde Firestore.
+ *   - Incluye fallback automático después de 10:10 AR si falta cotización del día.
  * ──────────────────────────────────────────────────────────────────────────────
  */
 
@@ -100,7 +78,15 @@ import { firestore, FieldValue } from "../lib/firebaseAdmin.js";
 import { DateTime } from "luxon";
 
 const TZ = "America/Argentina/Buenos_Aires";
-const log = (...xs) => console.log("[LinkFX]", ...xs);
+const stamp = () => DateTime.now().setZone(TZ).toISO();
+const LOGP = "LinkFX";
+
+const log = (msg, extra = {}) =>
+  console.log(`[${LOGP}] ${stamp()} ${msg}`, Object.keys(extra).length ? extra : "");
+const warn = (msg, extra = {}) =>
+  console.warn(`[${LOGP}] ${stamp()} ${msg}`, Object.keys(extra).length ? extra : "");
+const err = (msg, extra = {}) =>
+  console.error(`[${LOGP}] ${stamp()} ${msg}`, Object.keys(extra).length ? extra : "");
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 function ok(res, data) {
@@ -122,9 +108,8 @@ const toISO = (s) => {
   return d.isValid ? d.toISODate() : null;
 };
 
-// ── Lectura de cotización desde Firestore ────────────────────────────────────
+// ── Lectura de cotización ────────────────────────────────────────────────────
 async function getQuoteDoc(dateISO) {
-  // Ruta: cotizaciones/USD/yyyy/mm/dd/cot
   const d = DateTime.fromISO(dateISO, { zone: TZ });
   const yyyy = d.toFormat("yyyy");
   const mm = d.toFormat("MM");
@@ -134,23 +119,30 @@ async function getQuoteDoc(dateISO) {
     .collection(yyyy).doc(mm)
     .collection(dd).doc("cot");
   const snap = await ref.get();
-  return snap.exists ? { id: ref.path, ...snap.data() } : null;
+  return snap.exists ? { id: ref.path, _sourceDate: dateISO, ...snap.data() } : null;
 }
 
-// Busca la última fecha (<= hoy) que tiene cotización en Firestore.
-// Recorre hacia atrás hasta maxLookbackDays (default 365).
 async function findLastQuoteDateFromFirestore(maxLookbackDays = 365) {
   for (let i = 0; i <= maxLookbackDays; i++) {
     const d = DateTime.now().setZone(TZ).minus({ days: i }).toISODate();
     const q = await getQuoteDoc(d);
-    if (q && Number.isFinite(Number(q.venta))) {
-      return d;
-    }
+    if (q && Number.isFinite(Number(q.venta))) return d;
   }
   return null;
 }
 
-// ── Meta de progreso ─────────────────────────────────────────────────────────
+// busca cotización previa a una fecha
+async function findPrevQuoteDate(beforeISO, maxLookbackDays = 7) {
+  const start = DateTime.fromISO(beforeISO, { zone: TZ });
+  for (let i = 1; i <= maxLookbackDays; i++) {
+    const d = start.minus({ days: i }).toISODate();
+    const q = await getQuoteDoc(d);
+    if (q && Number.isFinite(Number(q.venta))) return d;
+  }
+  return null;
+}
+
+// ── Meta ─────────────────────────────────────────────────────────────────────
 async function readMeta() {
   const ref = firestore.collection("cotizaciones_meta").doc("USD");
   const snap = await ref.get();
@@ -164,7 +156,7 @@ async function writeMeta(update) {
   );
 }
 
-// ── Iterador de fechas inclusivo ─────────────────────────────────────────────
+// ── Iterador de fechas ──────────────────────────────────────────────────────
 function* dateRangeIterator(startISO, endISO) {
   let d = DateTime.fromISO(startISO, { zone: TZ }).startOf("day");
   const end = DateTime.fromISO(endISO, { zone: TZ }).startOf("day");
@@ -174,7 +166,7 @@ function* dateRangeIterator(startISO, endISO) {
   }
 }
 
-// ── Actualiza reservas de una fecha dada ─────────────────────────────────────
+// ── Actualiza reservas ──────────────────────────────────────────────────────
 async function updateReservationsForDate({
   dateISO,
   quote,
@@ -182,128 +174,77 @@ async function updateReservationsForDate({
   force,
   dryRun,
   pageSize = 500,
+  usedFallback = false,
+  fallbackFrom = null,
 }) {
-  const baseQuery = firestore.collection("Reservas")
-    .where("arrival_iso", "==", dateISO);
+  log("DATE_START", { dateISO, usedFallback, fallbackFrom });
 
-  // Firestore 'in' soporta hasta 10 valores. Si hay más, dividimos en sublotes.
+  const baseQuery = firestore.collection("Reservas").where("arrival_iso", "==", dateISO);
+
   const chunks = [];
   if (Array.isArray(propertyIds) && propertyIds.length > 0) {
-    const sliceSize = 10;
-    for (let i = 0; i < propertyIds.length; i += sliceSize) {
-      chunks.push(propertyIds.slice(i, i + sliceSize));
-    }
-  } else {
-    chunks.push(null); // sin filtro de propiedades
-  }
+    for (let i = 0; i < propertyIds.length; i += 10)
+      chunks.push(propertyIds.slice(i, i + 10));
+  } else chunks.push(null);
 
-  let totalMatched = 0;
-  let totalSkippedExisting = 0;
-  let totalUpdated = 0;
-
-  log("DATE START", {
-    dateISO,
-    dryRun,
-    force,
-    propertyIdsCount: Array.isArray(propertyIds) ? propertyIds.length : 0,
-    pageSize
-  });
+  let matched = 0, skippedExisting = 0, updated = 0;
 
   for (const sub of chunks) {
     let q = baseQuery;
-    if (Array.isArray(sub)) {
-      q = q.where("propiedad_id", "in", sub);
-    }
-
-    log("CHUNK", {
-      dateISO,
-      filterPropIds: Array.isArray(sub) ? sub : "ALL"
-    });
+    if (Array.isArray(sub)) q = q.where("propiedad_id", "in", sub);
 
     let cursor = null;
     while (true) {
-      // Con startAfter(docSnapshot) Firestore usa el orden por __name__ implícito.
       let qry = q.limit(pageSize);
       if (cursor) qry = qry.startAfter(cursor);
 
       const snap = await qry.get();
-      if (snap.empty) {
-        log("PAGE", { dateISO, page: "empty" });
-        break;
-      }
+      if (snap.empty) break;
 
-      log("PAGE", {
-        dateISO,
-        pageSize: snap.size,
-        matchedSoFar: totalMatched
-      });
-
-      let batch = firestore.batch();
-      let ops = 0;
+      let batch = firestore.batch(), ops = 0;
 
       for (const doc of snap.docs) {
-        totalMatched++;
+        matched++;
         const d = doc.data() || {};
-        const already = d.usd_fx_on_checkin;
-
-        if (already && !force) {
-          totalSkippedExisting++;
-          continue;
-        }
-
-        if (dryRun) {
-          totalUpdated++; // contamos el potencial update
-          continue;
-        }
+        if (d.usd_fx_on_checkin && !force) { skippedExisting++; continue; }
+        if (dryRun) { updated++; continue; }
 
         const payload = {
           usd_fx_on_checkin: {
             casa: (quote.casa || "oficial").toString().toLowerCase(),
             fecha: dateISO,
-            compra: Number(quote.compra ?? null),
-            venta: Number(quote.venta ?? null),
-            fuente: "cotizaciones:firestore",
+            compra: Number.isFinite(Number(quote.compra)) ? Number(quote.compra) : null,
+            venta:  Number.isFinite(Number(quote.venta))  ? Number(quote.venta)  : null,
+            fuente: usedFallback ? "cotizaciones:firestore:fallback" : "cotizaciones:firestore",
+            origen_fecha: quote._sourceDate || fallbackFrom || dateISO,
             setAt: FieldValue.serverTimestamp(),
           },
           updatedAt: FieldValue.serverTimestamp(),
         };
 
         batch.set(doc.ref, payload, { merge: true });
-        ops++;
-        totalUpdated++;
+        ops++; updated++;
 
-        if (ops >= 450) {
-          log("BATCH FLUSH", { dateISO, ops });
-          await batch.commit();
-          batch = firestore.batch();
-          ops = 0;
-        }
+        if (ops >= 450) { await batch.commit(); batch = firestore.batch(); ops = 0; }
       }
-
       if (!dryRun && ops > 0) await batch.commit();
 
       cursor = snap.docs[snap.docs.length - 1];
-      if (snap.size < pageSize) break; // última página
+      if (snap.size < pageSize) break;
     }
   }
 
-  log("DATE DONE", {
-    dateISO,
-    matched: totalMatched,
-    skippedExisting: totalSkippedExisting,
-    updated: totalUpdated
-  });
-
-  return { dateISO, matched: totalMatched, skippedExisting: totalSkippedExisting, updated: totalUpdated };
+  log("DATE_DONE", { dateISO, matched, skippedExisting, updated });
+  return { dateISO, matched, skippedExisting, updated };
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   try {
+    log("REQUEST_IN", { method: req.method, query: req.query });
+
     if (req.method === "OPTIONS") return ok(res, { ok: true });
-    if (req.method !== "GET" && req.method !== "POST") {
-      return bad(res, 405, "Método no permitido");
-    }
+    if (!["GET", "POST"].includes(req.method)) return bad(res, 405, "Método no permitido");
 
     const q = req.method === "GET" ? req.query : (req.body || {});
     const since = toISO(q.since);
@@ -312,26 +253,16 @@ export default async function handler(req, res) {
     const dryRun = q.dryRun === undefined ? true : String(q.dryRun).toLowerCase() === "true";
     const pageSize = Math.max(50, Math.min(1000, Number(q.pageSize) || 500));
     const backfillDays = Math.max(0, Math.min(60, Number(q.backfillDays) || 7));
-
     const propertyIds =
       typeof q.propertyIds === "string"
         ? q.propertyIds.split(",").map(s => s.trim()).filter(Boolean)
         : Array.isArray(q.propertyIds) ? q.propertyIds : [];
 
-    // Meta actual
     const meta = await readMeta();
     const lastLinkedDate = meta.data.lastLinkedDate || null;
+    let lastQuoteDate = meta.data.lastQuoteDate || await findLastQuoteDateFromFirestore(365);
+    if (!lastQuoteDate) return bad(res, 400, "No hay cotizaciones USD en Firestore");
 
-    // Última fecha con cotización (idealmente mantenida por /api/dolarByDate.js)
-    let lastQuoteDate = meta.data.lastQuoteDate || null;
-    if (!lastQuoteDate) {
-      lastQuoteDate = await findLastQuoteDateFromFirestore(365);
-    }
-    if (!lastQuoteDate) {
-      return bad(res, 400, "No se encontraron cotizaciones USD en Firestore (cotizaciones/USD/...)");
-    }
-
-    // Determinar rango efectivo
     let start =
       since ||
       (lastLinkedDate
@@ -340,69 +271,51 @@ export default async function handler(req, res) {
 
     let end = untilInput || DateTime.now().setZone(TZ).toISODate();
 
-    // Acotar a límites válidos (no procesar futuro ni después de lastQuoteDate)
-    const today = DateTime.now().setZone(TZ).toISODate();
+    const now = DateTime.now().setZone(TZ);
+    const today = now.toISODate();
+    const afterCutoff = now.hour > 10 || (now.hour === 10 && now.minute >= 10);
+
     if (end > today) end = today;
-    if (end > lastQuoteDate) end = lastQuoteDate;
-    if (start > end) {
-      return ok(res, {
-        ok: true,
-        reason: "No work",
-        range: { start, end },
-        lastQuoteDate,
-        lastLinkedDateBefore: lastLinkedDate || null,
-        dryRun,
-      });
+    if (end > lastQuoteDate) {
+      if (end !== today) end = lastQuoteDate;
+      else if (!afterCutoff) end = lastQuoteDate;
     }
 
-    log("INIT", {
-      start,
-      end,
-      dryRun,
-      force,
-      propertyIdsCount: propertyIds.length,
-      pageSize
-    });
+    log("RANGE_COMPUTED", { start, end, today, lastQuoteDate, afterCutoff });
+
+    if (start > end) return ok(res, { ok: true, reason: "No work", range: { start, end } });
 
     const perDate = [];
     for (const d of dateRangeIterator(start, end)) {
-      const qd = await getQuoteDoc(d);
+      let qd = await getQuoteDoc(d);
+      let usedFallback = false, fallbackFrom = null;
+
       if (!qd) {
-        perDate.push({ date: d, status: "no_quote" });
-        continue;
+        const isToday = d === today;
+        if (isToday && afterCutoff) {
+          fallbackFrom = await findPrevQuoteDate(d, 7);
+          if (fallbackFrom) {
+            qd = await getQuoteDoc(fallbackFrom);
+            usedFallback = !!qd;
+            if (qd) log("DATE_FALLBACK_QUOTE", { date: d, fallbackFrom });
+          }
+        }
+        if (!qd) { perDate.push({ date: d, status: "no_quote" }); continue; }
+      } else {
+        log("DATE_HAS_QUOTE", { date: d, casa: qd.casa, compra: qd.compra, venta: qd.venta });
       }
+
       const r = await updateReservationsForDate({
-        dateISO: d,
-        quote: qd,
-        propertyIds,
-        force,
-        dryRun,
-        pageSize,
+        dateISO: d, quote: qd, propertyIds, force, dryRun, pageSize, usedFallback, fallbackFrom,
       });
-      perDate.push({
-        date: d,
-        status: "ok",
-        matched: r.matched,
-        skippedExisting: r.skippedExisting,
-        updated: r.updated
-      });
+      perDate.push({ date: d, status: "ok", matched: r.matched, skippedExisting: r.skippedExisting, updated: r.updated });
     }
 
-    // Actualizamos meta.lastLinkedDate si no es dryRun
-    if (!dryRun) {
-      await writeMeta({
-        lastLinkedDate: end,
-        lastQuoteDate, // opcional registrar también por consistencia
-      });
-    }
+    if (!dryRun) await writeMeta({ lastLinkedDate: end, lastQuoteDate });
 
     const summary = {
-      ok: true,
-      dryRun,
-      force,
-      range: { start, end },
-      lastQuoteDate,
-      lastLinkedDateBefore: lastLinkedDate || null,
+      ok: true, dryRun, force,
+      range: { start, end }, lastQuoteDate, lastLinkedDateBefore: lastLinkedDate,
       propertyIdsCount: propertyIds.length,
       totals: {
         dates: perDate.length,
@@ -413,12 +326,10 @@ export default async function handler(req, res) {
       },
       perDate,
     };
-
-    log("DONE", { range: { start, end }, totals: summary.totals });
-
+    log("DONE", { range: summary.range, totals: summary.totals });
     return ok(res, summary);
   } catch (e) {
-    console.error(e);
+    err("UNHANDLED_ERROR", { message: e?.message, stack: e?.stack });
     return bad(res, 500, e.message || "Error interno");
   }
 }

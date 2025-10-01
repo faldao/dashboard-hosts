@@ -21,12 +21,16 @@
       "schedule": "15 16 * * *"
     },
     {
-      "path": "/api/cronOrchestrator",
+      "path": "/api/cron/cronOrchestrator",
       "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/rebuildDailyIndexes?mode=auto",
       "schedule": "*/30 * * * *"
+    },
+    {  
+        "path": "/api/cron/rescue-link-fx", 
+        "schedule": "30 1 * * *" 
     }
   ]
 }
