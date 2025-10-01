@@ -5,6 +5,8 @@ import PopoverPortal from "../components/PopoverPortal";
 import ExportBottomExcel from "../components/ExportBottomExcel";
 import { Link } from 'react-router-dom';
 import { money, numFmt, safeNum } from "../../lib/money";
+//import HeaderUserBadge from './components/HeaderUserBadge'; 
+import HeaderUserInline from '../components/HeaderUserInline';
 
 
 const TZ = "America/Argentina/Buenos_Aires";
@@ -310,9 +312,9 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
       } else {
         whenISO = toLocalIso(d || (r.departure_iso || ""), t || "11:00");
       }
-      await axios.post("/api/reservationMutations", { id: r.id, action: type, payload: { when: whenISO }, user: "host" });
+      await axios.post("/api/reservationMutations", { id: r.id, action: type, payload: { when: whenISO } });
       const clean = (note || "").trim();
-      if (clean) await axios.post("/api/reservationMutations", { id: r.id, action: "addNote", payload: { text: clean }, user: "host" });
+      if (clean) await axios.post("/api/reservationMutations", { id: r.id, action: "addNote", payload: { text: clean } });
       setNote("");
       onDone?.();
     } finally { setSubmitting(false); }
@@ -375,8 +377,7 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
           // quitamos fecha/hora: 'when' va como null
           when: null
         },
-        user: "host",
-      });
+              });
       setAmount(""); setConcept("");                      // limpiar inputs
       onDone?.();
     } finally { setSending(false); }
@@ -440,7 +441,7 @@ function NoteAddButton({ r, isOpen, onToggle, onDone }) {
     if (!clean) return;
     try {
       setSending(true);
-      await axios.post("/api/reservationMutations", { id: r.id, action: "addNote", payload: { text: clean }, user: "host" });
+      await axios.post("/api/reservationMutations", { id: r.id, action: "addNote", payload: { text: clean }});
       setNote("");
       onDone?.();
     } finally { setSending(false); }
@@ -489,7 +490,7 @@ function PaymentsList({ r }) {
               <div className="pay-left">
                 <span className="chip chip--off">{p.method || "—"}</span>
                 {p.concept ? <span className="chip chip--off">{p.concept}</span> : null}
-                <span className="pay-meta">{p.by ? p.by : "host"} · {fmtTS(p.ts)}</span>
+                <span className="pay-meta">{p.by || "—"} · {fmtTS(p.ts)}</span> 
               </div>
               <div className="pay-amt">{numFmt(p.amount || 0, 2)} {cur}</div>
             </div>
@@ -583,7 +584,7 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onTog
         payload.ivaPercent = null;
       }
 
-      await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", user: "host", payload });
+      await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay",  payload });
 
       onDone?.();
       onRefresh?.();
@@ -1071,8 +1072,9 @@ export default function App() {
       <header className="header">
         <div className="header__bar">
           <div className="flex items-center gap-2">
-            <h1 className="header__title">Planilla de Hosts</h1>
+            <h1 className="header__title">Planilla Diaria</h1>
             <span className="header__date">({dateISO})</span>
+            <HeaderUserInline />
           </div>
 
           <div className="header__actions">
@@ -1153,175 +1155,3 @@ export default function App() {
   );
 }
 
-/* ---------- UI: BottomTable (nuevo formato + export Excel) ----------
-BottomTable({ items }) {
-const fmtDay = (iso) =>
-  iso ? DateTime.fromISO(iso, { zone: TZ }).toFormat("dd/MM/yyyy") : "-";
-
-const fmtHourTS = (ts) => {
-  if (!ts) return "-";
-  if (ts.seconds || ts._seconds) {
-    const s = ts.seconds ?? ts._seconds;
-    return DateTime.fromSeconds(Number(s), { zone: TZ }).toFormat("HH:mm");
-  }
-  try {
-    const d = DateTime.fromISO(String(ts), { zone: TZ });
-    if (d.isValid) return d.toFormat("HH:mm");
-  } catch {}
-  return "-";
-};
-
-const money = (n, cur) => {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return "-";
-  const c = (cur || "USD").toString().toUpperCase();
-  return `${v.toFixed(2)} ${c}`;
-};
-
-// --- agrupar por propiedad (si hay varias, muestra headers)
-const groupsMap = new Map();
-for (const r of items) {
-  const key = r.propiedad_id || "sin_prop";
-  const name = r.propiedad_nombre || key;
-  if (!groupsMap.has(key)) {
-    groupsMap.set(key, { name, list: [] });
-  }
-  groupsMap.get(key).list.push(r);
-}
-
-const groups = Array.from(groupsMap.values()).sort((a, b) =>
-  String(a.name).localeCompare(String(b.name))
-);
-
-const rows = [];
-let idx = 0;
-groups.forEach((g) => {
-  // fila de sección
-  rows.push({ _group: true, label: g.name });
-
-  g.list.forEach((r) => {
-    idx += 1;
-    const pays = getPayments(r);
-    rows.push({
-      _sepTop: true, // línea separadora entre reservas
-      depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—",
-      pax: r.adults ?? "-",
-      nombre: r.nombre_huesped || "-",
-      tel: r.customer_phone || r.telefono || "-",
-      checkin: fmtDay(r.arrival_iso),
-      hora_in: fmtHourTS(r.checkin_at),
-      checkout: fmtDay(r.departure_iso),
-      hora_out: fmtHourTS(r.checkout_at),
-      agencia: r.source || r.channel_name || "-",
-      toPay: money(r.toPay, "USD"),
-      pago: pays[0] ? money(pays[0].amount, pays[0].currency) : "",
-      metodo: pays[0]?.method || "",
-      concepto: pays[0]?.concept || "",
-      hasCheckin: !!r.checkin_at,
-      wasContacted: !!r.contacted_at,
-      payStatus: String(r.payment_status || "unpaid").toLowerCase(),
-    });
-
-    for (let i = 1; i < pays.length; i++) {
-      const p = pays[i];
-      rows.push({
-        _payRow: true,
-        depto: "",
-        pax: "",
-        nombre: "",
-        tel: "",
-        checkin: "",
-        hora_in: "",
-        checkout: "",
-        hora_out: "",
-        agencia: "",
-        toPay: "",
-        pago: money(p.amount, p.currency),
-        metodo: p.method || "",
-        concepto: p.concept || "",
-      });
-    }
-  });
-});
-
-return (
-  <div className="tablewrap">
-    <div className="btable__toolbar">
-      <ExportBottomExcel items={items} />
-    </div>
-    <table className="table btable">
-      <thead>
-        <tr>
-          <th className="th">Unidad</th>
-          <th className="th">PAX</th>
-          <th className="th">Nombre</th>
-          <th className="th">Teléfono</th>
-          <th className="th">Check in</th>
-          <th className="th">Hora in</th>
-          <th className="th">Check out</th>
-          <th className="th">Hora out</th>
-          <th className="th">Agencia</th>
-          <th className="th">A pagar</th>
-          <th className="th">Pago</th>
-          <th className="th">Forma de pago</th>
-          <th className="th">Concepto</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => {
-          if (r._group) {
-            return (
-              <tr key={"g_" + i} className="btr--group">
-                <td
-                  className="td"
-                  colSpan={13}
-                  style={{ fontWeight: 600, background: "#fafafa" }}
-                >
-                  {r.label}
-                </td>
-              </tr>
-            );
-          }
-
-          const tdDeptoCls = cls("td", !r._payRow && r.hasCheckin && "td--depto-in");
-          const tdNameCls = cls("td", !r._payRow && r.wasContacted && "td--name-contacted");
-          const tdPagoCls = cls(
-            "td td--money-dim",
-            !r._payRow &&
-              (r.payStatus === "paid"
-                ? "td--pay-paid"
-                : r.payStatus === "partial"
-                ? "td--pay-partial"
-                : "td--pay-unpaid")
-          );
-
-          return (
-            <tr
-              key={i}
-              className={cls(
-                "tr",
-                r._sepTop && "btr--res-sep",
-                r._payRow && "btr--pay"
-              )}
-            >
-              <td className={tdDeptoCls}>{r.depto}</td>
-              <td className="td">{r.pax}</td>
-              <td className={tdNameCls}>{r.nombre}</td>
-              <td className="td">{r.tel}</td>
-              <td className="td">{r.checkin}</td>
-              <td className="td">{r.hora_in}</td>
-              <td className="td">{r.checkout}</td>
-              <td className="td">{r.hora_out}</td>
-              <td className="td">{r.agencia}</td>
-              <td className="td td--money-strong">{r.toPay}</td>
-              <td className={tdPagoCls}>{r.pago}</td>
-              <td className="td">{r.metodo}</td>
-              <td className="td">{r.concepto}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  </div>
-);
-} */

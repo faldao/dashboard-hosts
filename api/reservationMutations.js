@@ -13,8 +13,7 @@
 //   - "setToPay"     → setea total USD y desglose
 //                      (payload: { baseUSD, ivaPercent?, ivaUSD?, extrasUSD?, fxRate?, cleaningUSD? })
 // ──────────────────────────────────────────────────────────────────────────────
-
-import { firestore, FieldValue, Timestamp } from '../lib/firebaseAdmin.js';
+import { firestore, FieldValue, Timestamp, authAdmin } from '../lib/firebaseAdmin.js';
 import crypto from 'crypto';
 
 const log = (...args) => console.log('[ReservationMutations]', ...args);
@@ -42,13 +41,13 @@ const hashDoc = (doc) => crypto.createHash('sha1').update(stableStringify(stripK
 function ok(res, data) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // <- agrega Authorization
   return res.status(200).json(data);
 }
 function bad(res, code, error) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // <- agrega Authorization
   return res.status(code).json({ error });
 }
 
@@ -65,6 +64,28 @@ const num = (x) => {
   const n = Number(x);
   return Number.isFinite(n) ? n : 0;
 };
+
+// ── auth: extrae usuario desde Authorization: Bearer <token> ────────────────
+async function getAuthUser(req) {
+  try {
+    const h = req.headers?.authorization || req.headers?.Authorization || '';
+    const m = h.match(/^Bearer\s+([A-Za-z0-9\-\._~\+\/]+=*)$/i);
+    if (!m) return null;
+    const token = m[1];
+const decoded = await authAdmin.verifyIdToken(token);
+    // name puede venir como name o como displayName, según origen del token
+    const name = decoded.name || decoded.displayName || null;
+    return {
+      uid: decoded.uid,
+      email: decoded.email || null,
+      name,
+      picture: decoded.picture || null,
+    };
+  } catch (e) {
+    log('WARN verifyIdToken', e?.message);
+    return null;
+  }
+}
 
 // ── tipo de cambio ───────────────────────────────────────────────────────────
 function getFxFromReservation(res) {
@@ -128,8 +149,19 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return bad(res, 405, 'Método no permitido');
 
   try {
-    const { id, action, payload = {}, user = 'host' } = req.body || {};
+    // user (legacy) queda como fallback; preferimos auth real
+    const { id, action, payload = {}, user: userLegacy } = req.body || {};
     if (!id || !action) return bad(res, 400, 'Faltan parámetros: id y action son obligatorios');
+
+    // auth
+    const authUser = await getAuthUser(req);
+    if (!authUser) return bad(res, 401, 'No autenticado');
+    const actor =
+      (authUser?.name && String(authUser.name)) ||
+      (authUser?.email && String(authUser.email)) ||
+      (authUser?.uid && String(authUser.uid)) ||
+      (userLegacy && String(userLegacy)) ||
+      'host';
 
     const ref = firestore.collection('Reservas').doc(id);
     const snap = await ref.get();
@@ -138,7 +170,12 @@ export default async function handler(req, res) {
     const before = snap.data();
     const nowServer = FieldValue.serverTimestamp();
 
-    let update = { lastUpdatedBy: user || 'host', lastUpdatedAt: nowServer };
+    let update = {
+      lastUpdatedBy: actor,
+      lastUpdatedByUid: authUser?.uid || null,
+      lastUpdatedByEmail: authUser?.email || null,
+      lastUpdatedAt: nowServer,
+    };
     let historyPayload = {};
 
     if (action === 'checkin') {
@@ -154,8 +191,14 @@ export default async function handler(req, res) {
       const text = String(payload?.text || '').trim();
       if (!text) return bad(res, 400, 'Texto de nota vacío');
       const unifiedNote = {
-        ts: Timestamp.now(), by: user || 'host', text, source: 'host',
-        wubook_id: null, sent_to_wubook: false,
+        ts: FieldValue.serverTimestamp(),
+        by: actor,                         // ← registra el nombre real
+        byUid: authUser?.uid || null,      // ← y uid
+        byEmail: authUser?.email || null,  // ← y email
+        text,
+        source: 'host',
+        wubook_id: null,
+        sent_to_wubook: false,
       };
       const prevNotes = Array.isArray(before.notes) ? before.notes.slice(0, 1000) : [];
       update.notes = [...prevNotes, unifiedNote];
@@ -169,9 +212,13 @@ export default async function handler(req, res) {
       if (!Number.isFinite(amount) || amount <= 0) return bad(res, 400, 'Monto inválido');
 
       const payment = {
-        ts: payload?.when ? toTs(payload.when) : Timestamp.now(),
-        by: user || 'host', source: 'host',
-        wubook_id: null, amount, currency, method, concept,
+        ts: payload?.when ? toTs(payload.when) :FieldValue.serverTimestamp(),
+        by: actor,                         // ← registra el actor real
+        byUid: authUser?.uid || null,
+        byEmail: authUser?.email || null,
+        source: 'host',
+        wubook_id: null,
+        amount, currency, method, concept,
       };
 
       if (currency === 'ARS') {
@@ -212,7 +259,6 @@ export default async function handler(req, res) {
       const prevIvaAmt = Number.isFinite(Number(prev.ivaUSD))    ? Number(prev.ivaUSD)    : 0;
       const prevIvaPct = Number.isFinite(Number(prev.ivaPercent))? Number(prev.ivaPercent): null;
 
-      // helper: distingue undefined vs ""/null vs número
       const readField = (key, prevVal) => {
         if (!(key in payload))       return { calc: prevVal, store: prevVal, fromPrev: true };
         const raw = payload[key];
@@ -222,14 +268,12 @@ export default async function handler(req, res) {
                                   : { calc: 0, store: null, fromPrev: false };
       };
 
-      // base / extras
       const baseR   = readField('baseUSD',   prevBase);
       let   extrasR;
       if ('extrasUSD' in payload) extrasR = readField('extrasUSD', prevExtras);
       else if ('cleaningUSD' in payload) extrasR = readField('cleaningUSD', prevExtras);
       else extrasR = { calc: prevExtras, store: prevExtras, fromPrev: true };
 
-      // IVA (mantenemos ambos modos, percent/amount)
       let ivaUSD_calc  = prevIvaAmt, ivaUSD_store  = prevIvaAmt;
       let ivaPct_calc  = prevIvaPct, ivaPct_store  = prevIvaPct;
 
@@ -241,13 +285,11 @@ export default async function handler(req, res) {
         const raw = payload.ivaPercent;
         if (raw === '' || raw === null) {
           ivaPct_calc = null; ivaPct_store = null;
-          // si no mandaron ivaUSD, entonces el importe queda 0
           if (!('ivaUSD' in payload)) { ivaUSD_calc = 0; ivaUSD_store = 0; }
         } else {
           const p = Number(raw);
           if (Number.isFinite(p) && p >= 0) {
             ivaPct_calc = p; ivaPct_store = p;
-            // si no mandaron ivaUSD explícito, calcularlo desde base
             if (!('ivaUSD' in payload)) {
               ivaUSD_calc = +(baseR.calc * (p/100)).toFixed(2);
               ivaUSD_store = ivaUSD_calc;
@@ -276,7 +318,6 @@ export default async function handler(req, res) {
         fxRate: null
       };
 
-      // TC asociado (para auditoría/recalcular estado)
       const fxRate =
         payload?.fxRate && Number.isFinite(Number(payload.fxRate)) && Number(payload.fxRate) > 0
           ? Number(payload.fxRate)
@@ -328,7 +369,7 @@ export default async function handler(req, res) {
     const histDoc = {
       ts: nowServer,
       source: 'host_ui',
-      context: { action, by: user },
+      context: { action, by: actor, byUid: authUser?.uid || null, byEmail: authUser?.email || null },
       changeType: 'updated',
       changedKeys: Object.keys(diff),
       diff,

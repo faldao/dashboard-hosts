@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../src/pages"
+		},
+		{
+			"path": "../utils"
+		},
+		{
+			"path": "cron"
+		}
+	],
+	"settings": {}
+}
