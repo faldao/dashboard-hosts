@@ -1,4 +1,5 @@
 // vite.config.js
+// vite.config.js
 import { defineConfig, splitVendorChunkPlugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -9,14 +10,7 @@ export default defineConfig({
   base: '/',
   server: { port: 5173 },
   optimizeDeps: {
-    // quitemos exceljs del prebundle de dev: no lo necesitás para la home
-    include: ['file-saver', 'luxon'],
-  },
-  resolve: {
-    alias: {
-      // si alguna lib hace `require('process')` o `import process from 'process'`
-      process: 'process/browser',
-    },
+    include: ['exceljs', 'file-saver', 'luxon'],
   },
   build: {
     outDir: 'dist',
@@ -41,11 +35,12 @@ export default defineConfig({
     },
   },
   define: {
-    // evita que el código del cliente lea process real de Node
-    'process.env': {},
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
-    'process.env.NODE_DEBUG': false,
+    // Reemplazos en tiempo de build
+    global: 'globalThis',
+    'process.env': {},                 // evita accesos simples a env
+    'process.browser': 'true',         // algunas libs lo miran
   },
 });
+
 
 
