@@ -1,0 +1,41 @@
+[
+    {
+        "property_id": 103,
+        "property_name": "Urbana Guemes",
+        "property_description": "Departamentos en el barrio mas exclusivo de Bariloche, a pocas cuadras del Centro Civico",
+        "api_key": "wb_721f8376-5736-11ea-9caf-001a4a5c09cf",
+        "short_name": "guemes",
+        "apartments": [
+            {
+                "apartment_id": 253757,
+                "apartment_name": "Guemes 101 1",
+                "apartment_description": "",
+                "apartment_wubook_shortname": ""
+            },
+            {
+                "apartment_id": 253758,
+                "apartment_name": "Guemes 306 1",
+                "apartment_description": "",
+                "apartment_wubook_shortname": ""
+            },
+            {
+                "apartment_id": 253759,
+                "apartment_name": "Guemes 402 1",
+                "apartment_description": "",
+                "apartment_wubook_shortname": ""
+            },
+            {
+                "apartment_id": 253760,
+                "apartment_name": "Guemes 405 1",
+                "apartment_description": "",
+                "apartment_wubook_shortname": ""
+            },
+            {
+                "apartment_id": 255609,
+                "apartment_name": "Guemes 301",
+                "apartment_description": "",
+                "apartment_wubook_shortname": ""
+            }
+        ]
+    }
+]

@@ -191,7 +191,7 @@ export default async function handler(req, res) {
       const text = String(payload?.text || '').trim();
       if (!text) return bad(res, 400, 'Texto de nota vacío');
       const unifiedNote = {
-        ts: FieldValue.serverTimestamp(),
+        ts: Timestamp.now(),
         by: actor,                         // ← registra el nombre real
         byUid: authUser?.uid || null,      // ← y uid
         byEmail: authUser?.email || null,  // ← y email
@@ -212,7 +212,7 @@ export default async function handler(req, res) {
       if (!Number.isFinite(amount) || amount <= 0) return bad(res, 400, 'Monto inválido');
 
       const payment = {
-        ts: payload?.when ? toTs(payload.when) :FieldValue.serverTimestamp(),
+        ts: payload?.when ? toTs(payload.when) :Timestamp.now(),
         by: actor,                         // ← registra el actor real
         byUid: authUser?.uid || null,
         byEmail: authUser?.email || null,

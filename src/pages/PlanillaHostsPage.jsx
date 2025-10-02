@@ -19,7 +19,8 @@ const getUsdFx = (r) => {
   const buy = Number(fx.compra);
   const sell = Number(fx.venta);
   let rate = null;
-  if (Number.isFinite(buy) && Number.isFinite(sell)) rate = (buy + sell) / 2;
+  //if (Number.isFinite(buy) && Number.isFinite(sell)) rate = (buy + sell) / 2;
+  if (Number.isFinite(buy) && Number.isFinite(sell)) rate = (sell);
   else if (Number.isFinite(sell)) rate = sell;
   else if (Number.isFinite(buy)) rate = buy;
   return {
@@ -877,7 +878,7 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
 }
 
 /* ---------- UI: BottomTable (resumen inferior + export) ---------- */
-function BottomTable({ items }) {
+function BottomTable({ items, exportLoader }) {
   const fmtDay = (iso) =>
     iso ? DateTime.fromISO(iso, { zone: TZ }).toFormat("dd/MM/yyyy") : "-";
 
@@ -956,7 +957,7 @@ function BottomTable({ items }) {
   return (
     <div className="tablewrap">
       <div className="btable__toolbar">
-        <ExportBottomExcel items={items} />
+        <ExportBottomExcel itemsLoader={exportLoader} />
       </div>
 
       <table className="table btable">
@@ -1055,6 +1056,56 @@ export default function App() {
     setDateISO(d);
   };
 
+// Trae SIEMPRE check-ins + check-outs del día (excluye stays) para exportar.
+const exportLoader = async () => {
+  const propParam = propertyId && propertyId !== "all" ? propertyId : "all";
+  const q = new URLSearchParams({ date: dateISO, property: propParam });
+
+  // 1) índice del día
+  const { data: indexDoc } = await axios.get(`/api/dailyIndex?${q.toString()}`);
+
+  const idsIn  = Array.isArray(indexDoc?.checkins)  ? indexDoc.checkins  : [];
+  const idsOut = Array.isArray(indexDoc?.checkouts) ? indexDoc.checkouts : [];
+
+  const resolveIds = async (ids) => {
+    if (!ids.length) return [];
+    const body = { ids };
+    if (propertyId && propertyId !== "all") body.propiedad_id = propertyId;
+    const { data } = await axios.post("/api/resolveReservations", body);
+    return Array.isArray(data?.items) ? data.items : [];
+  };
+
+  // 2) resolver en paralelo
+  const [inList, outList] = await Promise.all([
+    resolveIds(idsIn),
+    resolveIds(idsOut),
+  ]);
+
+  // 3) ordenar igual que en la UI "Todas"
+  const norm = (s) => (s ? String(s).toLowerCase() : "");
+  const cmp = (a, b) => {
+    const pa = norm(a.propiedad_nombre) || norm(a.propiedad_id);
+    const pb = norm(b.propiedad_nombre) || norm(b.propiedad_id);
+    if (pa !== pb) return pa.localeCompare(pb);
+
+    const da = norm(a.depto_nombre || a.nombre_depto || a.codigo_depto || a.id_zak);
+    const db = norm(b.depto_nombre || b.nombre_depto || b.codigo_depto || b.id_zak);
+    if (da !== db) return da.localeCompare(db);
+
+    const aa = a.arrival_iso || "";
+    const ab = b.arrival_iso || "";
+    if (aa !== ab) return aa < ab ? -1 : 1;
+
+    return String(a.id_human || a.id).localeCompare(String(b.id_human || b.id));
+  };
+
+  const checkins  = propertyId === "all" ? [...inList].sort(cmp)  : inList;
+  const checkouts = propertyId === "all" ? [...outList].sort(cmp) : outList;
+
+  // 4) devolver buckets para que el Excel haga secciones sin duplicar encabezado
+  return { checkins, checkouts };
+};
+
   // util para agrupar items por propiedad (ya vienen ordenados si "all")
   const buildGroups = (arr) => {
     const map = new Map();
@@ -1149,7 +1200,7 @@ export default function App() {
       </main>
 
       <section className="bottom">
-        <BottomTable items={items} />
+        <BottomTable items={items} exportLoader={exportLoader} />
       </section>
     </div>
   );

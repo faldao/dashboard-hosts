@@ -6,8 +6,56 @@
  *
  * RESUMEN
  * -------
- * Versión final con mapeo de campos explícito para propiedades y departamentos,
- * y conversión de tipos para asegurar la integridad de los datos.
+ * Este endpoint lee un archivo JSON llamado `guemes.json` desde la raíz
+ * del proyecto y sincroniza su contenido con Firestore. Es ideal para
+ * migraciones controladas sin dependencias de red a un backend SQL.
+ *
+ * CÓMO USAR
+ * ----------
+ * 1. Colocá tu archivo `guemes.json` en la raíz de tu proyecto Vercel.
+ * 2. Hacé un deploy.
+ * 3. Hacé una petición POST a este endpoint.
+ *
+ * curl -X POST "https://<tu-app>/api/exportJsonToFirestore" \
+ * -H "Content-Type: application/json" \
+ * -H "x-cron-secret: <tu-secret>" \
+ * -d '{}'
+ *
+ * VARIABLES DE ENTORNO (ENV)
+ * --------------------------
+ * - FIREBASE_SERVICE_ACCOUNT_JSON  (OBLIGATORIA)
+ * - CRON_SECRET                      (OBLIGATORIA en prod)
+ *
+ * ============================================================================
+ */
+
+/*
+ * ============================================================================
+ *
+ * RESUMEN
+ * -------
+ * Versión modificada para asegurar una estructura de datos completa.
+ * Este endpoint lee `guemes.json` y crea cada propiedad y departamento
+ * con un esquema predefinido, rellenando con valores nulos o vacíos
+ * los campos que no se encuentren en el archivo JSON.
+ *
+ * ============================================================================
+ */
+
+
+
+/**
+ * ============================================================================
+ * /api/exportJsonToFirestore.js
+ * Migración desde archivo JSON local -> Firestore (propiedades y dptos)
+ * ============================================================================
+ *
+ * RESUMEN
+ * -------
+ * Versión final con mapeo de campos.
+ * Este script lee `guemes.json`, traduce los nombres de los campos
+ * (ej: `property_name` -> `nombre`) y luego asegura que cada documento
+ * se cree con un esquema completo y consistente en Firestore.
  *
  * ============================================================================
  */
@@ -64,7 +112,12 @@ const propertySchema = {
     faq: [],
     tipo_viajero: null,
     historia: null,
-    ubicacion: { direccion: null, lat: null, lng: null, zona: null },
+    ubicacion: {
+        direccion: null,
+        lat: null,
+        lng: null,
+        zona: null
+    },
 };
 const apartmentSchema = {
     nombre: null,
@@ -82,6 +135,7 @@ const apartmentSchema = {
     capacidad: null,
     capacidad_num: null,
 };
+
 
 // -----------------------------------------------------------------------------
 // Handler Principal del Endpoint
@@ -103,6 +157,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'No se pudo leer el archivo guemes.json.', details: error.message });
   }
 
+  // --- Proceso de Escritura en Firestore ---
   const writer = createBulkWriter();
   const summary = {
     properties_read: propiedadesJson.length,
@@ -114,29 +169,35 @@ export default async function handler(req, res) {
   for (const propJson of propiedadesJson) {
     try {
       if (!propJson.property_id) {
-          summary.errors.push('Propiedad sin "property_id". Saltando...');
+          summary.errors.push('Se encontró una propiedad sin "property_id". Saltando...');
           continue;
       }
 
       const propId = String(propJson.property_id);
       const propRef = db.collection('propiedades').doc(propId);
       
+      // --- NUEVO: MAPEO DE CAMPOS DE PROPIEDAD ---
+      // Traducimos los nombres del JSON a los nombres del esquema de Firestore.
       const datosPropMapeados = {
-        ...propJson,
+        ...propJson, // Copiamos todos los campos por si algunos coinciden
         nombre: propJson.property_name,
         descripcion: propJson.property_description,
+        // ... aquí podrías agregar más mapeos si hicieran falta
       };
       
       const { apartments, ...restOfPropData } = datosPropMapeados;
       
       const propDoc = {
-        ...propertySchema, ...restOfPropData,
-        source: 'json-import-mapped-v2', updatedAt: FieldValue.serverTimestamp(),
+        ...propertySchema,
+        ...restOfPropData,
+        source: 'json-import-mapped',
+        updatedAt: FieldValue.serverTimestamp(),
       };
       
       writer.set(propRef, propDoc, { merge: true });
       summary.properties_written++;
 
+      // Procesar subcolección de departamentos si existe
       if (Array.isArray(apartments)) {
         for (const dptoJson of apartments) {
           try {
@@ -147,46 +208,26 @@ export default async function handler(req, res) {
             const dptoId = String(dptoJson.apartment_id);
             const dptoRef = propRef.collection('departamentos').doc(dptoId);
 
-            // --- MAPEO MEJORADO Y EXPLÍCITO PARA DEPARTAMENTOS ---
+            // --- NUEVO: MAPEO DE CAMPOS DE DEPARTAMENTO ---
             const datosDptoMapeados = {
-                // Mapeo de nombres
+                ...dptoJson,
                 nombre: dptoJson.apartment_name,
                 descripcion: dptoJson.apartment_description,
                 wubook_shortname: dptoJson.apartment_wubook_shortname,
-                
-                // Conversión de tipos y copia de campos con nombre igual
-                consulta: Number.isFinite(Number(dptoJson.consulta)) ? Number(dptoJson.consulta) : null,
-                m2: dptoJson.m2,
-                
-                // Copia de campos complejos (si existen en el JSON)
-                caracteristicas: dptoJson.caracteristicas,
-                faq: dptoJson.faq,
-                galeria: dptoJson.galeria,
-
-                // Campos que probablemente solo existan en el schema por defecto
-                activar_para_venta: dptoJson.activar_para_venta,
             };
 
             const dptoDoc = {
                 ...apartmentSchema,
                 ...datosDptoMapeados,
-                source: 'json-import-mapped-v2',
+                source: 'json-import-mapped',
                 updatedAt: FieldValue.serverTimestamp(),
             };
-
-            // Lógica para derivar campos numéricos si es posible
-            const m2Num = Number(dptoDoc.m2);
-            if (Number.isFinite(m2Num)) dptoDoc.m2_num = m2Num;
-
-            const capStr = dptoDoc.caracteristicas?.Capacidad;
-            const capNum = Number(capStr);
-            if (Number.isFinite(capNum)) dptoDoc.capacidad_num = capNum;
 
             writer.set(dptoRef, dptoDoc, { merge: true });
             summary.apartments_written++;
 
           } catch (dptoError) {
-             const msg = `Error escribiendo dpto ${dptoJson?.apartment_id}: ${dptoError.message}`;
+             const msg = `Error escribiendo dpto ${dptoJson?.apartment_id} para prop ${propId}: ${dptoError.message}`;
              console.error('❌', msg);
              summary.errors.push(msg);
           }
@@ -217,5 +258,3 @@ export default async function handler(req, res) {
     summary,
   });
 }
-
-
