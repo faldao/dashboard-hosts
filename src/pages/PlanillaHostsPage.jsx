@@ -573,17 +573,16 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onTog
       payload.baseUSD = toNumOrNull(baseUSDIn) ?? 0;
       payload.extrasUSD = toNumOrNull(extrasUSDIn) ?? 0;
 
-      // --- LÓGICA CORREGIDA PARA EL IVA ---
-      // Ahora siempre se envía la información del IVA, usando 0 como valor por defecto.
-      if (ivaMode === "percent") {
-        payload.ivaPercent = toNumOrNull(ivaPercent) ?? 0;
-        // Para mayor seguridad, enviamos el otro modo como null para limpiar cualquier valor previo
-        payload.ivaUSD = null;
-      } else { // ivaMode === "amount"
-        payload.ivaUSD = toNumOrNull(ivaUSDIn) ?? 0;
-        // Se envía el otro modo como null
-        payload.ivaPercent = null;
-      }
+ // --- LÓGICA CORREGIDA PARA EL IVA ---
+if (ivaMode === "percent") {
+  const p = toNumOrNull(ivaPercent);
+  if (p !== null) payload.ivaPercent = p;
+  // NO MANDAR ivaUSD si estamos en %  ← clave
+} else { // ivaMode === "amount"
+  const a = toNumOrNull(ivaUSDIn);
+  if (a !== null) payload.ivaUSD = a;
+  // NO MANDAR ivaPercent si estamos en USD  ← clave
+}
 
       await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay",  payload });
 
