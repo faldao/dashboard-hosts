@@ -5,23 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dashboard de Anfitriones</title>
     <meta name="theme-color" content="#0ea5e9" />
-    <script>
-  window.global = window.global || window;
-  window.process = window.process || { env: {}, browser: true, stderr: null };
-</script>
-      <script>
-    // Shim súper-temprano: el vendor lo necesita
-    (function () {
-      var w = window;
-      w.process = w.process || {};
-      w.process.env = w.process.env || {};
-      // Algunos paquetes miran TTY para habilitar colores
-      w.process.stdout = w.process.stdout || { isTTY: false };
-      w.process.stderr = w.process.stderr || { isTTY: false };
-      // Y a veces chequean el NODE_ENV
-      w.process.env.NODE_ENV = (w.process.env.NODE_ENV || 'production');
-    })();
-  </script>
   </head>
   <body class="min-h-screen bg-gray-50">
     <div id="root"></div>

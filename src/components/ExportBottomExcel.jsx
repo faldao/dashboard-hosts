@@ -1,221 +1,201 @@
-/**
- * ============================================================================
- * /api/exportJsonToFirestore.js
- * Migración desde archivo JSON local -> Firestore (propiedades y dptos)
- * ============================================================================
- *
- * RESUMEN
- * -------
- * Versión final con mapeo de campos explícito para propiedades y departamentos,
- * y conversión de tipos para asegurar la integridad de los datos.
- *
- * ============================================================================
- */
+import React, { useState } from "react";
+import { DateTime } from "luxon";
 
-import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import path from 'path';
-import fs from 'fs/promises';
+const DEFAULT_TZ = "America/Argentina/Buenos_Aires";
 
-// --- (Inicialización de Firebase Admin - sin cambios) ---
-try {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '{}');
-  if (!serviceAccount.project_id) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON no es válido o no está definido.');
-  }
-  initializeApp({ credential: cert(serviceAccount) });
-} catch (e) {
-  if (!/already exists/i.test(e.message)) {
-    console.error('Fallo al inicializar Firebase Admin:', e);
-  }
-}
-const db = getFirestore();
-
-// --- (Helpers - sin cambios) ---
-const CRON_SECRET = process.env.CRON_SECRET;
-function createBulkWriter() {
-  const writer = db.bulkWriter();
-  writer.onWriteError((err) => {
-    if (err.failedAttempts < 3) {
-      console.warn(`⚠️ Reintentando escritura para ${err.documentRef?.path}: ${err.message}`);
-      return true;
-    }
-    console.error(`❌ Error final de BulkWriter para ${err.documentRef?.path}: ${err.message}`);
-    return false;
-  });
-  return writer;
-}
-
-// --- (Esquemas Completos - sin cambios) ---
-const propertySchema = {
-    nombre: null,
-    descripcion: null,
-    api_key: null,
-    short_name: null,
-    chatbot_rate: null,
-    activar_para_planillas_diarias: false,
-    activar_para_venta: false,
-    estacionamiento: null,
-    mascotas: null,
-    wifi: null,
-    galeria: [],
-    caracteristicas: {},
-    descripcion_detallada: null,
-    faq: [],
-    tipo_viajero: null,
-    historia: null,
-    ubicacion: { direccion: null, lat: null, lng: null, zona: null },
+// ===== helpers locales =====
+const money = (n, cur) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "";
+  const c = (cur || "USD").toString().toUpperCase();
+  return `${v.toFixed(2)} ${c}`;
 };
-const apartmentSchema = {
-    nombre: null,
-    descripcion: null,
-    wubook_shortname: null,
-    consulta: null,
-    activar_para_venta: false,
-    caracteristicas: {},
-    faq: [],
-    galeria: [],
-    m2: null,
-    m2_num: null,
-    vista: null,
-    dormitorios: null,
-    capacidad: null,
-    capacidad_num: null,
-};
-
-// -----------------------------------------------------------------------------
-// Handler Principal del Endpoint
-// -----------------------------------------------------------------------------
-export default async function handler(req, res) {
-  // --- (Seguridad y Lectura de JSON - sin cambios) ---
-  if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Método no permitido. Usá POST.' });
-  const isProd = process.env.NODE_ENV === 'production';
-  if (isProd && req.headers['x-cron-secret'] !== CRON_SECRET) return res.status(401).json({ success: false, error: 'No autorizado.' });
-
-  let propiedadesJson;
+const fmtDay = (iso, tz) =>
+  iso ? DateTime.fromISO(String(iso), { zone: tz }).toFormat("dd/MM/yyyy") : "";
+const fmtHourTS = (ts, tz) => {
+  if (!ts) return "";
+  if (ts?.seconds ?? ts?._seconds) {
+    const s = ts.seconds ?? ts._seconds;
+    return DateTime.fromSeconds(Number(s), { zone: tz }).toFormat("HH:mm");
+  }
   try {
-    const jsonPath = path.join(process.cwd(), 'guemes.json');
-    const fileContent = await fs.readFile(jsonPath, 'utf8');
-    propiedadesJson = JSON.parse(fileContent);
-    if (!Array.isArray(propiedadesJson)) throw new Error('El contenido del JSON no es un array.');
-    console.log(`✅ Archivo guemes.json leído. Se encontraron ${propiedadesJson.length} propiedades.`);
-  } catch (error) {
-    return res.status(500).json({ success: false, error: 'No se pudo leer el archivo guemes.json.', details: error.message });
-  }
+    const d = DateTime.fromISO(String(ts), { zone: tz });
+    if (d.isValid) return d.toFormat("HH:mm");
+  } catch {}
+  return "";
+};
+const getPayments = (r) => (r && Array.isArray(r.payments) ? r.payments : []);
 
-  const writer = createBulkWriter();
-  const summary = {
-    properties_read: propiedadesJson.length,
-    properties_written: 0,
-    apartments_written: 0,
-    errors: [],
+// ===== componente =====
+export default function ExportBottomExcel({
+  // OJO: si viene itemsLoader se usa eso (lee checkins+checkouts del backend).
+  items,
+  itemsLoader,
+  tz = DEFAULT_TZ,
+  filenamePrefix = "planilla_hosts",
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const buildRows = (sourceItems = []) => {
+    const rows = [];
+    sourceItems.forEach((r, idx) => {
+      const pays = getPayments(r);
+      rows.push({
+        _sepTop: idx > 0,
+        depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || "—",
+        pax: r.adults ?? "",
+        nombre: r.nombre_huesped || "",
+        tel: r.customer_phone || r.telefono || "",
+        checkin: fmtDay(r.arrival_iso, tz),
+        hora_in: fmtHourTS(r.checkin_at, tz),
+        checkout: fmtDay(r.departure_iso, tz),
+        hora_out: fmtHourTS(r.checkout_at, tz),
+        agencia: r.source || r.channel_name || "",
+        toPay: money(r.toPay, "USD"),
+        pago: pays[0] ? money(pays[0].amount, pays[0].currency) : "",
+        metodo: pays[0]?.method || "",
+        concepto: pays[0]?.concept || "",
+        // flags para colorear
+        payStatus: String(r.payment_status || "unpaid").toLowerCase(),
+        hasCheckin: !!r.checkin_at,
+        wasContacted: !!r.contacted_at,
+      });
+
+      for (let i = 1; i < pays.length; i++) {
+        const p = pays[i];
+        rows.push({
+          _payRow: true,
+          depto: "", pax: "", nombre: "", tel: "",
+          checkin: "", hora_in: "", checkout: "", hora_out: "",
+          agencia: "", toPay: "",
+          pago: money(p.amount, p.currency),
+          metodo: p.method || "",
+          concepto: p.concept || "",
+        });
+      }
+    });
+    return rows;
   };
 
-  for (const propJson of propiedadesJson) {
+  const handleExport = async () => {
     try {
-      if (!propJson.property_id) {
-          summary.errors.push('Propiedad sin "property_id". Saltando...');
-          continue;
-      }
+      setLoading(true);
 
-      const propId = String(propJson.property_id);
-      const propRef = db.collection('propiedades').doc(propId);
-      
-      const datosPropMapeados = {
-        ...propJson,
-        nombre: propJson.property_name,
-        descripcion: propJson.property_description,
-      };
-      
-      const { apartments, ...restOfPropData } = datosPropMapeados;
-      
-      const propDoc = {
-        ...propertySchema, ...restOfPropData,
-        source: 'json-import-mapped-v2', updatedAt: FieldValue.serverTimestamp(),
-      };
-      
-      writer.set(propRef, propDoc, { merge: true });
-      summary.properties_written++;
+      // 1) traigo ítems: si hay loader => checkins+checkouts; si no, prop items
+      const sourceItems = itemsLoader ? await itemsLoader() : (Array.isArray(items) ? items : []);
 
-      if (Array.isArray(apartments)) {
-        for (const dptoJson of apartments) {
-          try {
-            if (!dptoJson.apartment_id) {
-                summary.errors.push(`Propiedad ${propId} tiene un dpto sin "apartment_id". Saltando...`);
-                continue;
-            }
-            const dptoId = String(dptoJson.apartment_id);
-            const dptoRef = propRef.collection('departamentos').doc(dptoId);
+      const [{ default: ExcelJS }, { saveAs }] = await Promise.all([
+        import("exceljs"),
+        import("file-saver"),
+      ]);
 
-            // --- MAPEO MEJORADO Y EXPLÍCITO PARA DEPARTAMENTOS ---
-            const datosDptoMapeados = {
-                // Mapeo de nombres
-                nombre: dptoJson.apartment_name,
-                descripcion: dptoJson.apartment_description,
-                wubook_shortname: dptoJson.apartment_wubook_shortname,
-                
-                // Conversión de tipos y copia de campos con nombre igual
-                consulta: Number.isFinite(Number(dptoJson.consulta)) ? Number(dptoJson.consulta) : null,
-                m2: dptoJson.m2,
-                
-                // Copia de campos complejos (si existen en el JSON)
-                caracteristicas: dptoJson.caracteristicas,
-                faq: dptoJson.faq,
-                galeria: dptoJson.galeria,
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Planilla");
 
-                // Campos que probablemente solo existan en el schema por defecto
-                activar_para_venta: dptoJson.activar_para_venta,
-            };
+      // fuentes, bordes y fills (coinciden con tu UI)
+      const fontBase   = { name: "Aptos Narrow", size: 11 };
+      const fontHeader = { ...fontBase, bold: true, color: { argb: "FF111827" } };
+      const fillHeader = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } };
+      const borderThinGray   = { style: "thin",   color: { argb: "FFE5E7EB" } };
+      const borderThickBlack = { style: "medium", color: { argb: "FF0F172A" } };
 
-            const dptoDoc = {
-                ...apartmentSchema,
-                ...datosDptoMapeados,
-                source: 'json-import-mapped-v2',
-                updatedAt: FieldValue.serverTimestamp(),
-            };
+      // Colores de estado (HEX -> ARGB)
+      const FILL_CHECKIN  = { type: "pattern", pattern: "solid", fgColor: { argb: "FF38BDF8" } }; // celeste
+      const FILL_CONTACT  = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDE68A" } }; // amarillo
+      const FILL_PAID     = { type: "pattern", pattern: "solid", fgColor: { argb: "FF86EFAC" } }; // verde
+      const FILL_PARTIAL  = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCD34D" } }; // ámbar
+      const FILL_UNPAID   = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFECACA" } }; // rojo claro
 
-            // Lógica para derivar campos numéricos si es posible
-            const m2Num = Number(dptoDoc.m2);
-            if (Number.isFinite(m2Num)) dptoDoc.m2_num = m2Num;
+      // Definición de columnas
+      const columns = [
+        { key: "depto",   header: "Unidad",        width: 26 },
+        { key: "pax",     header: "PAX",           width: 6  },
+        { key: "nombre",  header: "Nombre",        width: 24 },
+        { key: "tel",     header: "Teléfono",      width: 18 },
+        { key: "checkin", header: "Check in",      width: 12 },
+        { key: "hora_in", header: "Hora in",       width: 10 },
+        { key: "checkout",header: "Check out",     width: 12 },
+        { key: "hora_out",header: "Hora out",      width: 10 },
+        { key: "agencia", header: "Agencia",       width: 14 },
+        { key: "toPay",   header: "A pagar",       width: 14 },
+        { key: "pago",    header: "Pago",          width: 14 },
+        { key: "metodo",  header: "Forma de pago", width: 16 },
+        { key: "concepto",header: "Concepto",      width: 18 },
+      ];
+      ws.columns = columns;
 
-            const capStr = dptoDoc.caracteristicas?.Capacidad;
-            const capNum = Number(capStr);
-            if (Number.isFinite(capNum)) dptoDoc.capacidad_num = capNum;
+      // === Encabezado (una sola vez) ===
+      const headerRow = ws.addRow(columns.map(c => c.header));
+      headerRow.eachCell((cell) => {
+        cell.font = fontHeader;
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.fill = fillHeader;
+        cell.border = {
+          top: borderThinGray, left: borderThinGray,
+          bottom: borderThinGray, right: borderThinGray,
+        };
+      });
+      ws.getRow(1).height = 22;
 
-            writer.set(dptoRef, dptoDoc, { merge: true });
-            summary.apartments_written++;
-
-          } catch (dptoError) {
-             const msg = `Error escribiendo dpto ${dptoJson?.apartment_id}: ${dptoError.message}`;
-             console.error('❌', msg);
-             summary.errors.push(msg);
+      // === Datos ===
+      const rows = buildRows(sourceItems);
+      rows.forEach((r) => {
+        const excelRow = ws.addRow(columns.map(c => r[c.key] ?? ""));
+        // bordes y alineaciones
+        excelRow.eachCell((cell, colNumber) => {
+          cell.font = fontBase;
+          cell.border = {
+            top: r._sepTop ? borderThickBlack : (r._payRow ? borderThinGray : undefined),
+            left: undefined,
+            bottom: borderThinGray,
+            right: undefined,
+          };
+          const key = columns[colNumber - 1].key;
+          if (key === "toPay" || key === "pago") {
+            cell.alignment = { horizontal: "right",  vertical: "middle" };
+          } else if (key === "hora_in" || key === "hora_out") {
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+          } else {
+            cell.alignment = { vertical: "middle" };
           }
+          if (key === "toPay") cell.font = { ...fontBase, bold: true, color: { argb: "FF000000" } };
+          if (key === "pago")  cell.font = { ...fontBase, bold: true, color: { argb: "FF374151" } };
+        });
+        excelRow.height = 20;
+
+        // === COLORES por estado (solo filas de reserva, no subfilas de pago) ===
+        if (!r._payRow) {
+          // Unidad con check-in => col A
+          if (r.hasCheckin) ws.getCell(excelRow.number, 1).fill = FILL_CHECKIN;
+          // Nombre si contactado => col C
+          if (r.wasContacted) ws.getCell(excelRow.number, 3).fill = FILL_CONTACT;
+          // Pago según estado => col K
+          if (r.payStatus === "paid")    ws.getCell(excelRow.number, 11).fill = FILL_PAID;
+          else if (r.payStatus === "partial") ws.getCell(excelRow.number, 11).fill = FILL_PARTIAL;
+          else ws.getCell(excelRow.number, 11).fill = FILL_UNPAID;
         }
-      }
+      });
 
-    } catch (propError) {
-      const msg = `Error procesando propiedad ${propJson?.property_id}: ${propError.message}`;
-      console.error('❌', msg);
-      summary.errors.push(msg);
+      // congelar encabezado
+      ws.views = [{ state: "frozen", ySplit: 1 }];
+
+      // exportar
+      const buf = await wb.xlsx.writeBuffer();
+      const fname = `${filenamePrefix}_${DateTime.now().setZone(tz).toFormat("yyyy-LL-dd")}.xlsx`;
+      saveAs(new Blob([buf], { type: "application/octet-stream" }), fname);
+    } catch (err) {
+      console.error("[ExportBottomExcel] Error exportando:", err);
+      alert("No se pudo exportar el Excel. Revisá la consola para más detalle.");
+    } finally {
+      setLoading(false);
     }
-  }
-  
-  // --- (Finalizar y responder - sin cambios) ---
-  try {
-    await writer.close();
-    console.log('✅ Escritura en BulkWriter finalizada.');
-  } catch (e) {
-    const msg = `Error al cerrar BulkWriter: ${e.message}`;
-    console.error('❌', msg);
-    summary.errors.push(msg);
-  }
+  };
 
-  const httpStatus = summary.errors.length > 0 ? 207 : 200;
-  return res.status(httpStatus).json({
-    success: summary.errors.length === 0,
-    message: 'Importación desde JSON con mapeo de campos finalizada.',
-    summary,
-  });
+  return (
+    <button type="button" className="btn" onClick={handleExport} disabled={loading}>
+      {loading ? "Exportando…" : "Exportar Excel"}
+    </button>
+  );
 }
 
 

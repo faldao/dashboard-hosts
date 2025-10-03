@@ -1,5 +1,4 @@
 // vite.config.js
-// vite.config.js
 import { defineConfig, splitVendorChunkPlugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -7,17 +6,17 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   plugins: [react(), tailwindcss(), splitVendorChunkPlugin()],
   root: '.',
-  base: '/',
+  base: '/',                 // rutas relativas (si tu hosting lo necesita)
   server: { port: 5173 },
   optimizeDeps: {
-    include: ['exceljs', 'file-saver', 'luxon'],
+    include: ['exceljs', 'file-saver', 'luxon'], // prebundle para dev
   },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     target: 'es2019',
     sourcemap: false,
-    chunkSizeWarningLimit: 1500,
+    chunkSizeWarningLimit: 1500,   // subimos umbral del warning
     treeshake: true,
     commonjsOptions: { transformMixedEsModules: true },
     rollupOptions: {
@@ -35,12 +34,12 @@ export default defineConfig({
     },
   },
   define: {
-    // Reemplazos en tiempo de build
-    global: 'globalThis',
-    'process.env': {},                 // evita accesos simples a env
-    'process.browser': 'true',         // algunas libs lo miran
+    // algunos paquetes asumen process/env en browser; lo “stub-eamos”
+    'process.env': {},
+    'process.env.NODE_DEBUG': false,
   },
 });
+
 
 
 
