@@ -6,25 +6,27 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   plugins: [react(), tailwindcss(), splitVendorChunkPlugin()],
   root: '.',
-  base: '/',                 // rutas relativas (si tu hosting lo necesita)
+  base: '/',
   server: { port: 5173 },
+
+  // ✅ No prebundleo exceljs/file-saver; los cargo on-demand en el componente
   optimizeDeps: {
-    include: ['exceljs', 'file-saver', 'luxon'], // prebundle para dev
+    exclude: ['exceljs', 'file-saver'],
+    include: ['luxon'], // luxon sí conviene prebundlear
   },
+
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     target: 'es2019',
     sourcemap: false,
-    chunkSizeWarningLimit: 1500,   // subimos umbral del warning
+    chunkSizeWarningLimit: 1500,
     treeshake: true,
     commonjsOptions: { transformMixedEsModules: true },
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('exceljs')) return 'excel';
-            if (id.includes('file-saver')) return 'filesaver';
             if (id.includes('luxon')) return 'luxon';
             if (id.includes('/react/')) return 'react-vendor';
             return 'vendor';
@@ -33,12 +35,14 @@ export default defineConfig({
       },
     },
   },
+
   define: {
-    // algunos paquetes asumen process/env en browser; lo “stub-eamos”
+    // varios paquetes asumen process/env en browser
     'process.env': {},
     'process.env.NODE_DEBUG': false,
   },
 });
+
 
 
 

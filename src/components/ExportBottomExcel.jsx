@@ -3,7 +3,7 @@ import { DateTime } from "luxon";
 
 const DEFAULT_TZ = "America/Argentina/Buenos_Aires";
 
-// ===== helpers locales =====
+/* ===== helpers locales ===== */
 const money = (n, cur) => {
   const v = Number(n);
   if (!Number.isFinite(v)) return "";
@@ -26,15 +26,32 @@ const fmtHourTS = (ts, tz) => {
 };
 const getPayments = (r) => (r && Array.isArray(r.payments) ? r.payments : []);
 
-// ===== componente =====
+/* ===== componente ===== */
 export default function ExportBottomExcel({
-  // OJO: si viene itemsLoader se usa eso (lee checkins+checkouts del backend).
+  // Si viene itemsLoader, lo usamos (devuelve {checkins, checkouts}).
+  // Si no, usamos "items" (array plano, modo legacy).
   items,
   itemsLoader,
   tz = DEFAULT_TZ,
   filenamePrefix = "planilla_hosts",
 }) {
   const [loading, setLoading] = useState(false);
+
+  const COLUMNS = [
+    { key: "depto",   header: "Unidad",        width: 26 },
+    { key: "pax",     header: "PAX",           width: 6  },
+    { key: "nombre",  header: "Nombre",        width: 24 },
+    { key: "tel",     header: "Teléfono",      width: 18 },
+    { key: "checkin", header: "Check in",      width: 12 },
+    { key: "hora_in", header: "Hora in",       width: 10 },
+    { key: "checkout",header: "Check out",     width: 12 },
+    { key: "hora_out",header: "Hora out",      width: 10 },
+    { key: "agencia", header: "Agencia",       width: 14 },
+    { key: "toPay",   header: "A pagar",       width: 14 },
+    { key: "pago",    header: "Pago",          width: 14 },
+    { key: "metodo",  header: "Forma de pago", width: 16 },
+    { key: "concepto",header: "Concepto",      width: 18 },
+  ];
 
   const buildRows = (sourceItems = []) => {
     const rows = [];
@@ -55,7 +72,6 @@ export default function ExportBottomExcel({
         pago: pays[0] ? money(pays[0].amount, pays[0].currency) : "",
         metodo: pays[0]?.method || "",
         concepto: pays[0]?.concept || "",
-        // flags para colorear
         payStatus: String(r.payment_status || "unpaid").toLowerCase(),
         hasCheckin: !!r.checkin_at,
         wasContacted: !!r.contacted_at,
@@ -81,8 +97,17 @@ export default function ExportBottomExcel({
     try {
       setLoading(true);
 
-      // 1) traigo ítems: si hay loader => checkins+checkouts; si no, prop items
-      const sourceItems = itemsLoader ? await itemsLoader() : (Array.isArray(items) ? items : []);
+      // 1) Traer datos
+      const src = itemsLoader
+        ? await itemsLoader() // preferido: { checkins, checkouts }
+        : (Array.isArray(items) ? items : []);
+
+      const hasBuckets =
+        src && typeof src === "object" &&
+        (Array.isArray(src.checkins) || Array.isArray(src.checkouts));
+
+      const checkins  = hasBuckets ? (src.checkins  || []) : (Array.isArray(src) ? src : []);
+      const checkouts = hasBuckets ? (src.checkouts || []) : [];
 
       const [{ default: ExcelJS }, { saveAs }] = await Promise.all([
         import("exceljs"),
@@ -92,94 +117,112 @@ export default function ExportBottomExcel({
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("Planilla");
 
-      // fuentes, bordes y fills (coinciden con tu UI)
+      // estilos
       const fontBase   = { name: "Aptos Narrow", size: 11 };
       const fontHeader = { ...fontBase, bold: true, color: { argb: "FF111827" } };
       const fillHeader = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } };
       const borderThinGray   = { style: "thin",   color: { argb: "FFE5E7EB" } };
       const borderThickBlack = { style: "medium", color: { argb: "FF0F172A" } };
 
-      // Colores de estado (HEX -> ARGB)
-      const FILL_CHECKIN  = { type: "pattern", pattern: "solid", fgColor: { argb: "FF38BDF8" } }; // celeste
-      const FILL_CONTACT  = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDE68A" } }; // amarillo
-      const FILL_PAID     = { type: "pattern", pattern: "solid", fgColor: { argb: "FF86EFAC" } }; // verde
-      const FILL_PARTIAL  = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCD34D" } }; // ámbar
-      const FILL_UNPAID   = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFECACA" } }; // rojo claro
+      const FILL_CHECKIN  = { type: "pattern", pattern: "solid", fgColor: { argb: "FF38BDF8" } };
+      const FILL_CONTACT  = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDE68A" } };
+      const FILL_PAID     = { type: "pattern", pattern: "solid", fgColor: { argb: "FF86EFAC" } };
+      const FILL_PARTIAL  = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCD34D" } };
+      const FILL_UNPAID   = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFECACA" } };
 
-      // Definición de columnas
-      const columns = [
-        { key: "depto",   header: "Unidad",        width: 26 },
-        { key: "pax",     header: "PAX",           width: 6  },
-        { key: "nombre",  header: "Nombre",        width: 24 },
-        { key: "tel",     header: "Teléfono",      width: 18 },
-        { key: "checkin", header: "Check in",      width: 12 },
-        { key: "hora_in", header: "Hora in",       width: 10 },
-        { key: "checkout",header: "Check out",     width: 12 },
-        { key: "hora_out",header: "Hora out",      width: 10 },
-        { key: "agencia", header: "Agencia",       width: 14 },
-        { key: "toPay",   header: "A pagar",       width: 14 },
-        { key: "pago",    header: "Pago",          width: 14 },
-        { key: "metodo",  header: "Forma de pago", width: 16 },
-        { key: "concepto",header: "Concepto",      width: 18 },
-      ];
-      ws.columns = columns;
+      ws.columns = COLUMNS;
 
-      // === Encabezado (una sola vez) ===
-      const headerRow = ws.addRow(columns.map(c => c.header));
-      headerRow.eachCell((cell) => {
-        cell.font = fontHeader;
-        cell.alignment = { vertical: "middle", horizontal: "center" };
-        cell.fill = fillHeader;
-        cell.border = {
-          top: borderThinGray, left: borderThinGray,
-          bottom: borderThinGray, right: borderThinGray,
-        };
-      });
-      ws.getRow(1).height = 22;
-
-      // === Datos ===
-      const rows = buildRows(sourceItems);
-      rows.forEach((r) => {
-        const excelRow = ws.addRow(columns.map(c => r[c.key] ?? ""));
-        // bordes y alineaciones
-        excelRow.eachCell((cell, colNumber) => {
-          cell.font = fontBase;
+      // helper: pinta la tabla (encabezado + filas de una sección)
+      const writeTable = (rows, withTopBorder = false) => {
+        // encabezado
+        const headerRow = ws.addRow(COLUMNS.map(c => c.header));
+        headerRow.eachCell((cell) => {
+          cell.font = fontHeader;
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          cell.fill = fillHeader;
           cell.border = {
-            top: r._sepTop ? borderThickBlack : (r._payRow ? borderThinGray : undefined),
-            left: undefined,
+            top: withTopBorder ? borderThickBlack : borderThinGray,
+            left: borderThinGray,
             bottom: borderThinGray,
-            right: undefined,
+            right: borderThinGray,
           };
-          const key = columns[colNumber - 1].key;
-          if (key === "toPay" || key === "pago") {
-            cell.alignment = { horizontal: "right",  vertical: "middle" };
-          } else if (key === "hora_in" || key === "hora_out") {
-            cell.alignment = { horizontal: "center", vertical: "middle" };
-          } else {
-            cell.alignment = { vertical: "middle" };
-          }
-          if (key === "toPay") cell.font = { ...fontBase, bold: true, color: { argb: "FF000000" } };
-          if (key === "pago")  cell.font = { ...fontBase, bold: true, color: { argb: "FF374151" } };
         });
-        excelRow.height = 20;
+        ws.getRow(headerRow.number).height = 22;
 
-        // === COLORES por estado (solo filas de reserva, no subfilas de pago) ===
-        if (!r._payRow) {
-          // Unidad con check-in => col A
-          if (r.hasCheckin) ws.getCell(excelRow.number, 1).fill = FILL_CHECKIN;
-          // Nombre si contactado => col C
-          if (r.wasContacted) ws.getCell(excelRow.number, 3).fill = FILL_CONTACT;
-          // Pago según estado => col K
-          if (r.payStatus === "paid")    ws.getCell(excelRow.number, 11).fill = FILL_PAID;
-          else if (r.payStatus === "partial") ws.getCell(excelRow.number, 11).fill = FILL_PARTIAL;
-          else ws.getCell(excelRow.number, 11).fill = FILL_UNPAID;
+        // filas
+        rows.forEach((r) => {
+          const excelRow = ws.addRow(COLUMNS.map(c => r[c.key] ?? ""));
+          excelRow.eachCell((cell, colNumber) => {
+            cell.font = fontBase;
+            cell.border = {
+              top: r._sepTop ? borderThickBlack : (r._payRow ? borderThinGray : undefined),
+              left: undefined,
+              bottom: borderThinGray,
+              right: undefined,
+            };
+            const key = COLUMNS[colNumber - 1].key;
+            if (key === "toPay" || key === "pago") {
+              cell.alignment = { horizontal: "right",  vertical: "middle" };
+            } else if (key === "hora_in" || key === "hora_out") {
+              cell.alignment = { horizontal: "center", vertical: "middle" };
+            } else {
+              cell.alignment = { vertical: "middle" };
+            }
+            if (key === "toPay") cell.font = { ...fontBase, bold: true, color: { argb: "FF000000" } };
+            if (key === "pago")  cell.font = { ...fontBase, bold: true, color: { argb: "FF374151" } };
+          });
+          excelRow.height = 20;
+
+          if (!r._payRow) {
+            if (r.hasCheckin) ws.getCell(excelRow.number, 1).fill = FILL_CHECKIN;
+            if (r.wasContacted) ws.getCell(excelRow.number, 3).fill = FILL_CONTACT;
+            if (r.payStatus === "paid") ws.getCell(excelRow.number, 11).fill = FILL_PAID;
+            else if (r.payStatus === "partial") ws.getCell(excelRow.number, 11).fill = FILL_PARTIAL;
+            else ws.getCell(excelRow.number, 11).fill = FILL_UNPAID;
+          }
+        });
+      };
+
+      // helper: título de sección (merge de columnas)
+      const writeSectionTitle = (label) => {
+        const row = ws.addRow([label]);
+        row.height = 24;
+        const c = ws.getCell(row.number, 1);
+        c.font = { name: "Aptos Narrow", size: 12, bold: true };
+        c.alignment = { vertical: "middle", horizontal: "left" };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF6FF" } };
+        // merge across all table columns
+        ws.mergeCells(row.number, 1, row.number, COLUMNS.length);
+      };
+
+      // === escritura ===
+      if (hasBuckets) {
+        if (Array.isArray(checkins) && checkins.length) {
+          writeSectionTitle("CHECK-INS");
+          writeTable(buildRows(checkins));
+        } else {
+          writeSectionTitle("CHECK-INS (sin datos)");
         }
-      });
 
-      // congelar encabezado
-      ws.views = [{ state: "frozen", ySplit: 1 }];
+        // separador visual entre secciones
+        ws.addRow([]);
 
-      // exportar
+        if (Array.isArray(checkouts) && checkouts.length) {
+          writeSectionTitle("CHECK-OUTS");
+          writeTable(buildRows(checkouts), true /* top border grueso en header */);
+        } else {
+          writeSectionTitle("CHECK-OUTS (sin datos)");
+        }
+      } else {
+        // modo legacy: lista única
+        writeSectionTitle("RESERVAS");
+        writeTable(buildRows(checkins));
+      }
+
+      // congelar la primera fila útil (si quieres solo título no lo congeles)
+      ws.views = [{ state: "frozen", ySplit: 0 }];
+
+      // 3) descargar
       const buf = await wb.xlsx.writeBuffer();
       const fname = `${filenamePrefix}_${DateTime.now().setZone(tz).toFormat("yyyy-LL-dd")}.xlsx`;
       saveAs(new Blob([buf], { type: "application/octet-stream" }), fname);
@@ -197,5 +240,6 @@ export default function ExportBottomExcel({
     </button>
   );
 }
+
 
 

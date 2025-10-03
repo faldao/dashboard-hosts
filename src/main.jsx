@@ -9,6 +9,7 @@ import "./index.css";
 // Monta la app en #root (definido en index.html)
 const root = createRoot(document.getElementById("root"));
 
+
 root.render(
   <React.StrictMode>
     {/* Envolvemos la App con los proveedores de Ruteo y Autenticación */}
