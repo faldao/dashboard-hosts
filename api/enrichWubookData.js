@@ -51,6 +51,9 @@ function getObjectDiff(obj1, obj2) {
   }
   return diff;
 }
+// === Helpers para preservar campos editados por host ===
+const isNonNull = (v) => v !== undefined && v !== null;
+const preserveNonNull = (oldVal, incomingVal) => (isNonNull(oldVal) ? oldVal : incomingVal);
 
 // === helpers numéricos para toPay ===
 const numOrZero = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -284,11 +287,6 @@ async function getRoomsCountForReservation(propiedad_id, id_human) {
   return count;
 }
 
-// Detecta si el doc es "host-owned" (cualquier cosa que no sea wubook_sync)
-function isHostOwned(doc) {
-  const by = String(doc?.lastUpdatedBy || '').toLowerCase();
-  return !!by && by !== 'wubook_sync';
-}
 
 // ===================== HANDLER =====================
 export default async function handler(req, res) {
@@ -338,13 +336,19 @@ export default async function handler(req, res) {
       const roomsCount       = await getRoomsCountForReservation(propiedad_id, id_human);
       const extrasUSDPerRoom = (extrasUSDTotal != null) ? Number((extrasUSDTotal / Math.max(1, roomsCount)).toFixed(2)) : null;
 
-      const hasExtrasField = (d) => Object.prototype.hasOwnProperty.call(d || {}, 'extrasUSD');
-      const extrasUSDFinal = (isHostOwned(singleOld) && hasExtrasField(singleOld)) ? singleOld.extrasUSD : extrasUSDPerRoom;
-
-      // Recalcular total + sincronizar breakdown.extrasUSD
+         // ⛔ No pisar: si old.extrasUSD ya está no-null, se preserva
+     const extrasUSDFinal = isNonNull(singleOld?.extrasUSD) ? singleOld.extrasUSD : extrasUSDPerRoom;
+     // Recalcular total preservando base/iva/extras existentes
       const currentBD = singleOld?.toPay_breakdown || {};
-      const { total: newToPay } = recomputeToPayFrom(currentBD, extrasUSDFinal);
-      const newBreakdown = { ...currentBD, extrasUSD: (extrasUSDFinal ?? null) };
+const preservedBD = {
+  baseUSD:    preserveNonNull(currentBD.baseUSD,    currentBD.baseUSD ?? null),
+  ivaPercent: preserveNonNull(currentBD.ivaPercent, currentBD.ivaPercent ?? null),
+  ivaUSD:     preserveNonNull(currentBD.ivaUSD,     currentBD.ivaUSD ?? null),
+  extrasUSD:  preserveNonNull(currentBD.extrasUSD,  (isNonNull(extrasUSDFinal) ? extrasUSDFinal : null)),
+  fxRate:     preserveNonNull(currentBD.fxRate,     currentBD.fxRate ?? null),
+};
+      const { total: newToPay } = recomputeToPayFrom(preservedBD, preservedBD.extrasUSD);
+      const newBreakdown = { ...currentBD, ...preservedBD };
 
       // 🔹 originales "WuBook" para UI (solo lectura)
       const wubookOriginal = {
@@ -495,17 +499,20 @@ export default async function handler(req, res) {
       const extrasUSDPerRoom = (extrasUSDTotal != null)
         ? Number((extrasUSDTotal / Math.max(1, roomsCount)).toFixed(2))
         : null;
+ const extrasUSDFinal =
+        isNonNull(oldDoc?.extrasUSD) ? oldDoc.extrasUSD : extrasUSDPerRoom;
 
-      const hasExtrasField = (d) => Object.prototype.hasOwnProperty.call(d || {}, 'extrasUSD');
-      const extrasUSDFinal =
-        (isHostOwned(oldDoc) && hasExtrasField(oldDoc))
-          ? oldDoc.extrasUSD
-          : extrasUSDPerRoom;
+       // Recalcular preservando base/iva/extras si ya estaban
 
-      // Recalcular total + sincronizar breakdown.extrasUSD
       const currentBD = oldDoc?.toPay_breakdown || {};
-      const { total: newToPay } = recomputeToPayFrom(currentBD, extrasUSDFinal);
-      const newBreakdown = { ...currentBD, extrasUSD: (extrasUSDFinal ?? null) };
+      const preservedBD = {
+        baseUSD:    preserveNonNull(currentBD.baseUSD,    currentBD.baseUSD ?? null),
+        ivaPercent: preserveNonNull(currentBD.ivaPercent, currentBD.ivaPercent ?? null),
+        ivaUSD:     preserveNonNull(currentBD.ivaUSD,     currentBD.ivaUSD ?? null),
+        extrasUSD:  preserveNonNull(currentBD.extrasUSD,  extrasUSDFinal ?? null),
+     };
+      const { total: newToPay } = recomputeToPayFrom(preservedBD, preservedBD.extrasUSD);
+      const newBreakdown = { ...currentBD, ...preservedBD };
 
       // 🔹 originales "WuBook" para UI (solo lectura)
       const wubookOriginal = {
@@ -528,10 +535,8 @@ export default async function handler(req, res) {
         // fuente de verdad unificada
         notes: mergedNotes,
         payments: mergedPayments,
-        extras: mergedExtras,          // fuente de verdad unificada
-
-        // operativos
-        extrasUSD: extrasUSDFinal,     // prorrateado por room o preservado del host
+       extras: mergedExtras,          // fuente de verdad unificada
+        extrasUSD: extrasUSDFinal,     // ya preservado si existía
         toPay: newToPay,
         toPay_breakdown: newBreakdown,
         extras_meta: {

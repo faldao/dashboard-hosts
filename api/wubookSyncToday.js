@@ -11,7 +11,7 @@
 //
 // 🆕 PRECIO WUBOOK + toPay_breakdown:
 // - Se agrega `wubook_price` por room (amount pre-IVA, vat, total, currency).
-// - Si currency === 'USD' -> se completa `toPay` y `toPay_breakdown` con **solo el amount** (IVA `null`, extras `null`, fxRate `null`).
+// - Si currency === 'USD' -> se completa `toPay` y `toPay_breakdown` sin pisar valores host-editados.
 
 import axios from 'axios';
 import qs from 'qs';
@@ -19,9 +19,6 @@ import crypto from 'crypto';
 import { firestore, FieldValue } from '../lib/firebaseAdmin.js';
 import { DateTime } from 'luxon';
 import { getPropertiesAndRoomMaps } from '../lib/fetchPropertiesAndRoomMaps.js';
-
-
-
 
 // ===================== CONFIGURACIÓN Y UTILIDADES =====================
 const log = (...args) => console.log(`[SyncToday]`, ...args);
@@ -31,6 +28,21 @@ const parseEU = (s) => DateTime.fromFormat(s, 'dd/LL/yyyy', { zone: TZ });
 const euToISO = (s) => (s ? parseEU(s).toISODate() : null);
 const round2 = (n) => Number.isFinite(Number(n)) ? +Number(n).toFixed(2) : 0;
 const cur = (c) => String(c || '').trim().toUpperCase();
+const isNonNull = (v) => v !== undefined && v !== null;
+
+function recomputeToPayFrom(breakdown, extrasUSDFinal) {
+  const numOrZero = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const numOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  const b = numOrZero(breakdown?.baseUSD);
+  const ivaPct = numOrNull(breakdown?.ivaPercent);
+  let ivaUSD = numOrNull(breakdown?.ivaUSD);
+  if (ivaUSD === null && ivaPct !== null && b > 0) {
+    ivaUSD = Number((b * ivaPct / 100).toFixed(2));
+  }
+  const e = numOrZero(isNonNull(extrasUSDFinal) ? extrasUSDFinal : breakdown?.extrasUSD);
+  const total = Number((b + (ivaUSD || 0) + e).toFixed(2));
+  return { total };
+}
 
 // ---- Respuestas HTTP ----
 function ok(res, data) {
@@ -95,7 +107,6 @@ const isCancelledReservation = (r) => {
   return false;
 };
 
-
 // ===================== HANDLER PRINCIPAL =====================
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return ok(res, { ok: true });
@@ -106,11 +117,11 @@ export default async function handler(req, res) {
     log('INIT', { propertyIds, dryRun });
 
     const propiedades = await getPropertiesAndRoomMaps({
-  propertyIds,
-  onlyActiveIfNoIds: true,
-  log,
-});
-    if (!propiedades.length) { return bad(res, 400, 'No se encontraron propiedades con api_key de WuBook.'); }
+      propertyIds,
+      onlyActiveIfNoIds: true,
+      log,
+    });
+    if (!propiedades.length) return bad(res, 400, 'No se encontraron propiedades con api_key de WuBook.');
 
     const summary = [];
 
@@ -120,29 +131,23 @@ export default async function handler(req, res) {
       // --- WuBook fetch_today_reservations ---
       let reservas = [];
       try {
-        const payload = qs.stringify({});
         const headers = { 'x-api-key': prop.apiKey, 'Content-Type': 'application/x-www-form-urlencoded' };
         log(`WuBook POST ${BASE_URL}/reservations/fetch_today_reservations`);
-        const resp = await axios.post(`${BASE_URL}/reservations/fetch_today_reservations`, payload, { headers });
+        const resp = await axios.post(`${BASE_URL}/reservations/fetch_today_reservations`, qs.stringify({}), { headers });
         reservas = resp?.data?.data?.reservations || [];
       } catch (error) {
-        log('WuBook API Error en fetch_today_reservations:', error.response ? error.response.data : error.message);
+        log('WuBook API Error:', error.response ? error.response.data : error.message);
       }
 
-      // Filtramos canceladas desde ya
       const totalRaw = reservas.length;
       reservas = reservas.filter(r => !isCancelledReservation(r));
-      log('Reservas encontradas (filtradas canceladas)', { propId: prop.id, total: reservas.length, skipped_cancelled: totalRaw - reservas.length });
+      log('Reservas filtradas canceladas', { propId: prop.id, total: reservas.length, skipped_cancelled: totalRaw - reservas.length });
 
-      // DRY RUN: no escribe, solo informa
       if (dryRun) {
-        const sample_ids = reservas.slice(0, 5).map(r => r.id_human);
-        summary.push({ propiedad: { id: prop.id, nombre: prop.nombre }, found_today: reservas.length, skipped_cancelled: totalRaw - reservas.length, dryRun: true, sample_ids });
-        log('DRY RUN: Finalizando después de la consulta.', summary[summary.length - 1]);
+        summary.push({ propiedad: { id: prop.id, nombre: prop.nombre }, found_today: reservas.length, dryRun: true });
         continue;
       }
 
-      // --- Batch con flushing seguro ---
       let batch = firestore.batch();
       const MAX_OPS = 450;
       let ops = 0;
@@ -155,21 +160,17 @@ export default async function handler(req, res) {
       };
       const flushIfNeeded = async () => {
         if (ops >= MAX_OPS) {
-          log('BATCH FLUSH (por límite de operaciones)', { propId: prop.id, ops });
           await flush();
         }
       };
 
-      // Usamos serverTimestamp() para consistencia global
       const now = FieldValue.serverTimestamp();
-      let upserts = 0; let skipped = 0; let unchanged = 0; let skipped_cancelled = 0;
+      let upserts = 0, skipped = 0, unchanged = 0;
 
       for (const r of reservas) {
-        if (isCancelledReservation(r)) { skipped_cancelled++; continue; }
-
         const fullName = `${r?.customer?.name || ''} ${r?.customer?.surname || ''}`.trim() || String(r?.booker) || 'N/D';
-        let sourceChannel = r?.origin?.channel && r.origin.channel !== '--' ? r.origin.channel : (r?.channel_name || 'Directo/WuBook');
-          const rsrvid =  r?.id ?? r?.rsrvid ?? r?.reservation_id ?? r?.rexid ?? r?.rid ?? null;
+        const sourceChannel = r?.origin?.channel && r.origin.channel !== '--' ? r.origin.channel : (r?.channel_name || 'Directo/WuBook');
+        const rsrvid = r?.id ?? r?.rsrvid ?? r?.reservation_id ?? r?.rexid ?? r?.rid ?? null;
 
         for (const room of r?.rooms || []) {
           const idZak = String(room?.id_zak_room || room?.id_zak_room_type || '');
@@ -183,8 +184,11 @@ export default async function handler(req, res) {
 
           const docId = `${prop.id}_${r.id_human}_${idZak}`;
           const ref = firestore.collection('Reservas').doc(docId);
+          const snap = await ref.get();
+          const existed = snap.exists;
+          const oldDoc = existed ? snap.data() : {};
+          const oldBD = oldDoc?.toPay_breakdown || {};
 
-          // --- PRECIO WUBOOK (por room) ---
           const roomPrice = room?.price || r?.price?.rooms || null;
           const wubook_price = roomPrice ? {
             amount: round2(roomPrice.amount),
@@ -193,10 +197,18 @@ export default async function handler(req, res) {
             currency: cur(roomPrice.currency || r?.price?.rooms?.currency || r?.price?.currency)
           } : null;
 
-          // Doc base (sin timestamps para hash)
+          const preservedBD = {
+            baseUSD:    isNonNull(oldBD.baseUSD)    ? oldBD.baseUSD    : (wubook_price?.currency === 'USD' ? round2(wubook_price.amount) : null),
+            ivaPercent: isNonNull(oldBD.ivaPercent) ? oldBD.ivaPercent : null,
+            ivaUSD:     isNonNull(oldBD.ivaUSD)     ? oldBD.ivaUSD     : null,
+            extrasUSD:  isNonNull(oldBD.extrasUSD)  ? oldBD.extrasUSD  : null,
+            fxRate:     isNonNull(oldBD.fxRate)     ? oldBD.fxRate     : null,
+          };
+          const preservedExtrasTop = isNonNull(oldDoc?.extrasUSD) ? oldDoc.extrasUSD : null;
+
           const baseDoc = {
             id_human: r.id_human,
-            rsrvid, 
+            rsrvid,
             propiedad_id: prop.id,
             propiedad_nombre: prop.nombre,
             nombre_huesped: fullName,
@@ -215,54 +227,29 @@ export default async function handler(req, res) {
             ...(wubook_price ? { wubook_price } : {})
           };
 
-          // Si el precio viene en USD, seteamos total SOLO con el amount (IVA null, extras null)
           if (wubook_price && wubook_price.currency === 'USD') {
-            const baseUSD  = round2(wubook_price.amount);
-            const toPayUSD = baseUSD;
-
+            const { total } = recomputeToPayFrom(preservedBD, preservedBD.extrasUSD);
             baseDoc.currency = 'USD';
-            baseDoc.toPay = toPayUSD;
-            baseDoc.extrasUSD = null; // compat con front
-            baseDoc.toPay_breakdown = {
-              baseUSD,
-              ivaPercent: null,
-              ivaUSD: null,     // IVA null (como pediste)
-              extrasUSD: null,
-              fxRate: null
-            };
+            if (!isNonNull(oldDoc?.toPay)) baseDoc.toPay = total;
+            if (!isNonNull(oldDoc?.extrasUSD)) baseDoc.extrasUSD = preservedExtrasTop;
+            baseDoc.toPay_breakdown = { ...(oldBD || {}), ...preservedBD };
           }
 
-          // Leer existente y comparar
-          const snap = await ref.get();
-          const existed = snap.exists;
-          const oldDoc = existed ? snap.data() : {};
           const createdAt = existed && oldDoc?.createdAt ? oldDoc.createdAt : now;
-
           const newDoc = { ...baseDoc, updatedAt: now, createdAt };
           const oldHash = existed ? (oldDoc.contentHash || hashDoc(oldDoc)) : null;
           const newHash = hashDoc(newDoc);
           const diff = existed ? diffDocs(oldDoc, newDoc) : diffDocs({}, newDoc);
           const changedKeys = Object.keys(diff);
 
-          if (existed && changedKeys.length === 0) {
-            unchanged++;
-            continue;
-          }
+          if (existed && changedKeys.length === 0) { unchanged++; continue; }
 
           newDoc.contentHash = newHash;
-
-          // --- Lógica de Escritura Inteligente ---
-          if (!existed) {
-            const docToCreate = { ...newDoc, enrichmentStatus: 'pending' };
-            batch.set(ref, docToCreate);
-          } else {
-            batch.set(ref, newDoc, { merge: true });
-          }
+          if (!existed) batch.set(ref, { ...newDoc, enrichmentStatus: 'pending' });
+          else batch.set(ref, newDoc, { merge: true });
           ops++;
 
-          // Historial con diff (agregamos propiedad_id en context)
-          const histId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          const histRef = ref.collection('historial').doc(histId);
+          const histRef = ref.collection('historial').doc(`${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
           batch.set(histRef, {
             ts: now,
             source: 'wubookSyncToday',
@@ -277,27 +264,21 @@ export default async function handler(req, res) {
               wubook_price_set: Boolean(wubook_price),
               toPay_set_auto: Boolean(baseDoc?.toPay)
             }
-          }); ops++;
-
+          });
+          ops++;
           upserts++;
           await flushIfNeeded();
         }
       }
 
-      if (ops > 0) {
-        log('BATCH COMMIT', { propId: prop.id, upserts, skipped, skipped_cancelled, unchanged });
-        await flush();
-      } else {
-        log('Sin cambios para commitear', { propId: prop.id, upserts, skipped, skipped_cancelled, unchanged });
-      }
+      if (ops > 0) await flush();
 
       summary.push({
         propiedad: { id: prop.id, nombre: prop.nombre },
         found_today: reservas.length,
-        upserts, skipped, skipped_cancelled, unchanged,
+        upserts, skipped, unchanged,
         dryRun: false
       });
-      log('PROP DONE', summary[summary.length - 1]);
     }
 
     log('DONE');
@@ -307,6 +288,7 @@ export default async function handler(req, res) {
     return bad(res, 500, err?.message || 'Error interno');
   }
 }
+
 
 
 
