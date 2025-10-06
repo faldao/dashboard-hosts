@@ -512,10 +512,13 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onTog
   const editBtnRef = useRef(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // helpers locales
+  // ── helpers numéricos ───────────────────────────────────────────
+  const safeNum = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
   const nOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
   const isPos = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
-  //const safeNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
   // --- lectura segura del breakdown
   const bd = r?.toPay_breakdown || {};
@@ -525,16 +528,33 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onTog
   const ivaBD = nOrNull(bd.ivaUSD);
   const ivaPct = nOrNull(bd.ivaPercent);
 
-
-
   const baseUSD = baseBD;
   const extrasUSD = (extrasBD !== null ? extrasBD : extrasTop);
   const ivaUSD =
     ivaBD !== null
       ? ivaBD
       : (baseUSD !== null && ivaPct !== null
-        ? Number(((safeNum(baseUSD) || 0) * (safeNum(ivaPct) || 0) / 100).toFixed(2))
-        : null);
+          ? Number(((safeNum(baseUSD) || 0) * (safeNum(ivaPct) || 0) / 100).toFixed(2))
+          : null);
+
+  // ── valores “ORIGINALES WUBOOK” para mostrar como hints ─────────
+  // Base USD original
+  const originalBaseUSD =
+    nOrNull(r?.wubook_priceUSD) ??
+    nOrNull(r?.wubook_price?.amount) ??
+    nOrNull(r?.priceUSD) ??
+    nOrNull(r?.venta) ??                 // usar solo si ya guardás USD acá
+    nOrNull(r?.toPay_breakdown?.baseUSD); // último fallback
+
+  // IVA original (prefiero % si existe; si no, monto)
+  const originalIvaPercent = nOrNull(r?.toPay_breakdown?.ivaPercent);
+  const originalIvaUSD = nOrNull(r?.toPay_breakdown?.ivaUSD);
+
+  // Extras USD original (prorrateado por room desde enrich)
+  const originalExtrasUSD =
+    nOrNull(r?.wubook_extrasUSD) ??
+    nOrNull(r?.extras_meta?.extrasUSDPerRoom) ??
+    nOrNull(r?.toPay_breakdown?.extrasUSD);
 
   // --- estados del editor
   const [baseUSDIn, setBaseUSDIn] = useState(baseUSD !== null ? String(baseUSD.toFixed(2)) : "");
@@ -557,7 +577,6 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onTog
     setIvaUSDIn(ivaCalc !== null ? String(ivaCalc.toFixed(2)) : "");
   }, [isOpen, r?.id, r?.contentHash]);
 
-
   const onSave = async () => {
     if (!baseUSDIn && !extrasUSDIn && !ivaPercent && !ivaUSDIn) return;
     setSubmitting(true);
@@ -569,22 +588,19 @@ function ToPayLine({ r, onRefresh, isOpen, onToggle, onDone, fx, currency, onTog
         return Number.isFinite(n) ? n : null;
       };
 
-      // Se agregan base y extras de la misma forma
       payload.baseUSD = toNumOrNull(baseUSDIn) ?? 0;
       payload.extrasUSD = toNumOrNull(extrasUSDIn) ?? 0;
 
- // --- LÓGICA CORREGIDA PARA EL IVA ---
-if (ivaMode === "percent") {
-  const p = toNumOrNull(ivaPercent);
-  if (p !== null) payload.ivaPercent = p;
-  // NO MANDAR ivaUSD si estamos en %  ← clave
-} else { // ivaMode === "amount"
-  const a = toNumOrNull(ivaUSDIn);
-  if (a !== null) payload.ivaUSD = a;
-  // NO MANDAR ivaPercent si estamos en USD  ← clave
-}
+      // IVA → o % o monto (no ambos)
+      if (ivaMode === "percent") {
+        const p = toNumOrNull(ivaPercent);
+        if (p !== null) payload.ivaPercent = p;
+      } else {
+        const a = toNumOrNull(ivaUSDIn);
+        if (a !== null) payload.ivaUSD = a;
+      }
 
-      await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay",  payload });
+      await axios.post("/api/reservationMutations", { id: r.id, action: "setToPay", payload });
 
       onDone?.();
       onRefresh?.();
@@ -602,32 +618,44 @@ if (ivaMode === "percent") {
   const fxRate = safeNum(fx?.rate);
   const totalARS = (totalUSD !== null && fxRate) ? totalUSD * fxRate : null;
 
-  // --- NUEVA LÓGICA PARA EL DESGLOSE DINÁMICO ---
   const breakdownText = useMemo(() => {
     const parts = [];
     if (showUSD) {
       if (isPos(baseUSD)) parts.push(money(baseUSD));
       if (isPos(extrasUSD)) parts.push(`+ ${money(extrasUSD)}`);
       if (isPos(ivaUSD)) parts.push(`IVA ${money(ivaUSD)}`);
-    } else {
-      // Solo muestra el desglose en ARS si existe un tipo de cambio
-      if (fxRate) {
-        const baseARS = baseUSD !== null ? baseUSD * fxRate : null;
-        const extrasARS = extrasUSD !== null ? extrasUSD * fxRate : null;
-        const ivaARS = ivaUSD !== null ? ivaUSD * fxRate : null;
-
-        if (isPos(baseARS)) parts.push(money(baseARS));
-        if (isPos(extrasARS)) parts.push(`+ ${money(extrasARS)}`);
-        if (isPos(ivaARS)) parts.push(`IVA ${money(ivaARS)}`);
-      }
+    } else if (fxRate) {
+      const baseARS = baseUSD !== null ? baseUSD * fxRate : null;
+      const extrasARS = extrasUSD !== null ? extrasUSD * fxRate : null;
+      const ivaARS = ivaUSD !== null ? ivaUSD * fxRate : null;
+      if (isPos(baseARS)) parts.push(money(baseARS, "ARS"));
+      if (isPos(extrasARS)) parts.push(`+ ${money(extrasARS, "ARS")}`);
+      if (isPos(ivaARS)) parts.push(`IVA ${money(ivaARS, "ARS")}`);
     }
     return parts.join(" ");
   }, [showUSD, fxRate, baseUSD, extrasUSD, ivaUSD]);
 
+  // ── helper visual para los “originales” ─────────────────────────
+  const Hint = ({ children }) => (
+    <div style={{ fontSize: 11, color: "var(--muted, #8b8b8b)", marginTop: -2, marginBottom: 4 }}>
+      {children}
+    </div>
+  );
+
+  // ── “modificado por …” (no editable) ────────────────────────────
+  const lastBy = (r?.lastUpdatedBy || "").toString();
+  const lastAt = r?.lastUpdatedAt?._seconds
+    ? new Date(r.lastUpdatedAt._seconds * 1000)
+    : (r?.lastUpdatedAt instanceof Date ? r.lastUpdatedAt : null);
+  const lastAtStr = lastAt ? lastAt.toLocaleString() : "-";
+  const lastByPretty = !lastBy
+    ? "-"
+    : (lastBy === "wubook_sync" ? "WuBook (sync)" : lastBy);
+
   return (
     <>
       <div className="left__line4" onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {/* Botón de cambio de moneda */}
+        {/* Switch moneda */}
         <button
           type="button"
           className="toPay-btn toPay-btn--switch"
@@ -639,21 +667,19 @@ if (ivaMode === "percent") {
           <span style={{ fontWeight: showUSD ? 400 : 700, opacity: showUSD ? 0.6 : 1 }}>ARS</span>
         </button>
 
-        {/* Total a pagar */}
+        {/* Total */}
         <span className="toPay-view" style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-          <strong>
-            {money(showUSD ? totalUSD : totalARS)}
-          </strong>
+          <strong>{money(showUSD ? totalUSD : totalARS, showUSD ? "USD" : "ARS")}</strong>
         </span>
 
-        {/* Desglose (ahora dinámico) */}
+        {/* Desglose */}
         {breakdownText && (
           <span className="toPay-breakdown" style={{ marginLeft: 4, opacity: 0.8, fontSize: 12 }}>
             ({breakdownText})
           </span>
         )}
 
-        {/* Botón para editar */}
+        {/* Editar */}
         <button
           ref={editBtnRef}
           type="button"
@@ -665,10 +691,10 @@ if (ivaMode === "percent") {
           <PencilIcon />
         </button>
 
-        {/* Badge de estado de pago */}
+        {/* Estado pago */}
         {payBadge(r.payment_status || "unpaid")}
 
-        {/* Chip de TC */}
+        {/* Chip TC */}
         {Number.isFinite(Number(fxRate)) && fxRate > 0 && (
           <span
             className="chip chip--off"
@@ -680,34 +706,131 @@ if (ivaMode === "percent") {
         )}
       </div>
 
-      <PopoverPortal anchorRef={editBtnRef} open={isOpen} onClose={onToggle} placement="bottom-left" maxWidth={360}>
-        <div className="mini-popover__title">Total a pagar (USD)</div>
-        {/* ... el resto del popover no cambia ... */}
-        <div className="mini-popover__row">
-          <label className="mini-popover__lab">Base USD</label>
-          <input className="mini-popover__field" type="number" step="0.01" min="0" value={baseUSDIn} onChange={(e) => setBaseUSDIn(e.target.value)} placeholder="0.00" />
-        </div>
-        <div className="mini-popover__row">
-          <label className="mini-popover__lab">IVA</label>
-          <label className="flex items-center gap-1"><input type="radio" name={`ivaMode_${r.id}`} value="percent" checked={ivaMode === "percent"} onChange={() => setIvaMode("percent")} /><span>%</span></label>
-          <input className="mini-popover__field mini-popover__field--xs" type="number" step="0.01" min="0" value={ivaPercent} onChange={(e) => setIvaPercent(e.target.value)} placeholder="21" disabled={ivaMode !== "percent"} />
-          <label className="flex items-center gap-1 ml-2"><input type="radio" name={`ivaMode_${r.id}`} value="amount" checked={ivaMode === "amount"} onChange={() => setIvaMode("amount")} /><span>USD</span></label>
-          <input className="mini-popover__field mini-popover__field--s" type="number" step="0.01" min="0" value={ivaUSDIn} onChange={(e) => setIvaUSDIn(e.target.value)} placeholder="0.00" disabled={ivaMode !== "amount"} />
-        </div>
-        <div className="mini-popover__row">
-          <label className="mini-popover__lab">Extras (USD)</label>
-          <input className="mini-popover__field" type="number" step="0.01" min="0" value={extrasUSDIn} onChange={(e) => setExtrasUSDIn(e.target.value)} placeholder="0.00" />
-        </div>
-        <div className="mini-popover__actions">
-          <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle} disabled={submitting}>Cancelar</button>
-          <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={onSave} disabled={submitting}>
-            {submitting ? "Guardando…" : "Guardar"}
-          </button>
-        </div>
-      </PopoverPortal>
+<PopoverPortal anchorRef={editBtnRef} open={isOpen} onClose={onToggle} placement="bottom-left" maxWidth={360}>
+  <div className="mini-popover__title">Total a pagar (USD)</div>
+
+  {/* Base USD */}
+  <div className="mini-popover__row mini-popover__row--col">
+    <label className="mini-popover__lab">Base USD</label>
+    {nOrNull(originalBaseUSD) !== null && (
+      <div className="mini-popover__hint">Original WuBook: {money(originalBaseUSD)}</div>
+    )}
+    <input
+      className="mini-popover__field"
+      type="number"
+      step="0.01"
+      min="0"
+      value={baseUSDIn}
+      onChange={(e) => setBaseUSDIn(e.target.value)}
+      placeholder="0.00"
+    />
+  </div>
+
+  {/* IVA */}
+  <div className="mini-popover__row mini-popover__row--col">
+    <label className="mini-popover__lab">IVA</label>
+    {(nOrNull(originalIvaPercent) !== null || nOrNull(originalIvaUSD) !== null) && (
+      <div className="mini-popover__hint">
+        {nOrNull(originalIvaPercent) !== null
+          ? <>Original WuBook: {originalIvaPercent}%</>
+          : <>Original WuBook: {money(originalIvaUSD)}</>
+        }
+      </div>
+    )}
+
+    <div className="flex items-center gap-2">
+      <label className="flex items-center gap-1">
+        <input
+          type="radio"
+          name={`ivaMode_${r.id}`}
+          value="percent"
+          checked={ivaMode === "percent"}
+          onChange={() => setIvaMode("percent")}
+        />
+        <span>%</span>
+      </label>
+      <input
+        className="mini-popover__field mini-popover__field--xs"
+        type="number"
+        step="0.01"
+        min="0"
+        value={ivaPercent}
+        onChange={(e) => setIvaPercent(e.target.value)}
+        placeholder="21"
+        disabled={ivaMode !== "percent"}
+      />
+
+      <label className="flex items-center gap-1 ml-2">
+        <input
+          type="radio"
+          name={`ivaMode_${r.id}`}
+          value="amount"
+          checked={ivaMode === "amount"}
+          onChange={() => setIvaMode("amount")}
+        />
+        <span>USD</span>
+      </label>
+      <input
+        className="mini-popover__field mini-popover__field--s"
+        type="number"
+        step="0.01"
+        min="0"
+        value={ivaUSDIn}
+        onChange={(e) => setIvaUSDIn(e.target.value)}
+        placeholder="0.00"
+        disabled={ivaMode !== "amount"}
+      />
+    </div>
+  </div>
+
+  {/* Extras USD */}
+  <div className="mini-popover__row mini-popover__row--col">
+    <label className="mini-popover__lab">Extras (USD)</label>
+    {nOrNull(originalExtrasUSD) !== null && (
+      <div className="mini-popover__hint">Original WuBook: {money(originalExtrasUSD)}</div>
+    )}
+    <input
+      className="mini-popover__field"
+      type="number"
+      step="0.01"
+      min="0"
+      value={extrasUSDIn}
+      onChange={(e) => setExtrasUSDIn(e.target.value)}
+      placeholder="0.00"
+    />
+  </div>
+
+  {/* Pie: auditoría + acciones */}
+  <div className="mini-popover__actions">
+    <div className="mini-popover__audit" style={{ marginRight: "auto" }}>
+      <div>Modificado por</div>
+      <div><b>{lastByPretty}</b></div>
+      <time>{lastAtStr}</time>
+    </div>
+
+    <button
+      type="button"
+      className="mini-popover__btn mini-popover__btn--muted"
+      onClick={onToggle}
+      disabled={submitting}
+    >
+      Cancelar
+    </button>
+    <button
+      type="button"
+      className="mini-popover__btn mini-popover__btn--ok"
+      onClick={onSave}
+      disabled={submitting}
+    >
+      {submitting ? "Guardando…" : "Guardar"}
+    </button>
+  </div>
+</PopoverPortal>
+
     </>
   );
 }
+
 
 /* ---------- UI: ReservationCard (4 celdas) ---------- */
 

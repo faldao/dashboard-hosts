@@ -274,3 +274,19 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
 
 .header__userline { @apply inline-flex items-center text-sm text-gray-700; }
 .header__userline__avatar { @apply w-5 h-5 rounded-full border border-gray-200 ml-2; object-fit: cover; }
+
+/* ─────────────────────────────────────────────────────────
+   Hints "Original WuBook" (debajo del label)
+   ───────────────────────────────────────────────────────── */
+.mini-popover__hint {  @apply text-xs text-gray-500;  margin-top: -2px;  margin-bottom: 4px;}
+
+/* Fila del popover en columna (label → hint → input) */
+.mini-popover__row--col {  display: flex; flex-direction: column; align-items: stretch;}
+
+/* ─────────────────────────────────────────────────────────
+   Pie de auditoría "Modificado por ..."
+   ───────────────────────────────────────────────────────── */
+.mini-popover__audit { @apply text-gray-500; font-size: 11px; line-height: 1.1;
+}
+.mini-popover__audit b { @apply text-gray-800; }
+.mini-popover__audit time { opacity: .8; }

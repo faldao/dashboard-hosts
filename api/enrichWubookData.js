@@ -176,7 +176,7 @@ function mapWubookPaymentsToUnified(arr = []) {
       source: 'wubook',
       wubook_id: p.id ?? null,
       amount: Number.isFinite(amt) ? amt : 0,
-      currency: String(p.currency || p.ccy || 'USD'),
+      currency: (p.currency || p.ccy || null),   // ← no asumir USD si falta
       method: String(p.method || p.type || 'unknown')
     };
   }).filter(p => p.amount > 0);
@@ -298,7 +298,7 @@ export default async function handler(req, res) {
     const { limit = 10, dryRun = false, forceUpdate = false, reservationId = null, syncMode = 'pending' } = req.body;
     log('INIT', { limit, dryRun, forceUpdate, reservationId, syncMode });
 
-    // ---- Si viene reservationId, procesamos ese doc puntual (más robusto que where por docId)
+    // ---- Si viene reservationId, procesamos ese doc puntual
     if (reservationId) {
       const doc = await firestore.collection('Reservas').doc(String(reservationId)).get();
       if (!doc.exists) {
@@ -346,14 +346,30 @@ export default async function handler(req, res) {
       const { total: newToPay } = recomputeToPayFrom(currentBD, extrasUSDFinal);
       const newBreakdown = { ...currentBD, extrasUSD: (extrasUSDFinal ?? null) };
 
+      // 🔹 originales "WuBook" para UI (solo lectura)
+      const wubookOriginal = {
+        baseUSD: numOrNull(currentBD?.baseUSD) ?? null,
+        ivaPercent: numOrNull(currentBD?.ivaPercent) ?? null,
+        ivaUSD: numOrNull(currentBD?.ivaUSD) ?? null,
+        extrasUSDPerRoom: extrasUSDPerRoom ?? null
+      };
+      const wubook_priceUSD =
+        numOrNull(singleOld?.wubook_priceUSD) ??
+        numOrNull(singleOld?.wubook_price?.amount) ?? null;
+      const wubook_extrasUSD = numOrNull(extrasUSDTotal);
+
       const fetchedData = {
         ...customerData,
         wubook_payments: wubookPaysRaw,
         wubook_notes: wubookNotesRaw,
         wubook_extras: wubookExtrasRaw,
+
+        // fuente de verdad unificada
         notes: mergedNotes,
         payments: mergedPayments,
         extras: mergedExtras,
+
+        // operativos
         extrasUSD: extrasUSDFinal,
         toPay: newToPay,
         toPay_breakdown: newBreakdown,
@@ -361,7 +377,12 @@ export default async function handler(req, res) {
           roomsCount,
           extrasUSDTotal: extrasUSDTotal ?? null,
           extrasUSDPerRoom: extrasUSDPerRoom ?? null
-        }
+        },
+
+        // 🔹 solo lectura para UI
+        wubook_original: wubookOriginal,
+        wubook_priceUSD: wubook_priceUSD ?? null,
+        wubook_extrasUSD: wubook_extrasUSD ?? null
       };
 
       const newDocForHash = { ...singleOld, ...fetchedData };
@@ -486,14 +507,30 @@ export default async function handler(req, res) {
       const { total: newToPay } = recomputeToPayFrom(currentBD, extrasUSDFinal);
       const newBreakdown = { ...currentBD, extrasUSD: (extrasUSDFinal ?? null) };
 
+      // 🔹 originales "WuBook" para UI (solo lectura)
+      const wubookOriginal = {
+        baseUSD: numOrNull(currentBD?.baseUSD) ?? null,
+        ivaPercent: numOrNull(currentBD?.ivaPercent) ?? null,
+        ivaUSD: numOrNull(currentBD?.ivaUSD) ?? null,
+        extrasUSDPerRoom: extrasUSDPerRoom ?? null
+      };
+      const wubook_priceUSD =
+        numOrNull(oldDoc?.wubook_priceUSD) ??
+        numOrNull(oldDoc?.wubook_price?.amount) ?? null;
+      const wubook_extrasUSD = numOrNull(extrasUSDTotal);
+
       const fetchedData = {
         ...customerData,
         wubook_payments: wubookPaysRaw,
         wubook_notes: wubookNotesRaw,
         wubook_extras: wubookExtrasRaw,
+
+        // fuente de verdad unificada
         notes: mergedNotes,
         payments: mergedPayments,
         extras: mergedExtras,          // fuente de verdad unificada
+
+        // operativos
         extrasUSD: extrasUSDFinal,     // prorrateado por room o preservado del host
         toPay: newToPay,
         toPay_breakdown: newBreakdown,
@@ -501,7 +538,12 @@ export default async function handler(req, res) {
           roomsCount,
           extrasUSDTotal: extrasUSDTotal ?? null,
           extrasUSDPerRoom: extrasUSDPerRoom ?? null
-        }
+        },
+
+        // 🔹 solo lectura para UI
+        wubook_original: wubookOriginal,
+        wubook_priceUSD: wubook_priceUSD ?? null,
+        wubook_extrasUSD: wubook_extrasUSD ?? null
       };
 
       // Evitar updates innecesarios
@@ -574,6 +616,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: error?.message || 'Unexpected error' });
   }
 }
+
 
 
 
