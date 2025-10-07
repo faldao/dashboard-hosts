@@ -6,7 +6,7 @@
 // 4) /api/enrichWubookData        (POST { limit:100, dryRun, syncMode:"active" })
 
 // /api/cronOrchestrator.js
-import { firestore, FieldValue } from '../lib/firebaseAdmin.js';
+import { firestore, FieldValue } from '../../lib/firebaseAdmin.js';
 
 const log = (...xs) => console.log('[CronOrchestrator]', ...xs);
 
