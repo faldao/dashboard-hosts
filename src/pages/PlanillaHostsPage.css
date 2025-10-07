@@ -334,3 +334,49 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
   .res-card4 > .res-cell:nth-child(2n)::after { display: none; }
   .bottom { display: none; }
 }
+
+/* ======= TOP BAR: COMPACTO EN CELULAR ======= */
+@media (max-width: 640px) {
+  /* header pegado arriba y más chico */
+  .header{ position:sticky; top:0; z-index:50; padding:8px 10px; border-bottom:1px solid #e5e7eb; background:#fff; }
+  .header__bar{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+
+  /* título más compacto */
+  .header__title{ font-size:18px; line-height:1.1; }
+  .header__date{ display:none; }              /* oculta (opcional) */
+
+  /* línea de usuario: muestra avatar/nombre, oculta el rótulo “Usuario:” */
+  .header__userline{ gap:6px; }
+  .header__userline .label{ display:none; }   /* si tenés un span “Usuario:” */
+  .header__userline__avatar{ width:20px; height:20px; margin-left:4px; }
+
+  /* fila de acciones: a ancho completo y con scroll suave lateral */
+  .header__actions{ width:100%; display:flex; align-items:center; gap:6px;  overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; /* evita que tape el borde en iOS */
+  }
+  .header__actions::-webkit-scrollbar{ display:none; }
+
+  /* controles compactos */
+  .btn{ padding:6px 10px; height:32px; flex:0 0 auto; }
+  .icon-btn{ width:32px; height:32px; flex:0 0 auto; }
+  .input--date{ height:32px; padding:4px 8px; flex:0 0 auto; }
+
+  /* selector de propiedad más angosto con elipsis */
+  .header .input--date select,
+  .header select.input--date{
+    max-width:140px; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;
+  }
+
+  /* tabs: que entren y hagan scroll horizontal si no caben */
+  .tabsbar{ overflow-x:auto; padding:0 6px; gap:4px; }
+  .tabsbar::-webkit-scrollbar{ display:none; }
+  .tab{ padding:6px 10px; font-size:13px; }
+  .tab__count{ height:18px; min-width:20px; font-size:10px; }
+
+  /* lista superior: menos padding */
+  .list{ padding-top:.25rem; padding-left:.5rem; padding-right:.5rem; }
+
+  /* tarjeta: bordes y espacios un toque más densos */
+  .res-card4{ padding:10px; border-radius:12px; }
+  .left__line2{ gap:8px; } /* teléfono/email */
+}
+
