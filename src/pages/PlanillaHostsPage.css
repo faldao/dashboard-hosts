@@ -380,3 +380,40 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
   .left__line2{ gap:8px; } /* teléfono/email */
 }
 
+
+/* ===== Header layout (desktop/tablet) ===== */
+.header__bar{display:flex;align-items:center;justify-content:space-between}
+.header__left{display:flex;align-items:baseline;gap:.5rem}
+.header__right{display:flex;align-items:center;gap:.5rem}
+.header__filters{display:flex;align-items:center;gap:.5rem;margin-top:.5rem;flex-wrap:wrap}
+.header__nav{display:flex;align-items:center;gap:.5rem}
+
+/* ===== User line ===== */
+.header__userline{display:inline-flex;align-items:center;gap:.375rem}
+.header__userline__avatar{width:28px;height:28px;border-radius:9999px;border:1px solid #e5e7eb;object-fit:cover}
+.header__userline__avatar--fallback{display:grid;place-items:center;background:#e5e7eb;color:#374151;font-weight:600}
+
+/* ===== Mobile tweaks (≤640px) ===== */
+@media (max-width:640px){
+  /* top bar compacto: avatar a la derecha, sin texto */
+  .header__filters{gap:.5rem;margin-top:.5rem}
+  .header__right{margin-left:auto}
+  .header__userline__label,
+  .header__userline__name{display:none!important;}  /* ← oculta “Usuario:” y el nombre solo en móvil */
+  .header__userline__avatar{width:24px;height:24px}
+
+  /* nav con flechas y fecha en una línea, scrolleable si no entra */
+  .header__filters{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .header__filters::-webkit-scrollbar{display:none}
+
+  /* compactar controles */
+  .header__nav .icon-btn{width:32px;height:32px}
+  .header__nav .input--date{height:32px;padding:4px 8px}
+}
+
+/* ===== Desktop/tablet: sí mostrar nombre ===== */
+@media (min-width:641px){
+  .header__userline__label,
+  .header__userline__name{display:inline-flex!important}
+}
+

@@ -1243,37 +1243,47 @@ const exportLoader = async () => {
   return (
     <div className="app" onClick={closeAllPopovers}>
       <header className="header">
-        <div className="header__bar">
-          <div className="flex items-center gap-2">
-            <h1 className="header__title">Planilla Diaria</h1>
-            <span className="header__date">({dateISO})</span>
-            <HeaderUserInline />
-          </div>
+  <div className="header__bar">
+    <div className="header__left">
+      <h1 className="header__title">Planilla Diaria</h1>
+      <span className="header__date">({dateISO})</span>
+    </div>
 
-          <div className="header__actions">
-            <select
-              className="input--date"
-              value={propertyId}
-              onChange={(e) => { setPropertyId(e.target.value); closeAllPopovers(); }}
-              title="Propiedad"
-            >
-              <option value="all">Todas</option>
-              {propsList.map(p => (
-                <option key={p.id} value={p.id}>{p.nombre}</option>
-              ))}
-            </select>
+    <div className="header__right">
+      <HeaderUserInline />
+      <Link to="/dashboard" className="icon-btn" title="Volver al Portal" aria-label="Volver al Portal">
+        <ExitIcon />
+      </Link>
+    </div>
+  </div>
 
-            <button type="button" className="btn" onClick={() => goto(-1)}>← Ayer</button>
-            <button type="button" className="btn" onClick={() => { setDateISO(DateTime.now().setZone(TZ).toISODate()); closeAllPopovers(); }}>Hoy</button>
-            <button type="button" className="btn" onClick={() => goto(1)}>Mañana →</button>
-            <input className="input--date" type="date" value={dateISO}
-              onChange={(e) => { setDateISO(e.target.value); closeAllPopovers(); }} />
-            <Link to="/dashboard" className="icon-btn" title="Volver al Portal" aria-label="Volver al Portal">
-              <ExitIcon />
-            </Link>
-          </div>
-        </div>
-      </header>
+  <div className="header__filters">
+    <select
+      className="input--date"
+      value={propertyId}
+      onChange={(e) => { setPropertyId(e.target.value); closeAllPopovers(); }}
+      title="Propiedad"
+    >
+      <option value="all">Todas</option>
+      {propsList.map(p => (
+        <option key={p.id} value={p.id}>{p.nombre}</option>
+      ))}
+    </select>
+
+    <div className="header__nav">
+      <button type="button" className="icon-btn" onClick={() => goto(-1)} aria-label="Día anterior">◀</button>
+      <input
+        className="input--date"
+        type="date"
+        value={dateISO}
+        onChange={(e) => { setDateISO(e.target.value); closeAllPopovers(); }}
+        aria-label="Seleccionar fecha"
+      />
+      <button type="button" className="icon-btn" onClick={() => goto(1)} aria-label="Día siguiente">▶</button>
+    </div>
+  </div>
+</header>
+
 
       <main className="main" onClick={(e) => e.stopPropagation()}>
         <div className="main__top">

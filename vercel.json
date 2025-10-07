@@ -1,37 +1,23 @@
 {
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/(favicon\\.ico|robots\\.txt|manifest\\.webmanifest)", "destination": "/$1" },
+
+   
+    { "source": "/((?!api|assets|.*\\..*).*)", "destination": "/" }
+  ],
+
   "crons": [
-    {
-      "path": "/api/dolarByDate?lastDays=3&casa=oficial&fallback=previous",
-      "schedule": "55 12 * * *"
-    },
-    {
-      "path": "/api/dolarByDate?monedas=USD,EUR,BRL,CLP,UYU",
-      "schedule": "10 13 * * *"
-    },
-    {
-      "path": "/api/dolarByDate?monedas=USD,EUR,BRL,CLP,UYU",
-      "schedule": "10 16 * * *"
-    },
-    {
-      "path": "/api/linkUsdFxToReservations?range=today&dryRun=false",
-      "schedule": "15 13 * * *"
-    },
-    {
-      "path": "/api/linkUsdFxToReservations?range=today&dryRun=false",
-      "schedule": "15 16 * * *"
-    },
-    {
-      "path": "/api/cron/cronOrchestrator",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/rebuildDailyIndexes?mode=auto",
-      "schedule": "*/30 * * * *"
-    },
-    {  
-        "path": "/api/cron/rescue-link-fx", 
-        "schedule": "30 1 * * *" 
-    }
+    { "path": "/api/dolarByDate?lastDays=3&casa=oficial&fallback=previous", "schedule": "55 12 * * *" },
+    { "path": "/api/dolarByDate?monedas=USD,EUR,BRL,CLP,UYU", "schedule": "10 13 * * *" },
+    { "path": "/api/dolarByDate?monedas=USD,EUR,BRL,CLP,UYU", "schedule": "10 16 * * *" },
+    { "path": "/api/linkUsdFxToReservations?range=today&dryRun=false", "schedule": "15 13 * * *" },
+    { "path": "/api/linkUsdFxToReservations?range=today&dryRun=false", "schedule": "15 16 * * *" },
+    { "path": "/api/cron/cronOrchestrator", "schedule": "*/30 * * * *" },
+    { "path": "/api/rebuildDailyIndexes?mode=auto", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/rescue-link-fx", "schedule": "30 1 * * *" }
   ]
 }
 

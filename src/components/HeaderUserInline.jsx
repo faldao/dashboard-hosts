@@ -10,12 +10,15 @@ export default function HeaderUserInline() {
 
   return (
     <span className="header__userline">
-      <span className="mx-1 opacity-50">•</span>
-      Usuario:
+      <span className="header__userline__label">Usuario:</span>
       {photo ? (
         <img src={photo} alt={name} className="header__userline__avatar" />
-      ) : null}
-      <strong className="ml-1">{name}</strong>
+      ) : (
+        <span className="header__userline__avatar header__userline__avatar--fallback">
+          {name?.[0]?.toUpperCase() || 'U'}
+        </span>
+      )}
+      <strong className="header__userline__name">{name}</strong>
     </span>
   );
 }
