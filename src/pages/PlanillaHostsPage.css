@@ -290,3 +290,47 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
 }
 .mini-popover__audit b { @apply text-gray-800; }
 .mini-popover__audit time { opacity: .8; }
+
+/* =========================================================
+   MOBILE (≤640px) — versión compacta
+========================================================= */
+@media (max-width: 640px) {
+  .app { height: 100dvh; }
+  .header { padding: .5rem .75rem; }
+  .header__title { font-size: 1rem; }
+  .header__date { display: none; }
+  .header__actions { gap: .375rem; }
+  .btn { padding: .25rem .5rem; font-size: .85rem; }
+  .input--date { height: 32px; padding: .25rem .5rem; font-size: .85rem; }
+  .tabsbar { overflow-x: auto; padding-left: .25rem; padding-right: .25rem; }
+  .tab { white-space: nowrap; padding: .375rem .625rem; font-size: .85rem; }
+  .tab__count { height: 18px; min-width: 20px; font-size: 10px; }
+  .list { padding: .5rem .5rem 5rem; }
+  .res-card4 { display: grid; grid-template-columns: 1fr; gap: .5rem; min-height: auto; padding: .75rem; }
+  .res-card4 > .res-cell:not(:last-child)::after { display: none; }
+  .left__line1 { gap: .375rem; }
+  .left__line2 { font-size: .9rem; gap: .5rem; }
+  .left__line3 { gap: .375rem; }
+  .name--contacted { padding: 0 .25rem; }
+  .panel { grid-template-columns: 1fr; }
+  .panel__list { max-height: none; overflow: visible; padding-right: 0; }
+  .payments-list { max-height: none; overflow: visible; }
+  .toPay-btn { padding: .375rem .5rem; }
+  .toPay-btn--icon { width: 34px; height: 34px; }
+  .toPay-cur { font-size: .75rem; }
+  .status-stack-new { position: sticky; bottom: .5rem; z-index: 5; background: #fff; border: 1px solid #e5e7eb; border-radius: .75rem; padding: .5rem; box-shadow: 0 2px 10px rgba(0,0,0,.04); flex-direction: row; gap: .5rem; }
+  .pill-btn { height: 40px; font-size: .85rem; padding: 0 .75rem; }
+  .pill-btn--neutral, .pill-btn--sky, .pill-btn--amber-active, .pill-btn--gray-active { border-width: 1px; }
+  .mini-popover { left: 8px !important; right: 8px !important; bottom: 8px !important; top: auto !important; width: auto; max-width: none; border-radius: 12px; }
+  .mini-popover__field { font-size: .95rem; }
+  .bottom { display: none; }
+}
+
+/* =========================================================
+   TABLET (641–1024px) — dos columnas cómodas
+========================================================= */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .res-card4 { grid-template-columns: 1fr 1fr; gap: .75rem; }
+  .res-card4 > .res-cell:nth-child(2n)::after { display: none; }
+  .bottom { display: none; }
+}

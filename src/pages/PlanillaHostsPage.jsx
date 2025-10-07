@@ -1321,7 +1321,7 @@ const exportLoader = async () => {
         )}
       </main>
 
-      <section className="bottom">
+      <section className="bottom" aria-hidden="true">
         <BottomTable items={items} exportLoader={exportLoader} />
       </section>
     </div>
