@@ -393,7 +393,7 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
 
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Monto</label>
-          <input className="mini-popover__field" type="number" step="0.01" min="0"
+          <input className="mini-popover__field" type="number" step="0.01" 
             value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
         </div>
 
@@ -420,6 +420,7 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
         <div className="mini-popover__actions">
           <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
           <button type="button" className="mini-popover__btn mini-popover__btn--ok"
+            onClick={save}
             disabled={!Number.isFinite(Number(amount)) || Number(amount) === 0 || sending}>
             {sending ? "Guardando…" : "Guardar"}
           </button>
