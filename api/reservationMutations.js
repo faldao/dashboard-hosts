@@ -209,7 +209,7 @@ export default async function handler(req, res) {
       const currency = String(payload?.currency || 'ARS').toUpperCase();
       const method  = String(payload?.method || 'Efectivo');
       const concept = String(payload?.concept || '').trim() || null;
-      if (!Number.isFinite(amount) || amount <= 0) return bad(res, 400, 'Monto inválido');
+      if (!Number.isFinite(amount)) return bad(res, 400, 'Monto inválido');
 
       const payment = {
         ts: payload?.when ? toTs(payload.when) :Timestamp.now(),
