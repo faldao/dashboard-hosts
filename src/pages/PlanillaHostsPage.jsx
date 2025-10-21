@@ -364,7 +364,7 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
 
   const save = async () => {
     const val = Number(amount);
-    if (!isFinite(val) || val <= 0) return;
+    if (!isFinite(val) || val === 0) return; //permite negativos
     try {
       setSending(true);
       await axios.post("/api/reservationMutations", {
@@ -420,7 +420,7 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
         <div className="mini-popover__actions">
           <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
           <button type="button" className="mini-popover__btn mini-popover__btn--ok"
-            onClick={save} disabled={!(Number(amount) > 0) || sending}>
+            disabled={!Number.isFinite(Number(amount)) || Number(amount) === 0 || sending}>
             {sending ? "Guardando…" : "Guardar"}
           </button>
         </div>
