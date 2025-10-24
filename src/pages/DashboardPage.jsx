@@ -21,6 +21,14 @@ const ALL_APPS = {
     href: '/reportes', // Ruta para una futura app
     icon: '📊'
   },
+    
+  'liquidaciones': {
+    name: 'Liquidaciones',
+    description: 'Arma liquidaciones por unidad o por propiedad (por check-in).',
+    href: '/liquidaciones',
+    icon: '🧾',
+  },
+
   // Podés agregar más aplicaciones aquí en el futuro
 };
 

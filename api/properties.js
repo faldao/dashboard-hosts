@@ -1,5 +1,5 @@
 // /api/properties.js
-import { firestore } from '../lib/firebaseAdmin.js';
+//import { firestore } from '../lib/firebaseAdmin.js';
 import { fetchPropertyDocs } from '../lib/fetchPropertiesAndRoomMaps.js';
 
 const ok = (res, data) => {

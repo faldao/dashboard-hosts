@@ -5,6 +5,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import PlanillaHostsPage from './pages/PlanillaHostsPage';
+import LiquidacionesPage from './pages/LiquidacionesPage';
 
 // 2. Importa tu componente de ruta protegida
 import ProtectedRoute from './components/ProtectedRoute';
@@ -42,6 +43,14 @@ function App() {
           </ProtectedRoute>
         } 
       />
+      <Route
+  path="/liquidaciones"
+  element={
+    <ProtectedRoute>
+      <LiquidacionesPage />
+    </ProtectedRoute>
+  }
+/>
 
       {/* RUTA POR DEFECTO / REDIRECCIÓN */}
       {/* Si un usuario entra a la raíz del sitio ('/'), lo mandamos directo al dashboard. */}
