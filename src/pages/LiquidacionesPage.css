@@ -1,0 +1,91 @@
+/* =========================================================
+   LiquidacionesPage — estilos específicos
+   (reusa los tokens/utilidades globales ya definidos)
+========================================================= */
+
+/* Layout de la app */
+.liq-app {
+  background: var(--panel-bg);
+}
+
+/* Header y barra de filtros */
+.liq-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: .75rem;
+  flex-wrap: wrap;
+  margin-top: .5rem;
+}
+
+.liq-filter {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  min-width: 220px;
+}
+
+.liq-filter__label {
+  font-size: .825rem;
+  color: #4b5563;
+  font-weight: 500;
+}
+
+.liq-filter__control {
+  /* reusa .input--date global para inputs/selects */
+}
+
+/* Botonera */
+.liq-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.btn--active {
+  background: #111827;
+  color: #fff;
+}
+
+/* Contenido principal */
+.liq-main {
+  padding: 12px;
+}
+
+/* Tarjeta/Sección blanca (propiedad) */
+.liq-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+/* Tabla principal (por unidad) */
+.liq-table {
+  background: #fff;
+  border-radius: 8px;
+}
+
+/* Subtítulos de grupos (por propiedad) */
+.prop-group {
+  margin: 16px 0 24px;
+}
+.prop-group__title {
+  font-size: 14px;
+  font-weight: 600;
+  opacity: .75;
+  margin: 8px 0 12px;
+  border-left: 3px solid #ddd;
+  padding-left: 8px;
+}
+
+/* Loader / vacío */
+.liq-loader {
+  color: #6b7280;
+}
+.liq-empty {
+  color: #6b7280;
+}
+
+/* En móvil: compactar filtros */
+@media (max-width: 640px) {
+  .liq-filter { min-width: 180px; }
+}
