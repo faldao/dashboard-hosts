@@ -1,40 +1,54 @@
 // =========================================================
 // LiquidacionesPage.jsx
-// =========================================================
-// - Filtros con labels (Propiedad / Departamentos / Rango)
-// - Departamentos deshabilitados hasta elegir propiedad
-// - Rango por defecto = mes en curso (America/Argentina/Buenos_Aires)
-// - Botón “Mostrar resultados” (no auto-fetch)
-// - Nada se muestra hasta disparar la búsqueda (hasRun)
-// - Vista "Por unidad":
-//     * Tabla igual a Planilla (una fila por pago)
-//     * Dos secciones: "Pagos en $" y "Pagos en USD"
-//     * "Cobrado Bruto": si pago en USD => guarda USD; si pago en ARS => edita ARS y convierte a USD para guardar
-// - Vista "Por propiedad": usa groups del backend, con "Reservas en $" / "Reservas en USD" por departamento
-// - Encabezados sin letras (G/H/I/J/K)
-// - Estilos movidos a LiquidacionesPage.css
+// - Filtros con labels y botón "Mostrar resultados"
+// - Selector de Departamento simple (no múltiple)
+// - Rango por defecto = mes en curso (TZ AR)
+// - Vista "Por unidad" → secciones "Pagos en $" y "Pagos en USD"
+// - Columna "Forma de cobro" (método · concepto)
+// - Inputs con separadores de miles y ancho ~15ch
+// - Neto en moneda de la fila (convierte H/I/J si hace falta)
+// - Mutaciones con debounce → se guardan en /api/liquidaciones/accountingMutations
+// - Estilos: ver LiquidacionesPage.css
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { DateTime } from 'luxon';
-import HeaderUserInline from '../components/HeaderUserInline';
 import { useAuth } from '../context/AuthContext';
+import HeaderUserInline from '../components/HeaderUserInline';
 import './LiquidacionesPage.css';
 
+// ---------- Constantes de formato ----------
 const TZ = 'America/Argentina/Buenos_Aires';
 
-// ---------- helpers comunes ----------
-const fmt = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : '');
-const money = (n, cur = 'USD') => {
+// Intl para miles/decimales en ARS y USD
+const nfARS = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nfUSD = new Intl.NumberFormat('en-US',  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Formatea número con miles según moneda
+const formatNumberEs = (n, currency) => {
   const v = Number(n);
   if (!Number.isFinite(v)) return '';
-  return `${v.toFixed(2)} ${String(cur).toUpperCase()}`;
+  return currency === 'USD' ? nfUSD.format(v) : nfARS.format(v);
 };
 
-// =========================================================
-// Hooks de datos (propiedades / departamentos)
-// =========================================================
+// Parsea "1.234.567,89" → 1234567.89
+const parseNumberEs = (s) => {
+  if (s == null) return NaN;
+  const str = String(s).trim().replace(/\./g, '').replace(',', '.');
+  const n = Number(str);
+  return Number.isFinite(n) ? n : NaN;
+};
+
+// Para mostrar dinero con símbolo/moneda correctos
+const moneyIntl = (n, currency) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '';
+  if (currency === 'USD') return nfUSD.format(v) + ' USD';
+  return '$ ' + nfARS.format(v);
+};
+
+// ---------- Data hooks (propiedades / departamentos) ----------
 function useProperties() {
   const [list, setList] = useState([]);
   useEffect(() => {
@@ -59,88 +73,74 @@ function useDepartments(propertyId) {
   return list;
 }
 
-// =========================================================
-// Helpers "Planilla": formateos y pagos por reserva
-// =========================================================
-const fmtDay = (iso) =>
-  iso ? DateTime.fromISO(iso, { zone: TZ }).toFormat('dd/MM/yyyy') : '—';
-
-const fmtHourTS = (ts) => {
-  if (!ts) return '—';
-  if (ts.seconds || ts._seconds) {
-    const s = ts.seconds ?? ts._seconds;
-    return DateTime.fromSeconds(Number(s), { zone: TZ }).toFormat('HH:mm');
-  }
+// ---------- FX helpers ----------
+const getFxFromReservation = (res) => {
+  // Usa usd_fx_on_checkin: promedio compra/venta, o venta si no hay compra
   try {
-    const d = DateTime.fromISO(String(ts), { zone: TZ });
-    if (d.isValid) return d.toFormat('HH:mm');
+    const fx = res?.usd_fx_on_checkin || {};
+    const buy = Number(fx.compra);
+    const sell = Number(fx.venta);
+    if (Number.isFinite(buy) && Number.isFinite(sell) && buy > 0 && sell > 0) return +((buy + sell) / 2).toFixed(4);
+    if (Number.isFinite(sell) && sell > 0) return +sell.toFixed(4);
+    if (Number.isFinite(buy) && buy > 0) return +buy.toFixed(4);
   } catch {}
-  return '—';
+  return null;
 };
 
-// normaliza el array de pagos de una reserva
-function getPayments(r) {
-  const arr = Array.isArray(r.payments) ? r.payments : [];
-  return arr.map(p => ({
-    amount: Number(p.amount) || 0,
-    currency: String(p.currency || '').toUpperCase(), // 'ARS' | 'USD'
-    method: p.method || '',
-    concept: p.concept || '',
-    usd_equiv: Number(p.usd_equiv) || null,
-    fxRateUsed: Number(p.fxRateUsed) || null,
-  }));
-}
+const getFxRateForRow = (res, fallback = null) => {
+  const r = Number(getFxFromReservation(res));
+  if (Number.isFinite(r) && r > 0) return r;
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : null;
+};
 
-// tasa preferida para convertir ARS → USD (fx del pago > fx de la reserva)
-function getFxRateForRow(row, paymentLike) {
-  if (paymentLike?.fxRateUsed && Number.isFinite(Number(paymentLike.fxRateUsed)) && Number(paymentLike.fxRateUsed) > 0) {
-    return Number(paymentLike.fxRateUsed);
-  }
-  const fx = row?.usd_fx_on_checkin || {};
-  const buy = Number(fx.compra), sell = Number(fx.venta);
-  if (Number.isFinite(buy) && Number.isFinite(sell) && buy > 0 && sell > 0) return +(((buy + sell) / 2).toFixed(4));
-  if (Number.isFinite(sell) && sell > 0) return +sell.toFixed(4);
-  if (Number.isFinite(buy) && buy > 0) return +buy.toFixed(4);
-  return null;
-}
-
-// construye filas por pago y separa por moneda (ARS / USD) para la vista "por unidad"
-function buildPaymentRows(items = []) {
+// ---------- Transforma reservas en filas por moneda ----------
+function buildByCurrency(items = []) {
   const out = { ARS: [], USD: [] };
 
-  for (const r of items) {
-    const pays = getPayments(r).filter(p => p.currency === 'ARS' || p.currency === 'USD');
+  for (const res of items) {
+    const pays = Array.isArray(res.payments) ? res.payments : [];
     if (!pays.length) continue;
 
-    const base = {
-      res_id: r.id,
-      id_human: r.id_human || r.id,
-      huesped: r.nombre_huesped || '—',
-      checkin: fmtDay(r.arrival_iso),
-      checkout: fmtDay(r.departure_iso),
-      canal: r.source || r.channel_name || '—',
-      depto: r.depto_nombre || r.nombre_depto || r.codigo_depto || r.id_zak || '—',
-      _res: r,
-    };
+    const fx = getFxRateForRow(res, null); // para convertir H/I/J si hace falta
 
-    pays.forEach((p, idx) => {
-      const fx = getFxRateForRow(r, p);
-      const brutoUSD = p.currency === 'USD'
-        ? (Number(p.amount) || 0)
-        : (Number(p.usd_equiv) || (fx ? +(Number(p.amount) / fx).toFixed(2) : 0));
+    for (let i = 0; i < pays.length; i++) {
+      const p = pays[i];
+      const amt = Number(p.amount);
+      const cur = String(p.currency || '').toUpperCase();
+      if (!Number.isFinite(amt) || amt <= 0) continue;
+      if (cur !== 'ARS' && cur !== 'USD') continue;
 
-      out[p.currency].push({
-        ...base,
-        _payRow: idx > 0, // filas adicionales como en BottomTable
-        pay_amount: Number(p.amount) || 0,
-        pay_currency: p.currency,        // 'ARS' | 'USD'
+      const row = {
+        // --- datos visibles ---
+        id_human: res.id_human || res.id || '—',
+        huesped: res.nombre_huesped || '—',
+        checkin: res.arrival_iso || '—',
+        checkout: res.departure_iso || '—',
+        canal: res.source || res.channel_name || '—',
+
+        // forma de cobro
         pay_method: p.method || '',
         pay_concept: p.concept || '',
+
+        // monetarios de la fila
+        pay_currency: cur,
+        pay_amount: amt,          // bruto mostrado (en su moneda)
+
+        // refs internas
+        res_id: res.id,
+        _res: res,
         fx_used: fx,
-        brutoUSD,                        // equivalente USD para neto / persistir
-      });
-    });
+      };
+
+      out[cur].push(row);
+    }
   }
+
+  // (opcional) orden por fecha de checkin/id_human
+  const sortFn = (a, b) => String(a.checkin).localeCompare(String(b.checkin)) || String(a.id_human).localeCompare(String(b.id_human));
+  out.ARS.sort(sortFn);
+  out.USD.sort(sortFn);
+
   return out;
 }
 
@@ -148,28 +148,31 @@ function buildPaymentRows(items = []) {
 // Componente principal
 // =========================================================
 export default function LiquidacionesPage() {
-  // ------------------------------------------
-  // A) Filtros: mes actual por defecto
-  // ------------------------------------------
+  // ----- A) Filtros -----
   const now = DateTime.now().setZone(TZ);
   const monthStart = now.startOf('month').toISODate();
   const monthEnd   = now.endOf('month').toISODate();
 
   const propsList = useProperties();
   const [propertyId, setPropertyId] = useState('all');
+
   const depts = useDepartments(propertyId);
-  const [selectedDeptIds, setSelectedDeptIds] = useState([]);   // ids/códigos de depto
+  const deptOptions = useMemo(() => depts.map(d => ({ id: d.codigo || d.id, label: d.nombre })), [depts]);
+  const [deptId, setDeptId] = useState(''); // selector simple
+  const deptsDisabled = !propertyId || propertyId === 'all';
+
   const [fromISO, setFromISO] = useState(monthStart);
   const [toISO, setToISO] = useState(monthEnd);
-  const [mode, setMode] = useState('unidad');                   // 'unidad' | 'propiedad'
 
-  // ------------------------------------------
-  // B) Datos y control de carga manual
-  // ------------------------------------------
+  // Si seguís usando dos modos, mantenemos el switch (afecta solo el render)
+  const [mode, setMode] = useState('unidad'); // 'unidad' | 'propiedad'
+
+  // ----- B) Datos -----
   const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState([]);        // lista plana de reservas (para "unidad")
-  const [groups, setGroups] = useState(null);  // agrupado por propiedad/moneda (para "propiedad")
-  const [hasRun, setHasRun] = useState(false); // evita mostrar tablas de entrada
+  const [items, setItems] = useState([]);    // reservas crudas
+  const [byCur, setByCur] = useState({ ARS: [], USD: [] });
+  const [groupsProp, setGroupsProp] = useState(null); // si querés seguir mostrando "por propiedad"
+  const [hasRun, setHasRun] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -178,26 +181,25 @@ export default function LiquidacionesPage() {
         property: propertyId,
         from: fromISO,
         to: toISO,
+        includePayments: '1', // asegura que vuelvan los pagos
       };
-      if (selectedDeptIds.length) params.deptIds = selectedDeptIds.join(',');
+      if (deptId) params.deptId = deptId;
 
       const { data } = await axios.get('/api/liquidaciones/reservasByCheckin', { params });
-      setRows(Array.isArray(data?.items) ? data.items : []);
-      setGroups(data?.groups || null);
+      const itemsRaw = Array.isArray(data?.items) ? data.items : [];
+
+      setItems(itemsRaw);
+      setByCur(buildByCurrency(itemsRaw));
+      setGroupsProp(data?.groups || null);
       setHasRun(true);
     } finally {
       setLoading(false);
     }
   };
 
-  // NO auto-fetch:
-  // useEffect(() => { fetchData(); }, [...])
-
-  // ------------------------------------------
-  // C) Mutaciones contables (debounced)
-  // ------------------------------------------
+  // ----- C) Mutaciones con debounce -----
   const [pending, setPending] = useState({});
-  const { user } = useAuth(); // (interceptor ya mete el Authorization)
+  const { user } = useAuth();
 
   useEffect(() => {
     const t = setTimeout(async () => {
@@ -205,13 +207,11 @@ export default function LiquidacionesPage() {
       if (!ids.length) return;
 
       const batch = { ...pending };
-      setPending({}); // actualización optimista
+      setPending({}); // optimista
 
       await Promise.allSettled(
         Object.entries(batch).map(async ([id, payload]) => {
-          // 1) persistimos mutación contable
           await axios.post('/api/liquidaciones/accountingMutations', { id, payload });
-          // 2) log (best-effort)
           try {
             await axios.post('/api/liquidaciones/activityLog', {
               type: 'acc_update',
@@ -220,8 +220,8 @@ export default function LiquidacionesPage() {
             });
           } catch {}
 
-          // 3) refresco local del neto USD
-          setRows(prev => prev.map(r => {
+          // Refresco local de NETO (en USD guardado); el render lo reconvierte si la fila es ARS
+          setItems(prev => prev.map(r => {
             if (r.id !== id) return r;
             const a = r.accounting || {};
             const p = payload || {};
@@ -232,44 +232,171 @@ export default function LiquidacionesPage() {
             const netoUSD = +(bruto + comis + tasa + costo).toFixed(2);
             return { ...r, accounting: { ...a, ...p, netoUSD } };
           }));
+
+          // Recalcular agrupación por moneda (por si cambió algo que afecte el render)
+          setByCur(prev => buildByCurrency(
+            (items || []).map(r => (r.id === id ? { ...r, accounting: { ...(r.accounting || {}), ...(batch[id] || {}) } } : r))
+          ));
         })
       );
     }, 600);
+
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending, user]);
 
-  // ------------------------------------------
-  // D) Handlers de edición
-  // ------------------------------------------
-  const onCellEdit = (id, field, value) => {
+  // ----- D) Handlers de edición -----
+  const onCellEdit = (id, field, valueNumberOrNull) => {
     setPending(prev => ({
       ...prev,
-      [id]: { ...(prev[id] || {}), [field]: value === '' ? null : Number(value) }
+      [id]: { ...(prev[id] || {}), [field]: valueNumberOrNull === '' ? null : Number(valueNumberOrNull) }
     }));
   };
   const onObsEdit = (id, value) => {
     setPending(prev => ({ ...prev, [id]: { ...(prev[id] || {}), observaciones: value } }));
   };
 
-  // ------------------------------------------
-  // E) Opciones de departamentos
-  // ------------------------------------------
-  const deptOptions = useMemo(
-    () => depts.map(d => ({ id: d.codigo || d.id, label: d.nombre })),
-    [depts]
-  );
-  const deptsDisabled = !propertyId || propertyId === 'all';
+  // =====================================================
+  // Render de una fila (Row) para tablas por moneda
+  // =====================================================
+  const Row = (r) => {
+    const a  = r._res?.accounting || {};
+    const fx = r.fx_used || getFxRateForRow(r._res, null) || 0;
 
-  // =========================================================
-  // Render
-  // =========================================================
+    // BRUTO mostrado (en moneda del pago)
+    const brutoShown = Number(r.pay_amount) || 0;
+
+    // BRUTO en USD (para guardar si el usuario edita)
+    const brutoUSD = r.pay_currency === 'USD'
+      ? brutoShown
+      : (fx ? +(brutoShown / fx).toFixed(2) : 0);
+
+    // Edit "Cobrado Bruto" → guarda en USD
+    const onChangeBruto = (e) => {
+      const raw = e.target.value;
+      const n = parseNumberEs(raw);
+      if (!Number.isFinite(n)) return;
+      if (r.pay_currency === 'USD') {
+        onCellEdit(r.res_id, 'brutoUSD', n);
+      } else {
+        const usd = fx ? +(n / fx).toFixed(2) : 0;
+        onCellEdit(r.res_id, 'brutoUSD', usd);
+      }
+    };
+    const onBlurFormatBruto = (e) => {
+      const n = parseNumberEs(e.target.value);
+      e.target.value = Number.isFinite(n) ? formatNumberEs(n, r.pay_currency) : '';
+    };
+
+    // Edit H/I/J (siempre en USD)
+    const onEditUSD = (field) => (e) => {
+      const n = parseNumberEs(e.target.value);
+      onCellEdit(r.res_id, field, Number.isFinite(n) ? n : null);
+    };
+    const onBlurUSD = (e) => {
+      const n = parseNumberEs(e.target.value);
+      e.target.value = Number.isFinite(n) ? formatNumberEs(n, 'USD') : '';
+    };
+
+    // NETO: suma bruto + H + I + J (según moneda de la fila)
+    const H_usd = Number(a.comisionCanalUSD) || 0;
+    const I_usd = Number(a.tasaLimpiezaUSD) || 0;
+    const J_usd = Number(a.costoFinancieroUSD) || 0;
+
+    let netAmount, netCur;
+    if (r.pay_currency === 'USD') {
+      netAmount = +(brutoUSD + H_usd + I_usd + J_usd).toFixed(2);
+      netCur = 'USD';
+    } else {
+      const H_ars = fx ? H_usd * fx : 0;
+      const I_ars = fx ? I_usd * fx : 0;
+      const J_ars = fx ? J_usd * fx : 0;
+      netAmount = +(brutoShown + H_ars + I_ars + J_ars).toFixed(2);
+      netCur = 'ARS';
+    }
+
+    return (
+      <tr className="tr">
+        <td className="td">{r.id_human}</td>
+        <td className="td">{r.huesped}</td>
+        <td className="td">{r.checkin}</td>
+        <td className="td">{r.checkout}</td>
+        <td className="td">{r.canal}</td>
+
+        {/* Forma de cobro (método · concepto) */}
+        <td className="td td--mono">{[r.pay_method || '—', r.pay_concept || ''].filter(Boolean).join(' · ')}</td>
+
+        {/* Cobrado Bruto (en moneda del pago) */}
+        <td className="td">
+          <input
+            type="text"
+            defaultValue={formatNumberEs(brutoShown, r.pay_currency)}
+            onChange={onChangeBruto}
+            onBlur={onBlurFormatBruto}
+            className="num-input"
+            maxLength={20}
+          />
+        </td>
+
+        {/* Comisión Canal (USD) */}
+        <td className="td">
+          <input
+            type="text"
+            defaultValue={formatNumberEs(a.comisionCanalUSD ?? '', 'USD')}
+            onChange={onEditUSD('comisionCanalUSD')}
+            onBlur={onBlurUSD}
+            className="num-input"
+            maxLength={20}
+          />
+        </td>
+
+        {/* Tasa limpieza (USD) */}
+        <td className="td">
+          <input
+            type="text"
+            defaultValue={formatNumberEs(a.tasaLimpiezaUSD ?? '', 'USD')}
+            onChange={onEditUSD('tasaLimpiezaUSD')}
+            onBlur={onBlurUSD}
+            className="num-input"
+            maxLength={20}
+          />
+        </td>
+
+        {/* Costo financiero (USD) */}
+        <td className="td">
+          <input
+            type="text"
+            defaultValue={formatNumberEs(a.costoFinancieroUSD ?? '', 'USD')}
+            onChange={onEditUSD('costoFinancieroUSD')}
+            onBlur={onBlurUSD}
+            className="num-input"
+            maxLength={20}
+          />
+        </td>
+
+        {/* Neto (en moneda de la fila) */}
+        <td className="td td--money-strong">{moneyIntl(netAmount, netCur)}</td>
+
+        {/* Observaciones (SIN forma de cobro debajo) */}
+        <td className="td">
+          <input
+            type="text"
+            defaultValue={a.observaciones || ''}
+            onChange={(e) => onObsEdit(r.res_id, e.target.value)}
+            className="mini-popover__field"
+          />
+        </td>
+      </tr>
+    );
+  };
+
+  // =====================================================
+  // UI
+  // =====================================================
   return (
     <div className="app liq-app">
-      {/* =====================================================
-          HEADER
-         ===================================================== */}
+      {/* ----- Header: título + usuario ----- */}
       <header className="header">
-        {/* Barra: título + usuario */}
         <div className="header__bar">
           <div className="header__left">
             <h1 className="header__title">Liquidaciones</h1>
@@ -280,7 +407,7 @@ export default function LiquidacionesPage() {
           </div>
         </div>
 
-        {/* Filtros con labels */}
+        {/* ----- Filtros con labels ----- */}
         <div className="liq-filters">
           {/* Propiedad */}
           <div className="liq-filter">
@@ -288,33 +415,28 @@ export default function LiquidacionesPage() {
             <select
               className="input--date liq-filter__control"
               value={propertyId}
-              onChange={(e) => { setPropertyId(e.target.value); setSelectedDeptIds([]); }}
+              onChange={(e) => { setPropertyId(e.target.value); setDeptId(''); }}
             >
               <option value="all">Seleccionar…</option>
               {propsList.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
           </div>
 
-          {/* Departamentos (multi) */}
+          {/* Departamento (simple) */}
           <div className="liq-filter liq-filter--wide">
             <label className="liq-filter__label">Departamentos</label>
             <select
               className="input--date liq-filter__control"
-              multiple
-              size={Math.min(6, Math.max(2, deptOptions.length))}
-              value={selectedDeptIds}
-              onChange={(e) => {
-                const vals = Array.from(e.target.selectedOptions).map(o => o.value);
-                setSelectedDeptIds(vals);
-              }}
+              value={deptId}
+              onChange={(e) => setDeptId(e.target.value)}
               disabled={deptsDisabled}
-              title="Unidades"
             >
+              <option value="">Todos</option>
               {deptOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
           </div>
 
-          {/* Rango de fechas */}
+          {/* Rango: desde / hasta */}
           <div className="liq-filter">
             <label className="liq-filter__label">Desde</label>
             <input
@@ -334,19 +456,17 @@ export default function LiquidacionesPage() {
             />
           </div>
 
-          {/* Acciones / modos */}
+          {/* Acciones */}
           <div className="liq-actions">
             <button
               className={`btn ${mode === 'unidad' ? 'btn--active' : ''}`}
               onClick={() => setMode('unidad')}
-              title="Ver por pagos (una fila por pago)"
             >
               Por unidad
             </button>
             <button
               className={`btn ${mode === 'propiedad' ? 'btn--active' : ''}`}
               onClick={() => setMode('propiedad')}
-              title="Ver agrupado por propiedad y moneda"
             >
               Por propiedad
             </button>
@@ -355,181 +475,89 @@ export default function LiquidacionesPage() {
         </div>
       </header>
 
-      {/* =====================================================
-          MAIN
-         ===================================================== */}
+      {/* ----- Main ----- */}
       <main className="liq-main">
         {loading && <div className="liq-loader">Cargando…</div>}
 
-        {/* ---------------- Vista POR UNIDAD ---------------- */}
-        {!loading && hasRun && mode === 'unidad' && (() => {
-          const byCur = buildPaymentRows(rows);
-
-          // Cabecera común
-          const Header = () => (
-            <thead>
-              <tr>
-                <th className="th">reserva</th>
-                <th className="th">Huesped</th>
-                <th className="th">check in</th>
-                <th className="th">check out</th>
-                <th className="th">Canal</th>
-                <th className="th">Cobrado Bruto</th>
-                <th className="th">Comisión Canal</th>
-                <th className="th">Tasa limpieza</th>
-                <th className="th">Costo financiero</th>
-                <th className="th">Neto</th>
-                <th className="th">OBSERVACIONES</th>
-              </tr>
-            </thead>
-          );
-
-          // Fila: una por pago (igual que BottomTable)
-          const Row = (r) => {
-            const a = r._res?.accounting || {};
-
-            // USD de referencia para neto:
-            //  - si ya hay accounting.brutoUSD, se usa
-            //  - si no, el equivalente USD calculado desde el pago (brutoUSD)
-            const brutoUSD = Number.isFinite(Number(a.brutoUSD))
-              ? Number(a.brutoUSD)
-              : (Number(r.brutoUSD) || 0);
-
-            const H = Number(a.comisionCanalUSD) || 0;
-            const I = Number(a.tasaLimpiezaUSD) || 0;
-            const J = Number(a.costoFinancieroUSD) || 0;
-            const K = +(brutoUSD + H + I + J).toFixed(2);
-
-            // Para el input “Cobrado Bruto”:
-            //  - Si el pago es USD → mostramos y guardamos USD
-            //  - Si el pago es ARS → mostramos ARS, pero convertimos a USD al guardar
-            const displayValue = r.pay_amount;           // lo que verá en el input
-            const displayCur   = r.pay_currency;         // 'USD' | 'ARS'
-            const fx           = r.fx_used || null;      // para convertir si es ARS
-
-            return (
-              <tr key={`${r.res_id}_${displayCur}_${r._payRow ? 'pay' : 'main'}`} className="tr">
-                <td className="td">{r.id_human}</td>
-                <td className="td">{r.huesped}</td>
-                <td className="td">{r.checkin}</td>
-                <td className="td">{r.checkout}</td>
-                <td className="td">{r.canal}</td>
-
-                <td className="td">
-                  <div className="liq-bruto-wrap">
-                    <input
-                      type="number"
-                      step="0.01"
-                      defaultValue={fmt(displayValue)}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        if (!Number.isFinite(val)) return;
-
-                        if (displayCur === 'USD') {
-                          // guarda directo USD
-                          onCellEdit(r.res_id, 'brutoUSD', val);
-                        } else {
-                          // ARS → convertir a USD con fx
-                          const usd = fx ? +(val / fx).toFixed(2) : 0;
-                          onCellEdit(r.res_id, 'brutoUSD', usd);
-                        }
-                      }}
-                      className="mini-popover__field"
-                    />
-                    <small className="liq-bruto-hint">
-                      {displayCur === 'USD' ? 'USD' : 'ARS → se convierte a USD'}
-                    </small>
-                  </div>
-                </td>
-
-                <td className="td">
-                  <input
-                    type="number" step="0.01"
-                    defaultValue={fmt(a.comisionCanalUSD)}
-                    onChange={(e)=>onCellEdit(r.res_id,'comisionCanalUSD',e.target.value)}
-                    className="mini-popover__field"
-                  />
-                </td>
-
-                <td className="td">
-                  <input
-                    type="number" step="0.01"
-                    defaultValue={fmt(a.tasaLimpiezaUSD)}
-                    onChange={(e)=>onCellEdit(r.res_id,'tasaLimpiezaUSD',e.target.value)}
-                    className="mini-popover__field"
-                  />
-                </td>
-
-                <td className="td">
-                  <input
-                    type="number" step="0.01"
-                    defaultValue={fmt(a.costoFinancieroUSD)}
-                    onChange={(e)=>onCellEdit(r.res_id,'costoFinancieroUSD',e.target.value)}
-                    className="mini-popover__field"
-                  />
-                </td>
-
-                <td className="td td--money-strong">{money(K, 'USD')}</td>
-
-                <td className="td">
-                  <input
-                    type="text"
-                    defaultValue={a.observaciones || ''}
-                    onChange={(e)=>onObsEdit(r.res_id, e.target.value)}
-                    className="mini-popover__field"
-                  />
-                  {/* método + concepto del pago (igual que en Planilla) */}
-                  <div className="liq-pay-meta">
-                    {r.pay_method || '—'} {r.pay_concept ? `· ${r.pay_concept}` : ''}
-                  </div>
-                </td>
-              </tr>
-            );
-          };
-
-          return (
-            <div className="liq-sections">
-              {/* === ARS === */}
-              <section className="liq-card">
-                <h2 className="prop-group__title">Pagos en $</h2>
-                <table className="table btable liq-table">
-                  <Header />
-                  <tbody>
-                    {byCur.ARS.map((r) => <Row key={`${r.res_id}_ARS_${r._payRow?1:0}`} {...r} />)}
-                    {!byCur.ARS.length && (
-                      <tr><td className="td" colSpan={11} style={{opacity:.6}}>Sin pagos en ARS</td></tr>
+        {/* ===== Vista POR UNIDAD: por moneda ===== */}
+        {!loading && hasRun && mode === 'unidad' && (
+          <>
+            {/* Pagos en ARS */}
+            <section className="liq-card">
+              <h2 className="prop-group__title">Pagos en $</h2>
+              <table className="table btable liq-table">
+                <thead>
+                  <tr>
+                    <th className="th">reserva</th>
+                    <th className="th">Huesped</th>
+                    <th className="th">check in</th>
+                    <th className="th">check out</th>
+                    <th className="th">Canal</th>
+                    <th className="th">Forma de cobro</th>
+                    <th className="th">Cobrado Bruto</th>
+                    <th className="th">Comisión Canal</th>
+                    <th className="th">Tasa limpieza</th>
+                    <th className="th">Costo financiero</th>
+                    <th className="th">Neto</th>
+                    <th className="th">OBSERVACIONES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byCur.ARS.length
+                    ? byCur.ARS.map((r, i) => <Row key={`ARS_${r.res_id}_${i}`} {...r} />)
+                    : (
+                      <tr>
+                        <td className="td" colSpan={12} style={{ opacity: .6 }}>Sin pagos en ARS</td>
+                      </tr>
                     )}
-                  </tbody>
-                </table>
-              </section>
+                </tbody>
+              </table>
+            </section>
 
-              {/* === USD === */}
-              <section className="liq-card">
-                <h2 className="prop-group__title">Pagos en USD</h2>
-                <table className="table btable liq-table">
-                  <Header />
-                  <tbody>
-                    {byCur.USD.map((r) => <Row key={`${r.res_id}_USD_${r._payRow?1:0}`} {...r} />)}
-                    {!byCur.USD.length && (
-                      <tr><td className="td" colSpan={11} style={{opacity:.6}}>Sin pagos en USD</td></tr>
+            {/* Pagos en USD */}
+            <section className="liq-card">
+              <h2 className="prop-group__title">Pagos en USD</h2>
+              <table className="table btable liq-table">
+                <thead>
+                  <tr>
+                    <th className="th">reserva</th>
+                    <th className="th">Huesped</th>
+                    <th className="th">check in</th>
+                    <th className="th">check out</th>
+                    <th className="th">Canal</th>
+                    <th className="th">Forma de cobro</th>
+                    <th className="th">Cobrado Bruto</th>
+                    <th className="th">Comisión Canal</th>
+                    <th className="th">Tasa limpieza</th>
+                    <th className="th">Costo financiero</th>
+                    <th className="th">Neto</th>
+                    <th className="th">OBSERVACIONES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byCur.USD.length
+                    ? byCur.USD.map((r, i) => <Row key={`USD_${r.res_id}_${i}`} {...r} />)
+                    : (
+                      <tr>
+                        <td className="td" colSpan={12} style={{ opacity: .6 }}>Sin pagos en USD</td>
+                      </tr>
                     )}
-                  </tbody>
-                </table>
-              </section>
-            </div>
-          );
-        })()}
+                </tbody>
+              </table>
+            </section>
+          </>
+        )}
 
-        {/* -------------- Vista POR PROPIEDAD -------------- */}
-        {!loading && hasRun && mode === 'propiedad' && groups && (
-          <div className="liq-sections">
-            {/* Bloque ARS */}
+        {/* ===== Vista POR PROPIEDAD (opcional, como la tenías) ===== */}
+        {!loading && hasRun && mode === 'propiedad' && groupsProp && (
+          <div style={{ display: 'grid', gap: 16 }}>
+            {/* ARS */}
             <section className="liq-card">
               <h2 className="prop-group__title">Reservas en $</h2>
-              {Object.entries(groups.ARS || {}).map(([deptKey, obj]) => (
+              {Object.entries(groupsProp.ARS || {}).map(([deptKey, obj]) => (
                 <div key={'ARS_' + deptKey} className="prop-group">
                   <h3 className="prop-group__title">{obj.depto || deptKey}</h3>
-                  <table className="table liq-table">
+                  <table className="table" style={{ width: '100%' }}>
                     <thead>
                       <tr>
                         <th className="th">reserva</th>
@@ -555,13 +583,13 @@ export default function LiquidacionesPage() {
               ))}
             </section>
 
-            {/* Bloque USD */}
+            {/* USD */}
             <section className="liq-card">
               <h2 className="prop-group__title">Reservas en USD</h2>
-              {Object.entries(groups.USD || {}).map(([deptKey, obj]) => (
+              {Object.entries(groupsProp.USD || {}).map(([deptKey, obj]) => (
                 <div key={'USD_' + deptKey} className="prop-group">
                   <h3 className="prop-group__title">{obj.depto || deptKey}</h3>
-                  <table className="table liq-table">
+                  <table className="table" style={{ width: '100%' }}>
                     <thead>
                       <tr>
                         <th className="th">reserva</th>
@@ -588,15 +616,12 @@ export default function LiquidacionesPage() {
             </section>
           </div>
         )}
-
-        {/* Estado "sin resultados" cuando ya buscaste */}
-        {!loading && hasRun && mode === 'unidad' && !buildPaymentRows(rows).ARS.length && !buildPaymentRows(rows).USD.length && (
-          <div className="liq-empty">No hay resultados para los filtros seleccionados.</div>
-        )}
       </main>
     </div>
   );
 }
+
+
 
 
 

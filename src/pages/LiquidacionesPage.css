@@ -89,3 +89,24 @@
 @media (max-width: 640px) {
   .liq-filter { min-width: 180px; }
 }
+
+/* Ancho “15 caracteres” aprox y alineado a la derecha */
+.num-input {
+  width: 15ch;
+  max-width: 15ch;
+  text-align: right;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+/* Columna “Forma de cobro” con tipografía monoespaciada y cortes limpios */
+.td--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Cards/Secciones igual a lo que ya tenés */
+.liq-card { background:#fff; border-radius:8px; padding:12px; }
