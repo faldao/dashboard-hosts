@@ -295,151 +295,185 @@ export default function LiquidacionesPage() {
         return { num, str, onChange, onBlur, setBoth };
     }
 
-    // =====================================================
-    // Render de una fila (Row) para tablas por moneda
-    // =====================================================
-    // Requiere helpers: parseNumberEs, formatNumberEs, moneyIntl, getFxRateForRow
-    // Props esperadas en `r`:
-    //   res_id, _res (la reserva completa para leer accounting y fx)
-    //   id_human, huesped, checkin, checkout, canal
-    //   pay_currency ('ARS' | 'USD'), pay_amount (número bruto en su moneda)
-    //   pay_method, pay_concept, fx_used (opcional; si no viene, se calcula)
-    // =====================================================
-    const Row = (r) => {
-        const a = r._res?.accounting || {};
-        const fx = r.fx_used || getFxRateForRow(r._res, null) || 0; // TC del check-in
+// -----------------------------------------------------
+// Hook chiquito para manejar inputs monetarios con
+// máscara es-AR mientras se escribe (recalcula en vivo)
+// -----------------------------------------------------
+function useMoneyInput(initialNumber = 0, currency = 'USD') {
+  const [num, setNum] = React.useState(Number(initialNumber) || 0);
+  const [str, setStr] = React.useState(
+    Number.isFinite(initialNumber) ? formatNumberEs(initialNumber, currency) : ''
+  );
 
-        // EDITABLES (controlados con máscara es-AR)
-        const brutoCtl = useMoneyInput(Number(r.pay_amount) || 0, r.pay_currency); // bruto en moneda del pago
-        const comisionCtl = useMoneyInput(Number(a.comisionCanalUSD) || 0, 'USD');
-        const tasaCtl = useMoneyInput(Number(a.tasaLimpiezaUSD) || 0, 'USD');
-        const costoCtl = useMoneyInput(Number(a.costoFinancieroUSD) || 0, 'USD');
-        const [obs, setObs] = React.useState(a.observaciones || '');
+  const onChange = (e) => {
+    const s = e.target.value;
+    setStr(s);
+    const n = parseNumberEs(s);
+    setNum(Number.isFinite(n) ? n : 0); // si no parsea o está vacío => 0 en vivo
+  };
 
-        // ---- Neto en vivo (se actualiza al teclear) ----
-        const bruto = brutoCtl.num;
-        const comis = comisionCtl.num;
-        const tasa = tasaCtl.num;
-        const costo = costoCtl.num;
+  const onBlur = () => setStr(formatNumberEs(num, currency));
+  const onFocus = (e) => e.target.select();
 
-        // Si pago es ARS, para contabilidad convertimos H/I/J a ARS con TC
-        const brutoUSD = r.pay_currency === 'USD' ? bruto : (fx ? +(bruto / fx).toFixed(2) : 0);
+  // útil si desde afuera querés setear por código
+  const setBoth = (v) => {
+    const n = Number(v) || 0;
+    setNum(n);
+    setStr(formatNumberEs(n, currency));
+  };
 
-        let netAmount, netCur;
-        if (r.pay_currency === 'USD') {
-            netAmount = +(brutoUSD + comis + tasa + costo).toFixed(2);
-            netCur = 'USD';
-        } else {
-            const H_ars = fx ? comis * fx : 0;
-            const I_ars = fx ? tasa * fx : 0;
-            const J_ars = fx ? costo * fx : 0;
-            netAmount = +(bruto + H_ars + I_ars + J_ars).toFixed(2);
-            netCur = 'ARS';
-        }
+  return { num, str, onChange, onBlur, onFocus, setBoth };
+}
 
-        // ---- Guardar fila (sin debounce) ----
-        const onSaveRow = async () => {
-            const payload = {
-                brutoUSD: r.pay_currency === 'USD' ? bruto : brutoUSD,
-                comisionCanalUSD: comis,
-                tasaLimpiezaUSD: tasa,
-                costoFinancieroUSD: costo,
-                observaciones: obs,
-            };
+// =====================================================
+// Render de una fila (Row) para tablas por moneda
+// Requiere helpers: parseNumberEs, formatNumberEs, moneyIntl, getFxRateForRow
+// Props esperadas en `r`:
+//   res_id, _res (la reserva completa para leer accounting y fx)
+//   id_human, huesped, checkin, checkout, canal
+//   pay_currency ('ARS' | 'USD'), pay_amount (número bruto en su moneda)
+//   pay_method, pay_concept, fx_used (opcional; si no viene, se calcula)
+// =====================================================
+const Row = (r) => {
+  const a  = r._res?.accounting || {};
+  const fx = r.fx_used || getFxRateForRow(r._res, null) || 0; // TC del check-in
 
-            await axios.post('/api/liquidaciones/accountingMutations', { id: r.res_id, payload });
-            try {
-                await axios.post('/api/liquidaciones/activityLog', {
-                    type: 'acc_update',
-                    message: 'manual save liquidacion',
-                    meta: { id: r.res_id, payload },
-                });
-            } catch { }
-        };
+  // EDITABLES (controlados con máscara es-AR)
+  const brutoCtl    = useMoneyInput(Number(r.pay_amount)            || 0, r.pay_currency); // bruto en moneda del pago
+  const comisionCtl = useMoneyInput(Number(a.comisionCanalUSD)      || 0, 'USD');
+  const tasaCtl     = useMoneyInput(Number(a.tasaLimpiezaUSD)       || 0, 'USD');
+  const costoCtl    = useMoneyInput(Number(a.costoFinancieroUSD)    || 0, 'USD');
+  const [obs, setObs] = React.useState(a.observaciones || '');
 
-        return (
-            <tr className="tr">
-                {/* NO EDITABLES → cursor prohibido */}
-                <td className="td td--ro">{r.id_human}</td>
-                <td className="td td--ro">{r.huesped}</td>
-                <td className="td td--ro">{r.checkin}</td>
-                <td className="td td--ro">{r.checkout}</td>
-                <td className="td td--ro">{r.canal}</td>
+  // ---- Neto en vivo (reacciona a cada tecla) ----
+  const bruto = brutoCtl.num;
+  const comis = comisionCtl.num;
+  const tasa  = tasaCtl.num;
+  const costo = costoCtl.num;
 
-                {/* Forma de cobro */}
-                <td className="td td--mono td--ro">
-                    {[r.pay_method || '—', r.pay_concept || ''].filter(Boolean).join(' · ')}
-                </td>
+  // Si pago es ARS, para contabilidad convertimos el bruto a USD con TC
+  const brutoUSD = r.pay_currency === 'USD' ? bruto : (fx ? +(bruto / fx).toFixed(2) : 0);
 
-                {/* EDITABLES (sin borde, fondo gris) */}
-                <td className="td">
-                    <input
-                        type="text"
-                        className="num-input editable"
-                        value={brutoCtl.str}
-                        onChange={brutoCtl.onChange}
-                        onBlur={brutoCtl.onBlur}
-                        inputMode="decimal"
-                    />
-                </td>
+  let netAmount, netCur;
+  if (r.pay_currency === 'USD') {
+    netAmount = +(brutoUSD + comis + tasa + costo).toFixed(2);
+    netCur = 'USD';
+  } else {
+    const H_ars = fx ? comis * fx : 0;
+    const I_ars = fx ? tasa  * fx : 0;
+    const J_ars = fx ? costo * fx : 0;
+    netAmount = +(bruto + H_ars + I_ars + J_ars).toFixed(2);
+    netCur = 'ARS';
+  }
 
-                <td className="td">
-                    <input
-                        type="text"
-                        className="num-input editable"
-                        value={comisionCtl.str}
-                        onChange={comisionCtl.onChange}
-                        onBlur={comisionCtl.onBlur}
-                        inputMode="decimal"
-                    />
-                </td>
-
-                <td className="td">
-                    <input
-                        type="text"
-                        className="num-input editable"
-                        value={tasaCtl.str}
-                        onChange={tasaCtl.onChange}
-                        onBlur={tasaCtl.onBlur}
-                        inputMode="decimal"
-                    />
-                </td>
-
-                <td className="td">
-                    <input
-                        type="text"
-                        className="num-input editable"
-                        value={costoCtl.str}
-                        onChange={costoCtl.onChange}
-                        onBlur={costoCtl.onBlur}
-                        inputMode="decimal"
-                    />
-                </td>
-
-                {/* Neto (reacciona en vivo) */}
-                <td className="td td--money-strong td--ro">{moneyIntl(netAmount, netCur)}</td>
-
-                {/* Observaciones editable (sin borde) */}
-                <td className="td">
-                    <input
-                        type="text"
-                        className="text-input editable"
-                        value={obs}
-                        onChange={(e) => setObs(e.target.value)}
-                    />
-                </td>
-
-                {/* Botón guardar: círculo blanco + tilde negro */}
-                <td className="td td--savebtn">
-                    <button className="icon-btn icon-btn--check" title="Guardar" onClick={onSaveRow} aria-label="Guardar línea">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M20 7L9 18l-5-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </button>
-                </td>
-            </tr>
-        );
+  // ---- Guardar fila (sin debounce) ----
+  const onSaveRow = async () => {
+    const payload = {
+      brutoUSD: r.pay_currency === 'USD' ? bruto : brutoUSD,
+      comisionCanalUSD: comis,
+      tasaLimpiezaUSD:  tasa,
+      costoFinancieroUSD: costo,
+      observaciones: obs,
     };
+
+    await axios.post('/api/liquidaciones/accountingMutations', { id: r.res_id, payload });
+    try {
+      await axios.post('/api/liquidaciones/activityLog', {
+        type: 'acc_update',
+        message: 'manual save liquidacion',
+        meta: { id: r.res_id, payload },
+      });
+    } catch {}
+  };
+
+  return (
+    <tr className="tr">
+      {/* NO EDITABLES → cursor prohibido */}
+      <td className="td td--ro">{r.id_human}</td>
+      <td className="td td--ro">{r.huesped}</td>
+      <td className="td td--ro">{r.checkin}</td>
+      <td className="td td--ro">{r.checkout}</td>
+      <td className="td td--ro">{r.canal}</td>
+
+      {/* Forma de cobro */}
+      <td className="td td--mono td--ro">
+        {[r.pay_method || '—', r.pay_concept || ''].filter(Boolean).join(' · ')}
+      </td>
+
+      {/* EDITABLES (sin borde, fondo gris) */}
+      <td className="td">
+        <input
+          type="text"
+          className="num-input editable"
+          value={brutoCtl.str}
+          onChange={brutoCtl.onChange}
+          onBlur={brutoCtl.onBlur}
+          onFocus={brutoCtl.onFocus}
+          inputMode="decimal"
+        />
+      </td>
+
+      <td className="td">
+        <input
+          type="text"
+          className="num-input editable"
+          value={comisionCtl.str}
+          onChange={comisionCtl.onChange}
+          onBlur={comisionCtl.onBlur}
+          onFocus={comisionCtl.onFocus}
+          inputMode="decimal"
+        />
+      </td>
+
+      <td className="td">
+        <input
+          type="text"
+          className="num-input editable"
+          value={tasaCtl.str}
+          onChange={tasaCtl.onChange}
+          onBlur={tasaCtl.onBlur}
+          onFocus={tasaCtl.onFocus}
+          inputMode="decimal"
+        />
+      </td>
+
+      <td className="td">
+        <input
+          type="text"
+          className="num-input editable"
+          value={costoCtl.str}
+          onChange={costoCtl.onChange}
+          onBlur={costoCtl.onBlur}
+          onFocus={costoCtl.onFocus}
+          inputMode="decimal"
+        />
+      </td>
+
+      {/* Neto (reacciona en vivo) */}
+      <td className="td td--money-strong td--ro">{moneyIntl(netAmount, netCur)}</td>
+
+      {/* Observaciones editable (sin borde) */}
+      <td className="td">
+        <input
+          type="text"
+          className="text-input editable"
+          value={obs}
+          onChange={(e) => setObs(e.target.value)}
+        />
+      </td>
+
+      {/* Botón guardar: círculo blanco + tilde negro */}
+      <td className="td td--savebtn">
+        <button className="icon-btn icon-btn--check" title="Guardar" onClick={onSaveRow} aria-label="Guardar línea">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 7L9 18l-5-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      </td>
+    </tr>
+  );
+};
+
 
     // =====================================================
     // UI
