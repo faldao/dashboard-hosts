@@ -1,112 +1,47 @@
 /* =========================================================
    LiquidacionesPage — estilos específicos
-   (reusa los tokens/utilidades globales ya definidos)
 ========================================================= */
 
-/* Layout de la app */
-.liq-app {
-  background: var(--panel-bg);
-}
+.liq-app { background: var(--panel-bg); }
 
-/* Header y barra de filtros */
-.liq-filters {
-  display: flex;
-  align-items: flex-end;
-  gap: .75rem;
-  flex-wrap: wrap;
-  margin-top: .5rem;
-}
-
-.liq-filter {
-  display: flex;
-  flex-direction: column;
-  gap: .25rem;
-  min-width: 220px;
-}
-
-.liq-filter__label {
-  font-size: .825rem;
-  color: #4b5563;
-  font-weight: 500;
-}
-
-.liq-filter__control {
-  /* reusa .input--date global para inputs/selects */
-}
-
-/* Botonera */
-.liq-actions {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-}
-
-.btn--active {
-  background: #111827;
-  color: #fff;
-}
+/* Header y filtros */
+.liq-filters { display:flex; align-items:flex-end; gap:.75rem; flex-wrap:wrap; margin-top:.5rem; }
+.liq-filter { display:flex; flex-direction:column; gap:.25rem; min-width:220px; }
+.liq-filter__label { font-size:.825rem; color:#4b5563; font-weight:500; }
+.liq-actions { display:flex; align-items:center; gap:.5rem; }
+.btn--active { background:#111827; color:#fff; }
 
 /* Contenido principal */
-.liq-main {
-  padding: 12px;
-}
+.liq-main { padding:12px; }
 
-/* Tarjeta/Sección blanca (propiedad) */
-.liq-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 12px;
-}
+/* Tarjeta / sección blanca */
+.liq-card { background:#fff; border-radius:8px; padding:12px; }
 
-/* Tabla principal (por unidad) */
-.liq-table {
-  background: #fff;
-  border-radius: 8px;
-}
+/* Tabla principal */
+.liq-table { background:#fff; border-radius:8px; }
+.table.btable.liq-table tbody tr { height:35px; border-bottom:1px solid #e5e7eb; transition:background .15s ease; }
+.table.btable.liq-table tbody tr:hover { background-color:#f8fafc; }
+.td { vertical-align:middle; padding:6px 8px; }
 
-/* Subtítulos de grupos (por propiedad) */
-.prop-group {
-  margin: 16px 0 24px;
-}
-.prop-group__title {
-  font-size: 14px;
-  font-weight: 600;
-  opacity: .75;
-  margin: 8px 0 12px;
-  border-left: 3px solid #ddd;
-  padding-left: 8px;
-}
+/* Inputs numéricos (alineados, 15 caracteres aprox) */
+.num-input { width:15ch; max-width:15ch; text-align:right; border:1px solid #ccc; border-radius:6px; padding:4px 6px; font-size:.9rem; }
+
+/* Botón guardar */
+.btn-save { background:#16a34a; color:#fff; border:0; border-radius:6px; padding:4px 8px; cursor:pointer; font-weight:700; line-height:1; transition:background .2s ease; }
+.btn-save:hover { background:#15803d; }
+.td--savebtn { text-align:center; width:50px; }
+
+/* Columna “Forma de cobro” monoespaciada */
+.td--mono { font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* Subtítulos y grupos */
+.prop-group { margin:16px 0 24px; }
+.prop-group__title { font-size:14px; font-weight:600; opacity:.75; margin:8px 0 12px; border-left:3px solid #ddd; padding-left:8px; }
 
 /* Loader / vacío */
-.liq-loader {
-  color: #6b7280;
-}
-.liq-empty {
-  color: #6b7280;
-}
+.liq-loader { color:#6b7280; }
+.liq-empty { color:#6b7280; }
 
-/* En móvil: compactar filtros */
-@media (max-width: 640px) {
-  .liq-filter { min-width: 180px; }
-}
+/* Compactar filtros en móvil */
+@media (max-width:640px){ .liq-filter{min-width:180px;} }
 
-/* Ancho “15 caracteres” aprox y alineado a la derecha */
-.num-input {
-  width: 15ch;
-  max-width: 15ch;
-  text-align: right;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 6px 8px;
-}
-
-/* Columna “Forma de cobro” con tipografía monoespaciada y cortes limpios */
-.td--mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Cards/Secciones igual a lo que ya tenés */
-.liq-card { background:#fff; border-radius:8px; padding:12px; }

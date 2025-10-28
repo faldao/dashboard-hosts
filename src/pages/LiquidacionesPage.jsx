@@ -25,28 +25,45 @@ const TZ = 'America/Argentina/Buenos_Aires';
 const nfARS = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const nfUSD = new Intl.NumberFormat('en-US',  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Formatea número con miles según moneda
-const formatNumberEs = (n, currency) => {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return '';
-  return currency === 'USD' ? nfUSD.format(v) : nfARS.format(v);
-};
-
-// Parsea "1.234.567,89" → 1234567.89
-const parseNumberEs = (s) => {
-  if (s == null) return NaN;
-  const str = String(s).trim().replace(/\./g, '').replace(',', '.');
-  const n = Number(str);
+// ===== Helpers de formato (es-AR) =====
+// Convierte "1.234,56" → 1234.56
+function parseNumberEs(str) {
+  if (str == null) return NaN;
+  const s = String(str).trim().replace(/\./g, '').replace(',', '.');
+  const n = Number(s);
   return Number.isFinite(n) ? n : NaN;
-};
+}
 
-// Para mostrar dinero con símbolo/moneda correctos
-const moneyIntl = (n, currency) => {
+// Formatea 1234.56 → "1.234,56"
+function formatNumberEs(n, _cur) {
   const v = Number(n);
   if (!Number.isFinite(v)) return '';
-  if (currency === 'USD') return nfUSD.format(v) + ' USD';
-  return '$ ' + nfARS.format(v);
-};
+  return v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Muestra monto con símbolo según moneda
+function moneyIntl(amount, cur = 'USD') {
+  const v = Number(amount) || 0;
+  const currency = String(cur).toUpperCase();
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(v);
+}
+
+// TC preferido de la reserva (venta, luego promedio, etc.)
+function getFxRateForRow(res, fallback) {
+  try {
+    const fx = res?.usd_fx_on_checkin || {};
+    const buy  = Number(fx.compra);
+    const sell = Number(fx.venta);
+    if (Number.isFinite(sell) && sell > 0) return sell;
+    if (Number.isFinite(buy)  && buy  > 0) return buy;
+  } catch {}
+  return Number.isFinite(fallback) ? fallback : null;
+}
 
 // ---------- Data hooks (propiedades / departamentos) ----------
 function useProperties() {
@@ -114,8 +131,8 @@ function buildByCurrency(items = []) {
         // --- datos visibles ---
         id_human: res.id_human || res.id || '—',
         huesped: res.nombre_huesped || '—',
-        checkin: res.arrival_iso || '—',
-        checkout: res.departure_iso || '—',
+        checkin: res.arrival_iso ? DateTime.fromISO(res.arrival_iso).toFormat('dd/MM/yyyy') : '—',
+checkout: res.departure_iso ? DateTime.fromISO(res.departure_iso).toFormat('dd/MM/yyyy') : '—',
         canal: res.source || res.channel_name || '—',
 
         // forma de cobro
@@ -259,136 +276,158 @@ export default function LiquidacionesPage() {
   // =====================================================
   // Render de una fila (Row) para tablas por moneda
   // =====================================================
-  const Row = (r) => {
-    const a  = r._res?.accounting || {};
-    const fx = r.fx_used || getFxRateForRow(r._res, null) || 0;
+  // =====================================================
+  // Render de una fila (Row) para tablas por moneda
+  // =====================================================
+  // Requiere helpers: parseNumberEs, formatNumberEs, moneyIntl, getFxRateForRow
+// Props esperadas en `r`:
+//   res_id, _res (la reserva completa para leer accounting y fx)
+//   id_human, huesped, checkin, checkout, canal
+//   pay_currency ('ARS' | 'USD'), pay_amount (número bruto en su moneda)
+//   pay_method, pay_concept, fx_used (opcional; si no viene, se calcula)
+// =====================================================
+const Row = (r) => {
+  // ── datos base y estado inicial de edición ────────────────────────────────
+  const a  = r._res?.accounting || {};
+  const fx = r.fx_used || getFxRateForRow(r._res, null) || 0; // TC del check-in
 
-    // BRUTO mostrado (en moneda del pago)
-    const brutoShown = Number(r.pay_amount) || 0;
+  // valores editables
+  const [bruto, setBruto]       = React.useState(Number(r.pay_amount) || 0);
+  const [comision, setComision] = React.useState(Number(a.comisionCanalUSD) || 0);
+  const [tasa, setTasa]         = React.useState(Number(a.tasaLimpiezaUSD) || 0);
+  const [costo, setCosto]       = React.useState(Number(a.costoFinancieroUSD) || 0);
+  const [obs, setObs]           = React.useState(a.observaciones || '');
 
-    // BRUTO en USD (para guardar si el usuario edita)
-    const brutoUSD = r.pay_currency === 'USD'
-      ? brutoShown
-      : (fx ? +(brutoShown / fx).toFixed(2) : 0);
+  // ── cálculo de neto en vivo (según moneda de pago) ────────────────────────
+  // Si el pago original es ARS, el bruto “contable” en USD = ARS/TC
+  const brutoUSD = r.pay_currency === 'USD'
+    ? bruto
+    : (fx ? +(bruto / fx).toFixed(2) : 0);
 
-    // Edit "Cobrado Bruto" → guarda en USD
-    const onChangeBruto = (e) => {
-      const raw = e.target.value;
-      const n = parseNumberEs(raw);
-      if (!Number.isFinite(n)) return;
-      if (r.pay_currency === 'USD') {
-        onCellEdit(r.res_id, 'brutoUSD', n);
-      } else {
-        const usd = fx ? +(n / fx).toFixed(2) : 0;
-        onCellEdit(r.res_id, 'brutoUSD', usd);
-      }
-    };
-    const onBlurFormatBruto = (e) => {
-      const n = parseNumberEs(e.target.value);
-      e.target.value = Number.isFinite(n) ? formatNumberEs(n, r.pay_currency) : '';
-    };
+  let netAmount, netCur;
+  if (r.pay_currency === 'USD') {
+    // Todo en USD
+    netAmount = +(brutoUSD + comision + tasa + costo).toFixed(2);
+    netCur = 'USD';
+  } else {
+    // Bruto en ARS, extras en USD → los pasamos a ARS con TC
+    const H_ars = fx ? comision * fx : 0;
+    const I_ars = fx ? tasa * fx : 0;
+    const J_ars = fx ? costo * fx : 0;
+    netAmount = +(bruto + H_ars + I_ars + J_ars).toFixed(2);
+    netCur = 'ARS';
+  }
 
-    // Edit H/I/J (siempre en USD)
-    const onEditUSD = (field) => (e) => {
-      const n = parseNumberEs(e.target.value);
-      onCellEdit(r.res_id, field, Number.isFinite(n) ? n : null);
-    };
-    const onBlurUSD = (e) => {
-      const n = parseNumberEs(e.target.value);
-      e.target.value = Number.isFinite(n) ? formatNumberEs(n, 'USD') : '';
-    };
-
-    // NETO: suma bruto + H + I + J (según moneda de la fila)
-    const H_usd = Number(a.comisionCanalUSD) || 0;
-    const I_usd = Number(a.tasaLimpiezaUSD) || 0;
-    const J_usd = Number(a.costoFinancieroUSD) || 0;
-
-    let netAmount, netCur;
-    if (r.pay_currency === 'USD') {
-      netAmount = +(brutoUSD + H_usd + I_usd + J_usd).toFixed(2);
-      netCur = 'USD';
-    } else {
-      const H_ars = fx ? H_usd * fx : 0;
-      const I_ars = fx ? I_usd * fx : 0;
-      const J_ars = fx ? J_usd * fx : 0;
-      netAmount = +(brutoShown + H_ars + I_ars + J_ars).toFixed(2);
-      netCur = 'ARS';
-    }
-
-    return (
-      <tr className="tr">
-        <td className="td">{r.id_human}</td>
-        <td className="td">{r.huesped}</td>
-        <td className="td">{r.checkin}</td>
-        <td className="td">{r.checkout}</td>
-        <td className="td">{r.canal}</td>
-
-        {/* Forma de cobro (método · concepto) */}
-        <td className="td td--mono">{[r.pay_method || '—', r.pay_concept || ''].filter(Boolean).join(' · ')}</td>
-
-        {/* Cobrado Bruto (en moneda del pago) */}
-        <td className="td">
-          <input
-            type="text"
-            defaultValue={formatNumberEs(brutoShown, r.pay_currency)}
-            onChange={onChangeBruto}
-            onBlur={onBlurFormatBruto}
-            className="num-input"
-            maxLength={20}
-          />
-        </td>
-
-        {/* Comisión Canal (USD) */}
-        <td className="td">
-          <input
-            type="text"
-            defaultValue={formatNumberEs(a.comisionCanalUSD ?? '', 'USD')}
-            onChange={onEditUSD('comisionCanalUSD')}
-            onBlur={onBlurUSD}
-            className="num-input"
-            maxLength={20}
-          />
-        </td>
-
-        {/* Tasa limpieza (USD) */}
-        <td className="td">
-          <input
-            type="text"
-            defaultValue={formatNumberEs(a.tasaLimpiezaUSD ?? '', 'USD')}
-            onChange={onEditUSD('tasaLimpiezaUSD')}
-            onBlur={onBlurUSD}
-            className="num-input"
-            maxLength={20}
-          />
-        </td>
-
-        {/* Costo financiero (USD) */}
-        <td className="td">
-          <input
-            type="text"
-            defaultValue={formatNumberEs(a.costoFinancieroUSD ?? '', 'USD')}
-            onChange={onEditUSD('costoFinancieroUSD')}
-            onBlur={onBlurUSD}
-            className="num-input"
-            maxLength={20}
-          />
-        </td>
-
-        {/* Neto (en moneda de la fila) */}
-        <td className="td td--money-strong">{moneyIntl(netAmount, netCur)}</td>
-
-        {/* Observaciones (SIN forma de cobro debajo) */}
-        <td className="td">
-          <input
-            type="text"
-            defaultValue={a.observaciones || ''}
-            onChange={(e) => onObsEdit(r.res_id, e.target.value)}
-            className="mini-popover__field"
-          />
-        </td>
-      </tr>
-    );
+  // ── manejo de inputs numéricos con formato ES (“1.234,56”) ───────────────
+  const onChangeNum = (setter) => (e) => {
+    const n = parseNumberEs(e.target.value);
+    setter(Number.isFinite(n) ? n : 0);
   };
+  const onBlurFormat = (val, setter, cur) => (e) => {
+    const n = parseNumberEs(e.target.value);
+    setter(Number.isFinite(n) ? n : 0);
+    e.target.value = Number.isFinite(n) ? formatNumberEs(n, cur) : '';
+  };
+
+  // ── guardado inmediato de la fila (botón ✔️) ─────────────────────────────
+  const onSaveRow = async () => {
+    // En Firestore siempre guardamos USD (coherente con contabilidad)
+    const payload = {
+      brutoUSD: r.pay_currency === 'USD' ? bruto : brutoUSD,
+      comisionCanalUSD: comision,
+      tasaLimpiezaUSD:  tasa,
+      costoFinancieroUSD: costo,
+      observaciones: obs,
+    };
+
+    await axios.post('/api/liquidaciones/accountingMutations', { id: r.res_id, payload });
+    try {
+      await axios.post('/api/liquidaciones/activityLog', {
+        type: 'acc_update',
+        message: 'manual save liquidacion',
+        meta: { id: r.res_id, payload },
+      });
+    } catch {}
+  };
+
+  // ── UI ────────────────────────────────────────────────────────────────────
+  return (
+    <tr className="tr">
+      <td className="td">{r.id_human}</td>
+      <td className="td">{r.huesped}</td>
+      <td className="td">{r.checkin /* dd/MM/yyyy ya formateado arriba */}</td>
+      <td className="td">{r.checkout}</td>
+      <td className="td">{r.canal}</td>
+
+      {/* Forma de cobro (método · concepto) */}
+      <td className="td td--mono">
+        {[r.pay_method || '—', r.pay_concept || ''].filter(Boolean).join(' · ')}
+      </td>
+
+      {/* Cobrado Bruto (en la moneda del pago) */}
+      <td className="td">
+        <input
+          type="text"
+          defaultValue={formatNumberEs(bruto, r.pay_currency)}
+          onChange={onChangeNum(setBruto)}
+          onBlur={onBlurFormat(bruto, setBruto, r.pay_currency)}
+          className="num-input"
+        />
+      </td>
+
+      {/* Comisión canal (guardamos en USD) */}
+      <td className="td">
+        <input
+          type="text"
+          defaultValue={formatNumberEs(comision, 'USD')}
+          onChange={onChangeNum(setComision)}
+          onBlur={onBlurFormat(comision, setComision, 'USD')}
+          className="num-input"
+        />
+      </td>
+
+      {/* Tasa limpieza (USD) */}
+      <td className="td">
+        <input
+          type="text"
+          defaultValue={formatNumberEs(tasa, 'USD')}
+          onChange={onChangeNum(setTasa)}
+          onBlur={onBlurFormat(tasa, setTasa, 'USD')}
+          className="num-input"
+        />
+      </td>
+
+      {/* Costo financiero (USD) */}
+      <td className="td">
+        <input
+          type="text"
+          defaultValue={formatNumberEs(costo, 'USD')}
+          onChange={onChangeNum(setCosto)}
+          onBlur={onBlurFormat(costo, setCosto, 'USD')}
+          className="num-input"
+        />
+      </td>
+
+      {/* Neto dinámico con símbolo y moneda correctos */}
+      <td className="td td--money-strong">{moneyIntl(netAmount, netCur)}</td>
+
+      {/* Observaciones (texto libre) */}
+      <td className="td">
+        <input
+          type="text"
+          value={obs}
+          onChange={(e) => setObs(e.target.value)}
+          className="mini-popover__field"
+        />
+      </td>
+
+      {/* Guardar fila */}
+      <td className="td td--savebtn">
+        <button className="btn-save" title="Guardar" onClick={onSaveRow}>✔️</button>
+      </td>
+    </tr>
+  );
+};
 
   // =====================================================
   // UI
