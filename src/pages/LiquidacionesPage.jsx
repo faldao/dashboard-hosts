@@ -53,17 +53,6 @@ function moneyIntl(amount, cur = 'USD') {
   }).format(v);
 }
 
-// TC preferido de la reserva (venta, luego promedio, etc.)
-function getFxRateForRow(res, fallback) {
-  try {
-    const fx = res?.usd_fx_on_checkin || {};
-    const buy  = Number(fx.compra);
-    const sell = Number(fx.venta);
-    if (Number.isFinite(sell) && sell > 0) return sell;
-    if (Number.isFinite(buy)  && buy  > 0) return buy;
-  } catch {}
-  return Number.isFinite(fallback) ? fallback : null;
-}
 
 // ---------- Data hooks (propiedades / departamentos) ----------
 function useProperties() {
@@ -104,11 +93,16 @@ const getFxFromReservation = (res) => {
   return null;
 };
 
-const getFxRateForRow = (res, fallback = null) => {
-  const r = Number(getFxFromReservation(res));
-  if (Number.isFinite(r) && r > 0) return r;
-  return Number.isFinite(fallback) && fallback > 0 ? fallback : null;
-};
+function getFxRateForRow(res, fallback) {
+  try {
+    const fx = res?.usd_fx_on_checkin || {};
+    const buy  = Number(fx.compra);
+    const sell = Number(fx.venta);
+    if (Number.isFinite(sell) && sell > 0) return sell;
+    if (Number.isFinite(buy)  && buy  > 0) return buy;
+  } catch {}
+  return Number.isFinite(fallback) ? fallback : null;
+}
 
 // ---------- Transforma reservas en filas por moneda ----------
 function buildByCurrency(items = []) {
