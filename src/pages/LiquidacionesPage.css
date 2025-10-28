@@ -1,37 +1,60 @@
 /* =========================================================
-   LiquidacionesPage — estilos específicos (limpio)
+   LiquidacionesPage — Estilos Específicos
 ========================================================= */
-.liq-app{background:var(--panel-bg);}
+:root{--panel-bg:#f9fafb;}
+.liq-app{background:var(--panel-bg);min-height:100vh;}
+/* --- Header y Filtros --- */
+.header{background:#fff;padding:12px;border-bottom:1px solid #e5e7eb;}
+.header__bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;}
+.header__left{display:flex;align-items:baseline;gap:1rem;}
+.header__title{font-size:1.5rem;font-weight:700;color:#111827;}
+.header__date{font-size:0.875rem;color:#4b5563;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
+.header__right{flex-shrink:0;}
+/* --- Contenedor de Filtros --- */
 .liq-filters{display:flex;align-items:flex-end;gap:.75rem;flex-wrap:wrap;margin-top:.5rem;}
-.liq-filter{display:flex;flex-direction:column;gap:.25rem;min-width:220px;}
+/* --- Filtro Individual --- */
+.liq-filter{display:flex;flex-direction:column;gap:.25rem;min-width:200px;}
 .liq-filter__label{font-size:.825rem;color:#4b5563;font-weight:500;}
-.liq-actions{display:flex;align-items:center;gap:.5rem;}
-.btn--active{background:#111827;color:#fff;}
+/* --- Estilo genérico para inputs y selects en filtros --- */
+.liq-filter__control,.input--date{padding:0.5rem 0.75rem;border-radius:0.375rem;border:1px solid #d1d5db;background-color:#fff;font-size:0.875rem;line-height:1.25rem;}
+.liq-filter__control:disabled{background-color:#f3f4f6;cursor:not-allowed;opacity:0.7;}
+/* --- Contenedor de Acciones (Botones) --- */
+.liq-actions{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-left:auto;}
+/* --- Botones --- */
+.btn{padding:0.5rem 1rem;border-radius:0.375rem;border:1px solid #d1d5db;background-color:#ffffff;cursor:pointer;font-size:0.875rem;line-height:1.25rem;font-weight:500;color:#374151;transition:background-color 0.15s ease;}
+.btn:hover{background-color:#f9fafb;}
+.btn:disabled{background-color:#e5e7eb;color:#9ca3af;cursor:not-allowed;border-color:#e5e7eb;}
+.btn--active{background:#111827;color:#fff;border-color:#111827;}
+.btn--active:hover{background:#1f2937;}
+/* --- Contenido Principal y Tablas --- */
 .liq-main{padding:12px;}
-.liq-card{background:#fff;border-radius:8px;padding:12px;}
-.liq-table{background:#fff;border-radius:8px;}
-.table.btable.liq-table tbody tr{height:35px;border-bottom:1px solid #e5e7eb;transition:background .15s ease;}
+/* --- Card Contenedora (para tablas) --- */
+.liq-card{background:#fff;border-radius:8px;padding:12px;margin-bottom:16px;box-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05);overflow-x:auto;}
+/* --- Estilo de Tabla --- */
+.liq-table{background:#fff;border-radius:8px;width:100%;min-width:1200px;}
+.table.btable.liq-table{border-collapse:collapse;}
+.table.btable.liq-table tbody tr{height:38px;border-bottom:1px solid #e5e7eb;transition:background .15s ease;}
 .table.btable.liq-table tbody tr:hover{background:#f8fafc;}
-.td{vertical-align:middle;padding:6px 8px;}
-/* No editables */
-.td--ro{cursor:not-allowed;color:#111827;}
-/* Editables (sin borde, fondo gris, ancho ~15ch) */
-.num-input{width:15ch;max-width:15ch;text-align:right;border:0;border-radius:8px;background:#f3f4f6;padding:6px 8px;font-size:.9rem;}
-.text-input{min-width:22ch;border:0;border-radius:8px;background:#f3f4f6;padding:6px 8px;font-size:.9rem;}
-.editable{cursor:text;}
-.editable:focus{outline:none;box-shadow:0 0 0 2px #e5e7eb inset;}
-/* Botón guardar estilo app */
-.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;border:1px solid #111827;background:#fff;color:#111827;}
-.icon-btn svg{width:16px;height:16px;}
-.icon-btn--check:hover{background:#f9fafb;}
-.td--savebtn{text-align:center;width:50px;}
-/* Forma de cobro monoespaciada */
-.td--mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-/* Subtítulos / grupos */
+/* --- Header de Tabla (TH) --- */
+.th{padding:8px 10px;text-align:left;font-size:0.75rem;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid #e5e7eb;white-space:nowrap;}
+/* --- Celda de Tabla (TD) --- */
+.td{vertical-align:middle;padding:6px 10px;font-size:0.875rem;color:#374151;}
+/* --- Celdas Read-Only y Editables --- */
+.td--ro{cursor:not-allowed;color:#111827;white-space:nowrap;}
+.td--money-strong{font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
+.td--mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;}
+/* --- Input numérico (Bruto, Comisiones, etc.) --- */
+.num-input{width:15ch;max-width:15ch;text-align:right;border:0;border-radius:6px;background:#f3f4f6;padding:6px 8px;font-size:.9rem;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
+/* --- Input de texto (Observaciones) --- */
+.text-input{min-width:22ch;border:0;border-radius:6px;background:#f3f4f6;padding:6px 8px;font-size:.9rem;width:100%;}
+/* --- Estilo común inputs editables --- */
+.editable{cursor:text;transition:box-shadow 0.15s ease,background-color 0.15s ease;}
+.editable:focus{outline:none;box-shadow:0 0 0 2px #c7d2fe;background:#fff;}
+/* --- Grupos y Estados Vacíos --- */
 .prop-group{margin:16px 0 24px;}
-.prop-group__title{font-size:14px;font-weight:600;opacity:.75;margin:8px 0 12px;border-left:3px solid #ddd;padding-left:8px;}
-/* Loader / vacío */
-.liq-loader{color:#6b7280;}
-.liq-empty{color:#6b7280;}
-/* Responsive filtros */
-@media(max-width:640px){.liq-filter{min-width:180px;}}
+.prop-group__title{font-size:14px;font-weight:600;color:#374151;margin:8px 0 12px;border-left:3px solid #cbd5e1;padding-left:8px;}
+.liq-loader{color:#6b7280;padding:1rem;text-align:center;}
+.liq-empty{color:#6b7280;padding:1rem;text-align:center;}
+/* --- Responsive --- */
+@media(max-width:768px){.header__left{flex-direction:column;align-items:flex-start;gap:0.25rem;}.liq-actions{margin-left:0;width:100%;margin-top:0.5rem;}}
+@media(max-width:640px){.liq-filter{min-width:160px;flex-grow:1;}.liq-actions{justify-content:flex-start;width:100%;}}
