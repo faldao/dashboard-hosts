@@ -80,7 +80,7 @@ export default function ExportLiquidacionesExcel({
   const writeSection = (ws, label, rows, styles) => {
     // Fila título de sección (sin fill, negro)
     const secRow = ws.addRow([label]);
-    ws.getRow(secRow.number).height = 15;
+    ws.getRow(secRow.number).height = 22;
     ws.mergeCells(secRow.number, 1, secRow.number, HEADERS.length);
     const c = ws.getCell(secRow.number, 1);
     c.font = styles.fontBlackBold;
@@ -89,7 +89,7 @@ export default function ExportLiquidacionesExcel({
     // Filas de datos o "sin datos"
     if (!rows.length) {
       const r = ws.addRow(["sin datos"]);
-      ws.getRow(r.number).height = 15;
+      ws.getRow(r.number).height = 22;
       r.eachCell((cell, col) => {
         cell.font = styles.fontBase;
         cell.border = styles.borderThin;
@@ -111,7 +111,7 @@ export default function ExportLiquidacionesExcel({
           r.neto,
           r.observaciones,
         ]);
-        ws.getRow(excelRow.number).height = 15;
+        ws.getRow(excelRow.number).height = 22;
         excelRow.eachCell((cell, colNumber) => {
           cell.font = styles.fontBase;
           const isMoney = [7, 8, 9, 10, 11].includes(colNumber); // G,K = 7..11
@@ -125,7 +125,7 @@ export default function ExportLiquidacionesExcel({
     // Fila de total (no combinada)
     const total = rows.reduce((sum, r) => sum + (Number(r.neto) || 0), 0);
     const totalRow = ws.addRow(new Array(HEADERS.length).fill(""));
-    ws.getRow(totalRow.number).height = 15;
+    ws.getRow(totalRow.number).height = 22;
 
     // Estilo de fila entera (negro, sin bordes)
     for (let col = 1; col <= HEADERS.length; col++) {
@@ -185,11 +185,11 @@ export default function ExportLiquidacionesExcel({
       const tRow = ws.addRow([title]);
       ws.mergeCells(1, 1, 1, HEADERS.length);
       ws.getCell(1, 1).font = { name: "Aptos Narrow", size: 13, bold: true };
-      ws.getRow(1).height = 50;
+      ws.getRow(1).height = 30;
 
       // Fila 2: vacía
       ws.addRow([]);
-      ws.getRow(2).height = 15;
+      ws.getRow(2).height = 22;
 
       // Fila 3: headers blanco/negro
       const hr = ws.addRow(HEADERS);
@@ -199,7 +199,7 @@ export default function ExportLiquidacionesExcel({
         cell.alignment = alignCenter;
         cell.border = borderThin;
       });
-      ws.getRow(3).height = 30; // header alto
+      ws.getRow(3).height = 75; // header alto
 
       // Anchos
       const widths = [12, 28, 14, 14, 16, 24, 22, 22, 26, 22, 14, 26];
