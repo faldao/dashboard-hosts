@@ -1,10 +1,10 @@
 // =========================================================
 // LiquidacionesPage.jsx
-// - v11 (Flicker Fix):
+// - v11 (Flicker Fix + Columna Dinámica):
 // - Corrige el "parpadeo" (flicker) al salir de un campo.
-// - Mueve la limpieza de 'setPending({})' al final del
-//   useEffect para evitar el re-render prematuro.
-// - Mejora la lógica de merge de 'observaciones'.
+// - Elimina los botones de "modo" (unidad/propiedad).
+// - Muestra dinámicamente la columna "Departamento" si
+//   se selecciona una Propiedad y "Todos" los Deptos.
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -126,6 +126,9 @@ function buildByCurrency(items = []) {
                 res_id: res.id,
                 _res: res,
                 fx_used: fx,
+                // --- NUEVO ---
+                // Agregamos el nombre del departamento a la fila para mostrarlo
+                departamento_nombre: res.departamento_nombre || res.department_name || '—', 
             };
 
             out[cur].push(row);
@@ -158,7 +161,7 @@ export default function LiquidacionesPage() {
 
     const [fromISO, setFromISO] = useState(monthStart);
     const [toISO, setToISO] = useState(monthEnd);
-    const [mode, setMode] = useState('unidad');
+    // const [mode, setMode] = useState('unidad'); // <-- ELIMINADO
 
     // ----- B) Datos -----
     const [loading, setLoading] = useState(false);
@@ -166,6 +169,10 @@ export default function LiquidacionesPage() {
     const [byCur, setByCur] = useState({ ARS: [], USD: [] });
     const [groupsProp, setGroupsProp] = useState(null);
     const [hasRun, setHasRun] = useState(false);
+
+    // --- NUEVO ---
+    // Determina si mostramos la columna extra de "Departamento"
+    const showDepartmentColumn = propertyId !== 'all' && deptId === '';
 
     const fetchData = async () => {
         setLoading(true);
@@ -338,7 +345,7 @@ export default function LiquidacionesPage() {
     // =====================================================
     // Render de una fila (Row)
     // =====================================================
-    const Row = ({ onCellEdit, onObsEdit, pendingData, ...r }) => {
+    const Row = ({ onCellEdit, onObsEdit, pendingData, showDepartmentColumn, ...r }) => { // <-- Prop 'showDepartmentColumn' agregada
         const fx = r.fx_used || getFxRateForRow(r._res, null) || 0;
 
         // === INICIO DE LA CORRECCIÓN DEL PARPADEO ===
@@ -484,6 +491,11 @@ export default function LiquidacionesPage() {
                         onBlur={onBlurObs}
                     />
                 </td>
+                
+                {/* --- NUEVA COLUMNA CONDICIONAL --- */}
+                {showDepartmentColumn && (
+                    <td className="td td--ro">{r.departamento_nombre}</td>
+                )}
             </tr>
         );
     };
@@ -549,18 +561,7 @@ export default function LiquidacionesPage() {
                         />
                     </div>
                     <div className="liq-actions">
-                        <button
-                            className={`btn ${mode === 'unidad' ? 'btn--active' : ''}`}
-                            onClick={() => setMode('unidad')}
-                        >
-                            Por unidad
-                        </button>
-                        <button
-                            className={`btn ${mode === 'propiedad' ? 'btn--active' : ''}`}
-                            onClick={() => setMode('propiedad')}
-                        >
-                            Por propiedad
-                        </button>
+                        {/* --- BOTONES ELIMINADOS --- */}
                         <button className="btn" onClick={fetchData} disabled={loading}>
                             {loading ? 'Cargando...' : 'Mostrar resultados'}
                         </button>
@@ -577,7 +578,8 @@ export default function LiquidacionesPage() {
                     </div>
                 )}
 
-                {!loading && hasRun && mode === 'unidad' && (
+                {/* --- LÓGICA DE MODO ELIMINADA --- */}
+                {!loading && hasRun && (
                     <>
                         {/* Pagos en ARS */}
                         <section className="liq-card">
@@ -597,17 +599,21 @@ export default function LiquidacionesPage() {
                                         <th className="th">Costo financiero</th>
                                         <th className="th">Neto</th>
                                         <th className="th">OBSERVACIONES</th>
+                                        {/* --- NUEVO HEADER CONDICIONAL --- */}
+                                        {showDepartmentColumn && <th className="th">Departamento</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {byCur.ARS.length
                                         ? byCur.ARS.map((r, i) => {
                                             const pendingData = pending[r.res_id]; // <-- Se pasa 'pendingData'
-                                            return <Row key={`ARS_${r.res_id}_${i}`} {...r} pendingData={pendingData} onCellEdit={onCellEdit} onObsEdit={onObsEdit} />
+                                            {/* --- PROP AGREGADA --- */}
+                                            return <Row key={`ARS_${r.res_id}_${i}`} {...r} pendingData={pendingData} onCellEdit={onCellEdit} onObsEdit={onObsEdit} showDepartmentColumn={showDepartmentColumn} />
                                         })
                                         : (
                                             <tr>
-                                                <td className="td" colSpan={12} style={{ opacity: .6, textAlign: 'center' }}>Sin pagos en ARS</td>
+                                                {/* --- COLSPAN ACTUALIZADO --- */}
+                                                <td className="td" colSpan={showDepartmentColumn ? 13 : 12} style={{ opacity: .6, textAlign: 'center' }}>Sin pagos en ARS</td>
                                             </tr>
                                         )}
                                 </tbody>
@@ -632,17 +638,21 @@ export default function LiquidacionesPage() {
                                         <th className="th">Costo financiero</th>
                                         <th className="th">Neto</th>
                                         <th className="th">OBSERVACIONES</th>
+                                        {/* --- NUEVO HEADER CONDICIONAL --- */}
+                                        {showDepartmentColumn && <th className="th">Departamento</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {byCur.USD.length
                                         ? byCur.USD.map((r, i) => {
                                             const pendingData = pending[r.res_id]; // <-- Se pasa 'pendingData'
-                                            return <Row key={`USD_${r.res_id}_${i}`} {...r} pendingData={pendingData} onCellEdit={onCellEdit} onObsEdit={onObsEdit} />
+                                            {/* --- PROP AGREGADA --- */}
+                                            return <Row key={`USD_${r.res_id}_${i}`} {...r} pendingData={pendingData} onCellEdit={onCellEdit} onObsEdit={onObsEdit} showDepartmentColumn={showDepartmentColumn} />
                                         })
                                         : (
                                             <tr>
-                                                <td className="td" colSpan={12} style={{ opacity: .6, textAlign: 'center' }}>Sin pagos en USD</td>
+                                                {/* --- COLSPAN ACTUALIZADO --- */}
+                                                <td className="td" colSpan={showDepartmentColumn ? 13 : 12} style={{ opacity: .6, textAlign: 'center' }}>Sin pagos en USD</td>
                                             </tr>
                                         )}
                                 </tbody>
@@ -652,11 +662,11 @@ export default function LiquidacionesPage() {
                 )}
 
                 {/* ===== Vista POR PROPIEDAD (opcional) ===== */}
-                {!loading && hasRun && mode === 'propiedad' && groupsProp && (
+                {/* --- LÓGICA DE MODO ELIMINADA --- */}
+                {!loading && hasRun && groupsProp && propertyId !== 'all' && (
                     <div style={{ display: 'grid', gap: 16 }}>
                         <section className="liq-card">
-                            <h2 className="prop-group__title">Vista "Por Propiedad"</h2>
-                            <p>Aquí iría el renderizado de la vista por propiedad (si se mantiene).</p>
+                            <h2 className="prop-group__title">Vista "Por Propiedad" (Resumen)</h2>
                             {/* Aquí deberías iterar 'groupsProp' si mantienes esa lógica */}
                         </section>
                     </div>
