@@ -550,7 +550,7 @@ export default function LiquidacionesPage() {
                         <button className="btn" onClick={fetchData} disabled={loading}>
                             {loading ? 'Cargando...' : 'Mostrar resultados'}
                         </button>
-                        + {/* Export per-depto: requiere deptId seleccionado */}
+                        {/* Export per-depto: requiere deptId seleccionado */}
                         <ExportLiquidacionesExcel
                             byCur={byCur}
                             deptId={deptId}
