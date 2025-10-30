@@ -91,7 +91,7 @@ function buildByCurrency(items = []) {
         const pays = Array.isArray(res.payments) ? res.payments : [];
         if (!pays.length) continue;
 
-        const fx = getFxRateForRow(res, null); 
+        const fx = getFxRateForRow(res, null);
 
         for (let i = 0; i < pays.length; i++) {
             const p = pays[i];
@@ -155,7 +155,7 @@ export default function LiquidacionesPage() {
 
     const depts = useDepartments(propertyId);
     const deptOptions = useMemo(() => depts.map(d => ({ id: d.codigo || d.id, label: d.nombre })), [depts]);
-    const [deptId, setDeptId] = useState(''); 
+    const [deptId, setDeptId] = useState('');
     const deptsDisabled = !propertyId || propertyId === 'all';
 
     const [fromISO, setFromISO] = useState(monthStart);
@@ -164,9 +164,9 @@ export default function LiquidacionesPage() {
 
     // ----- B) Datos -----
     const [loading, setLoading] = useState(false);
-    const [items, setItems] = useState([]);    
+    const [items, setItems] = useState([]);
     const [byCur, setByCur] = useState({ ARS: [], USD: [] });
-    const [groupsProp, setGroupsProp] = useState(null); 
+    const [groupsProp, setGroupsProp] = useState(null);
     const [hasRun, setHasRun] = useState(false);
 
     const fetchData = async () => {
@@ -176,7 +176,7 @@ export default function LiquidacionesPage() {
                 property: propertyId,
                 from: fromISO,
                 to: toISO,
-                includePayments: '1', 
+                includePayments: '1',
             };
             if (deptId) params.deptId = deptId;
 
@@ -196,23 +196,20 @@ export default function LiquidacionesPage() {
     };
 
     // ----- C) Mutaciones (Auto-guardado con Debounce) -----
-    const [pending, setPending] = useState({});
-    const { user } = useAuth();
-
     useEffect(() => {
         const t = setTimeout(async () => {
             const ids = Object.keys(pending);
             if (!ids.length) return;
 
             const batch = { ...pending };
-            setPending({}); // Optimista: limpia 'pending' antes de guardar.
+            // setPending({}); // <-- 🚨 NO LIMPIAR AQUÍ
 
             await Promise.allSettled(
                 Object.entries(batch).map(async ([id, payload]) => {
                     try {
                         // 1. Guardar la mutación
                         await axios.post('/api/liquidaciones/accountingMutations', { id, payload });
-                        
+
                         // 2. Registrar en el log de actividad
                         try {
                             await axios.post('/api/liquidaciones/activityLog', {
@@ -229,28 +226,58 @@ export default function LiquidacionesPage() {
                             if (r.id !== id) return r;
                             const a = r.accounting || {};
                             // Aplicar el payload *completo* del batch para este ID
-                            const p = batch[id] || {}; 
+                            const p = batch[id] || {};
+
+                            // Lógica de merge consistente (usando 'p' o 'a')
                             const bruto = Number(p.brutoUSD ?? a.brutoUSD ?? 0);
                             const comis = Number(p.comisionCanalUSD ?? a.comisionCanalUSD ?? 0);
                             const tasa = Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD ?? 0);
                             const costo = Number(p.costoFinancieroUSD ?? a.costoFinancieroUSD ?? 0);
+                            const obs = p.observaciones !== undefined ? p.observaciones : (a.observaciones || '');
+
                             const netoUSD = +(bruto + comis + tasa + costo).toFixed(2);
-                            const newAccounting = { ...a, ...p, netoUSD };
+
+                            // Aseguramos un merge correcto
+                            const newAccounting = {
+                                ...a, // Base
+                                ...p, // Cambios del batch
+                                netoUSD, // Neto recalculado
+                                observaciones: obs // Obs recalculado
+                            };
                             return { ...r, accounting: newAccounting };
                         }));
 
                     } catch (err) {
                         console.error(`Error guardando ${id}:`, err);
-                        // Opcional: volver a poner el item en 'pending' si falla
-                        // setPending(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...payload } }));
+                        // Opcional: Si falla, NO borramos de 'pending'
+                        // quitándolo del 'batch' que se usará para limpiar.
+                        delete batch[id]; // <-- IMPORTANTE: No limpiar si falló
                     }
                 })
             );
-            
+
             // 4. Recalcular 'byCur' DESPUÉS de que 'items' se haya actualizado
             setItems(currentItems => {
                 setByCur(buildByCurrency(currentItems));
-                return currentItems; 
+                return currentItems;
+            });
+
+            // 5. LIMPIAR 'pending' AL FINAL (de forma segura)
+            // Esto evita race conditions si el usuario editó DE NUEVO
+            // mientras se guardaban los datos.
+            setPending(prev => {
+                const next = { ...prev };
+                for (const id of Object.keys(batch)) {
+                    // Si el payload en el estado 'prev' es el *mismo*
+                    // que el que estaba en el 'batch', significa que
+                    // no cambió y se puede borrar.
+                    if (prev[id] === batch[id]) {
+                        delete next[id];
+                    }
+                    // Si es diferente, el usuario ya editó algo más,
+                    // así que lo dejamos para el próximo guardado.
+                }
+                return next;
             });
 
         }, 600); // 600ms debounce
@@ -258,6 +285,7 @@ export default function LiquidacionesPage() {
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pending, user]); // Solo depende de 'pending' y 'user'
+    // ...
 
 
     // ----- D) Handlers de edición (staging) -----
@@ -305,7 +333,7 @@ export default function LiquidacionesPage() {
     // Render de una fila (Row)
     // =====================================================
     const Row = ({ onCellEdit, onObsEdit, pendingData, ...r }) => {
-        const fx = r.fx_used || getFxRateForRow(r._res, null) || 0; 
+        const fx = r.fx_used || getFxRateForRow(r._res, null) || 0;
 
         // === INICIO DE LA CORRECCIÓN DEL PARPADEO ===
         // p = datos pendientes (lo que se está editando)
@@ -322,20 +350,20 @@ export default function LiquidacionesPage() {
             initialBruto = (r.pay_currency === 'USD') ? pendingBrutoUSD : (fx ? pendingBrutoUSD * fx : 0);
         } else {
             // Si no, usa el valor que ya vino calculado en 'r.pay_amount'
-            initialBruto = r.pay_amount; 
+            initialBruto = r.pay_amount;
         }
 
         // 2. Inicializar los inputs usando 'p' (pending) o 'a' (accounting)
-        const brutoCtl = useMoneyInput(Number(initialBruto) || 0, r.pay_currency); 
+        const brutoCtl = useMoneyInput(Number(initialBruto) || 0, r.pay_currency);
         const comisionCtl = useMoneyInput(Number(p.comisionCanalUSD ?? a.comisionCanalUSD) || 0, 'USD');
         const tasaCtl = useMoneyInput(Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD) || 0, 'USD');
         const costoCtl = useMoneyInput(Number(p.costoFinancieroUSD ?? a.costoFinancieroUSD) || 0, 'USD');
-        
+
         // === INICIO DE LA CORRECCIÓN TS(5076) ===
         // Se agregan paréntesis: p.observaciones ?? (a.observaciones || '')
         const [obs, setObs] = React.useState(p.observaciones ?? (a.observaciones || ''));
         // === FIN DE LA CORRECCIÓN TS(5076) ===
-        
+
         // === FIN DE LA CORRECCIÓN DEL PARPADEO ===
 
 
@@ -364,21 +392,21 @@ export default function LiquidacionesPage() {
         // ---- Handlers de onBlur para guardar en "pending" ----
         // (La lógica no cambia)
         const onBlurBruto = () => {
-            brutoCtl.onBlur(); 
+            brutoCtl.onBlur();
             // Guardamos el valor *siempre* en USD
             const valBrutoUSD = r.pay_currency === 'USD' ? brutoCtl.num : (fx ? +(brutoCtl.num / fx).toFixed(2) : 0);
             onCellEdit(r.res_id, 'brutoUSD', valBrutoUSD);
         };
         const onBlurComision = () => {
-            comisionCtl.onBlur(); 
+            comisionCtl.onBlur();
             onCellEdit(r.res_id, 'comisionCanalUSD', comisionCtl.num);
         };
         const onBlurTasa = () => {
-            tasaCtl.onBlur(); 
+            tasaCtl.onBlur();
             onCellEdit(r.res_id, 'tasaLimpiezaUSD', tasaCtl.num);
         };
         const onBlurCosto = () => {
-            costoCtl.onBlur(); 
+            costoCtl.onBlur();
             onCellEdit(r.res_id, 'costoFinancieroUSD', costoCtl.num);
         };
         const onBlurObs = () => {
@@ -402,7 +430,7 @@ export default function LiquidacionesPage() {
                         className="num-input editable"
                         value={brutoCtl.str}
                         onChange={brutoCtl.onChange}
-                        onBlur={onBlurBruto} 
+                        onBlur={onBlurBruto}
                         onFocus={brutoCtl.onFocus}
                         inputMode="decimal"
                     />
@@ -413,7 +441,7 @@ export default function LiquidacionesPage() {
                         className="num-input editable"
                         value={comisionCtl.str}
                         onChange={comisionCtl.onChange}
-                        onBlur={onBlurComision} 
+                        onBlur={onBlurComision}
                         onFocus={comisionCtl.onFocus}
                         inputMode="decimal"
                     />
@@ -424,7 +452,7 @@ export default function LiquidacionesPage() {
                         className="num-input editable"
                         value={tasaCtl.str}
                         onChange={tasaCtl.onChange}
-                        onBlur={onBlurTasa} 
+                        onBlur={onBlurTasa}
                         onFocus={tasaCtl.onFocus}
                         inputMode="decimal"
                     />
@@ -435,7 +463,7 @@ export default function LiquidacionesPage() {
                         className="num-input editable"
                         value={costoCtl.str}
                         onChange={costoCtl.onChange}
-                        onBlur={onBlurCosto} 
+                        onBlur={onBlurCosto}
                         onFocus={costoCtl.onFocus}
                         inputMode="decimal"
                     />
@@ -447,7 +475,7 @@ export default function LiquidacionesPage() {
                         className="text-input editable"
                         value={obs}
                         onChange={(e) => setObs(e.target.value)}
-                        onBlur={onBlurObs} 
+                        onBlur={onBlurObs}
                     />
                 </td>
             </tr>
@@ -460,7 +488,7 @@ export default function LiquidacionesPage() {
     // =====================================================
     return (
         <div className="liq-app">
-            
+
             <header className="header">
                 <div className="header__bar">
                     <div className="header__left">
@@ -536,7 +564,7 @@ export default function LiquidacionesPage() {
 
             <main className="liq-main">
                 {loading && <div className="liq-loader">Cargando…</div>}
-                
+
                 {!loading && !hasRun && (
                     <div className="liq-empty" style={{ padding: '2rem', textAlign: 'center' }}>
                         Por favor, presiona "Mostrar resultados" para cargar los datos.
