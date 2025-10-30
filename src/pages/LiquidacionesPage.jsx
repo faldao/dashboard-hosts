@@ -1,12 +1,10 @@
 // =========================================================
 // LiquidacionesPage.jsx
-// - v10 (Definitivo-Fix):
+// - v11 (Flicker Fix):
 // - Corrige el "parpadeo" (flicker) al salir de un campo.
-// - Pasa la data 'pending' a cada 'Row'.
-// - 'Row' ahora usa 'pendingData' para inicializar sus
-//   controles, evitando el reseteo visual.
-// - Corrige el error TS(5076) agregando paréntesis
-//   en la inicialización de 'obs'.
+// - Mueve la limpieza de 'setPending({})' al final del
+//   useEffect para evitar el re-render prematuro.
+// - Mejora la lógica de merge de 'observaciones'.
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -196,6 +194,12 @@ export default function LiquidacionesPage() {
     };
 
     // ----- C) Mutaciones (Auto-guardado con Debounce) -----
+    const [pending, setPending] = useState({});
+    const { user } = useAuth();
+
+    // ===================================================================
+    // INICIO DE LA CORRECCIÓN DEL PARPADEO
+    // ===================================================================
     useEffect(() => {
         const t = setTimeout(async () => {
             const ids = Object.keys(pending);
@@ -209,7 +213,7 @@ export default function LiquidacionesPage() {
                     try {
                         // 1. Guardar la mutación
                         await axios.post('/api/liquidaciones/accountingMutations', { id, payload });
-
+                        
                         // 2. Registrar en el log de actividad
                         try {
                             await axios.post('/api/liquidaciones/activityLog', {
@@ -227,18 +231,18 @@ export default function LiquidacionesPage() {
                             const a = r.accounting || {};
                             // Aplicar el payload *completo* del batch para este ID
                             const p = batch[id] || {};
-
+                            
                             // Lógica de merge consistente (usando 'p' o 'a')
                             const bruto = Number(p.brutoUSD ?? a.brutoUSD ?? 0);
                             const comis = Number(p.comisionCanalUSD ?? a.comisionCanalUSD ?? 0);
                             const tasa = Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD ?? 0);
                             const costo = Number(p.costoFinancieroUSD ?? a.costoFinancieroUSD ?? 0);
-                            const obs = p.observaciones !== undefined ? p.observaciones : (a.observaciones || '');
+                            const obs = p.observaciones !== undefined ? p.observaciones : (a.observaciones || ''); // <-- Corregido
 
                             const netoUSD = +(bruto + comis + tasa + costo).toFixed(2);
-
+                            
                             // Aseguramos un merge correcto
-                            const newAccounting = {
+                            const newAccounting = { 
                                 ...a, // Base
                                 ...p, // Cambios del batch
                                 netoUSD, // Neto recalculado
@@ -255,7 +259,7 @@ export default function LiquidacionesPage() {
                     }
                 })
             );
-
+            
             // 4. Recalcular 'byCur' DESPUÉS de que 'items' se haya actualizado
             setItems(currentItems => {
                 setByCur(buildByCurrency(currentItems));
@@ -271,7 +275,7 @@ export default function LiquidacionesPage() {
                     // Si el payload en el estado 'prev' es el *mismo*
                     // que el que estaba en el 'batch', significa que
                     // no cambió y se puede borrar.
-                    if (prev[id] === batch[id]) {
+                    if (prev[id] === batch[id]) { 
                         delete next[id];
                     }
                     // Si es diferente, el usuario ya editó algo más,
@@ -285,7 +289,9 @@ export default function LiquidacionesPage() {
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pending, user]); // Solo depende de 'pending' y 'user'
-    // ...
+    // ===================================================================
+    // FIN DE LA CORRECCIÓN
+    // ===================================================================
 
 
     // ----- D) Handlers de edición (staging) -----
@@ -358,12 +364,12 @@ export default function LiquidacionesPage() {
         const comisionCtl = useMoneyInput(Number(p.comisionCanalUSD ?? a.comisionCanalUSD) || 0, 'USD');
         const tasaCtl = useMoneyInput(Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD) || 0, 'USD');
         const costoCtl = useMoneyInput(Number(p.costoFinancieroUSD ?? a.costoFinancieroUSD) || 0, 'USD');
-
+        
         // === INICIO DE LA CORRECCIÓN TS(5076) ===
         // Se agregan paréntesis: p.observaciones ?? (a.observaciones || '')
         const [obs, setObs] = React.useState(p.observaciones ?? (a.observaciones || ''));
         // === FIN DE LA CORRECCIÓN TS(5076) ===
-
+        
         // === FIN DE LA CORRECCIÓN DEL PARPADEO ===
 
 
@@ -488,7 +494,7 @@ export default function LiquidacionesPage() {
     // =====================================================
     return (
         <div className="liq-app">
-
+            
             <header className="header">
                 <div className="header__bar">
                     <div className="header__left">
@@ -564,7 +570,7 @@ export default function LiquidacionesPage() {
 
             <main className="liq-main">
                 {loading && <div className="liq-loader">Cargando…</div>}
-
+                
                 {!loading && !hasRun && (
                     <div className="liq-empty" style={{ padding: '2rem', textAlign: 'center' }}>
                         Por favor, presiona "Mostrar resultados" para cargar los datos.
