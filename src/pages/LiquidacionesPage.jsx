@@ -1,10 +1,11 @@
 // =========================================================
 // LiquidacionesPage.jsx
-// - v11 (Flicker Fix + Columna Dinámica):
+// - v12 (Flicker Fix + Columna Izquierda):
 // - Corrige el "parpadeo" (flicker) al salir de un campo.
-// - Elimina los botones de "modo" (unidad/propiedad).
-// - Muestra dinámicamente la columna "Departamento" si
-//   se selecciona una Propiedad y "Todos" los Deptos.
+// - Columna "Departamento" ahora aparece a la izquierda.
+// - La columna "Departamento" es visible si se selecciona
+//   una Propiedad y "Todos" los Deptos.
+// - Lee 'depto_nombre' de la reserva, basado en BBDD.
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -102,14 +103,11 @@ function buildByCurrency(items = []) {
             const checkout = res.departure_iso ? DateTime.fromISO(res.departure_iso).toFormat('dd/MM/yyyy') : '—';
 
             // Lógica para determinar el bruto inicial
-            // Si hay un valor guardado (brutoUSD), se usa. Si no, se usa el monto del pago.
             const accBrutoUSD = res.accounting?.brutoUSD;
             let initialBruto;
             if (cur === 'USD') {
-                // Si la fila es USD, el valor inicial es el brutoUSD guardado, o el monto del pago
                 initialBruto = accBrutoUSD ?? amt;
             } else { // ARS
-                // Si la fila es ARS, el valor inicial es el brutoUSD guardado (convertido a ARS), o el monto del pago
                 initialBruto = (accBrutoUSD != null && fx) ? (accBrutoUSD * fx) : amt;
             }
 
@@ -126,9 +124,9 @@ function buildByCurrency(items = []) {
                 res_id: res.id,
                 _res: res,
                 fx_used: fx,
-                // --- NUEVO ---
-                // Agregamos el nombre del departamento a la fila para mostrarlo
-                departamento_nombre: res.departamento_nombre || res.department_name || '—', 
+                // --- ACTUALIZADO ---
+                // Lee 'depto_nombre' (de BBDD) u otros fallbacks.
+                departamento_nombre: res.depto_nombre || res.departamento_nombre || res.department_name || '—', 
             };
 
             out[cur].push(row);
@@ -161,7 +159,6 @@ export default function LiquidacionesPage() {
 
     const [fromISO, setFromISO] = useState(monthStart);
     const [toISO, setToISO] = useState(monthEnd);
-    // const [mode, setMode] = useState('unidad'); // <-- ELIMINADO
 
     // ----- B) Datos -----
     const [loading, setLoading] = useState(false);
@@ -170,7 +167,7 @@ export default function LiquidacionesPage() {
     const [groupsProp, setGroupsProp] = useState(null);
     const [hasRun, setHasRun] = useState(false);
 
-    // --- NUEVO ---
+    // --- LÓGICA DE COLUMNA ---
     // Determina si mostramos la columna extra de "Departamento"
     const showDepartmentColumn = propertyId !== 'all' && deptId === '';
 
@@ -194,7 +191,6 @@ export default function LiquidacionesPage() {
             setHasRun(true);
         } catch (err) {
             console.error("Error fetching data:", err);
-            // Aquí deberías manejar el error, ej: setError(err.message)
         } finally {
             setLoading(false);
         }
@@ -205,7 +201,7 @@ export default function LiquidacionesPage() {
     const { user } = useAuth();
 
     // ===================================================================
-    // INICIO DE LA CORRECCIÓN DEL PARPADEO
+    // Corrección del "parpadeo" (Flicker Fix)
     // ===================================================================
     useEffect(() => {
         const t = setTimeout(async () => {
@@ -236,57 +232,45 @@ export default function LiquidacionesPage() {
                         setItems(prev => prev.map(r => {
                             if (r.id !== id) return r;
                             const a = r.accounting || {};
-                            // Aplicar el payload *completo* del batch para este ID
                             const p = batch[id] || {};
                             
-                            // Lógica de merge consistente (usando 'p' o 'a')
                             const bruto = Number(p.brutoUSD ?? a.brutoUSD ?? 0);
                             const comis = Number(p.comisionCanalUSD ?? a.comisionCanalUSD ?? 0);
                             const tasa = Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD ?? 0);
                             const costo = Number(p.costoFinancieroUSD ?? a.costoFinancieroUSD ?? 0);
-                            const obs = p.observaciones !== undefined ? p.observaciones : (a.observaciones || ''); // <-- Corregido
+                            const obs = p.observaciones !== undefined ? p.observaciones : (a.observaciones || '');
 
                             const netoUSD = +(bruto + comis + tasa + costo).toFixed(2);
                             
-                            // Aseguramos un merge correcto
                             const newAccounting = { 
-                                ...a, // Base
-                                ...p, // Cambios del batch
-                                netoUSD, // Neto recalculado
-                                observaciones: obs // Obs recalculado
+                                ...a, 
+                                ...p, 
+                                netoUSD, 
+                                observaciones: obs 
                             };
                             return { ...r, accounting: newAccounting };
                         }));
 
                     } catch (err) {
                         console.error(`Error guardando ${id}:`, err);
-                        // Opcional: Si falla, NO borramos de 'pending'
-                        // quitándolo del 'batch' que se usará para limpiar.
-                        delete batch[id]; // <-- IMPORTANTE: No limpiar si falló
+                        delete batch[id]; 
                     }
                 })
             );
             
-            // 4. Recalcular 'byCur' DESPUÉS de que 'items' se haya actualizado
+            // 4. Recalcular 'byCur'
             setItems(currentItems => {
                 setByCur(buildByCurrency(currentItems));
                 return currentItems;
             });
 
-            // 5. LIMPIAR 'pending' AL FINAL (de forma segura)
-            // Esto evita race conditions si el usuario editó DE NUEVO
-            // mientras se guardaban los datos.
+            // 5. LIMPIAR 'pending' AL FINAL
             setPending(prev => {
                 const next = { ...prev };
                 for (const id of Object.keys(batch)) {
-                    // Si el payload en el estado 'prev' es el *mismo*
-                    // que el que estaba en el 'batch', significa que
-                    // no cambió y se puede borrar.
                     if (prev[id] === batch[id]) { 
                         delete next[id];
                     }
-                    // Si es diferente, el usuario ya editó algo más,
-                    // así que lo dejamos para el próximo guardado.
                 }
                 return next;
             });
@@ -295,14 +279,13 @@ export default function LiquidacionesPage() {
 
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pending, user]); // Solo depende de 'pending' y 'user'
+    }, [pending, user]); 
     // ===================================================================
     // FIN DE LA CORRECCIÓN
     // ===================================================================
 
 
     // ----- D) Handlers de edición (staging) -----
-    // Solo actualizan 'pending'. El useEffect se encarga del resto.
     const onCellEdit = (id, field, valueNumberOrNull) => {
         setPending(prev => ({
             ...prev,
@@ -332,7 +315,6 @@ export default function LiquidacionesPage() {
         const onBlur = () => setStr(formatNumberEs(num, currency));
         const onFocus = (e) => e.target.select();
 
-        // Sincronizar si el valor inicial cambia (ej: después de guardar o por 'pending')
         useEffect(() => {
             const n = Number(initialNumber) || 0;
             setNum(n);
@@ -345,51 +327,32 @@ export default function LiquidacionesPage() {
     // =====================================================
     // Render de una fila (Row)
     // =====================================================
-    const Row = ({ onCellEdit, onObsEdit, pendingData, showDepartmentColumn, ...r }) => { // <-- Prop 'showDepartmentColumn' agregada
+    const Row = ({ onCellEdit, onObsEdit, pendingData, showDepartmentColumn, ...r }) => {
         const fx = r.fx_used || getFxRateForRow(r._res, null) || 0;
-
-        // === INICIO DE LA CORRECCIÓN DEL PARPADEO ===
-        // p = datos pendientes (lo que se está editando)
-        // a = datos de accounting (lo guardado en 'items')
         const p = pendingData || {};
         const a = r._res?.accounting || {};
 
-        // 1. Determinar 'initialBruto'
-        // Prioriza el 'brutoUSD' pendiente, si existe.
         let initialBruto;
         const pendingBrutoUSD = p.brutoUSD;
         if (pendingBrutoUSD != null) {
-            // Si hay un bruto pendiente, conviértelo a la moneda de la fila
             initialBruto = (r.pay_currency === 'USD') ? pendingBrutoUSD : (fx ? pendingBrutoUSD * fx : 0);
         } else {
-            // Si no, usa el valor que ya vino calculado en 'r.pay_amount'
             initialBruto = r.pay_amount;
         }
 
-        // 2. Inicializar los inputs usando 'p' (pending) o 'a' (accounting)
         const brutoCtl = useMoneyInput(Number(initialBruto) || 0, r.pay_currency);
         const comisionCtl = useMoneyInput(Number(p.comisionCanalUSD ?? a.comisionCanalUSD) || 0, 'USD');
         const tasaCtl = useMoneyInput(Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD) || 0, 'USD');
         const costoCtl = useMoneyInput(Number(p.costoFinancieroUSD ?? a.costoFinancieroUSD) || 0, 'USD');
-        
-        // === INICIO DE LA CORRECCIÓN TS(5076) ===
-        // Se agregan paréntesis: p.observaciones ?? (a.observaciones || '')
         const [obs, setObs] = React.useState(p.observaciones ?? (a.observaciones || ''));
-        // === FIN DE LA CORRECCIÓN TS(5076) ===
         
-        // === FIN DE LA CORRECCIÓN DEL PARPADEO ===
-
-
-        // ---- Neto en vivo (reacciona a cada tecla) ----
         const bruto = brutoCtl.num;
         const comis = comisionCtl.num;
         const tasa = tasaCtl.num;
         const costo = costoCtl.num;
 
-        // El 'brutoUSD' que se va a guardar siempre se calcula en USD
         const brutoUSD = r.pay_currency === 'USD' ? bruto : (fx ? +(bruto / fx).toFixed(2) : 0);
 
-        // El 'neto' que se muestra se calcula en la moneda de la fila
         let netAmount, netCur;
         if (r.pay_currency === 'USD') {
             netAmount = +(brutoUSD + comis + tasa + costo).toFixed(2);
@@ -402,11 +365,8 @@ export default function LiquidacionesPage() {
             netCur = 'ARS';
         }
 
-        // ---- Handlers de onBlur para guardar en "pending" ----
-        // (La lógica no cambia)
         const onBlurBruto = () => {
             brutoCtl.onBlur();
-            // Guardamos el valor *siempre* en USD
             const valBrutoUSD = r.pay_currency === 'USD' ? brutoCtl.num : (fx ? +(brutoCtl.num / fx).toFixed(2) : 0);
             onCellEdit(r.res_id, 'brutoUSD', valBrutoUSD);
         };
@@ -429,6 +389,11 @@ export default function LiquidacionesPage() {
 
         return (
             <tr className="tr">
+                {/* --- COLUMNA MOVIDA AL INICIO --- */}
+                {showDepartmentColumn && (
+                    <td className="td td--ro">{r.departamento_nombre}</td>
+                )}
+
                 <td className="td td--ro">{r.id_human}</td>
                 <td className="td td--ro">{r.huesped}</td>
                 <td className="td td--ro">{r.checkin}</td>
@@ -491,11 +456,6 @@ export default function LiquidacionesPage() {
                         onBlur={onBlurObs}
                     />
                 </td>
-                
-                {/* --- NUEVA COLUMNA CONDICIONAL --- */}
-                {showDepartmentColumn && (
-                    <td className="td td--ro">{r.departamento_nombre}</td>
-                )}
             </tr>
         );
     };
@@ -561,7 +521,6 @@ export default function LiquidacionesPage() {
                         />
                     </div>
                     <div className="liq-actions">
-                        {/* --- BOTONES ELIMINADOS --- */}
                         <button className="btn" onClick={fetchData} disabled={loading}>
                             {loading ? 'Cargando...' : 'Mostrar resultados'}
                         </button>
@@ -578,7 +537,6 @@ export default function LiquidacionesPage() {
                     </div>
                 )}
 
-                {/* --- LÓGICA DE MODO ELIMINADA --- */}
                 {!loading && hasRun && (
                     <>
                         {/* Pagos en ARS */}
@@ -587,6 +545,8 @@ export default function LiquidacionesPage() {
                             <table className="table btable liq-table">
                                 <thead>
                                     <tr>
+                                        {/* --- HEADER MOVIDO AL INICIO --- */}
+                                        {showDepartmentColumn && <th className="th">Departamento</th>}
                                         <th className="th">reserva</th>
                                         <th className="th">Huesped</th>
                                         <th className="th">check in</th>
@@ -599,20 +559,16 @@ export default function LiquidacionesPage() {
                                         <th className="th">Costo financiero</th>
                                         <th className="th">Neto</th>
                                         <th className="th">OBSERVACIONES</th>
-                                        {/* --- NUEVO HEADER CONDICIONAL --- */}
-                                        {showDepartmentColumn && <th className="th">Departamento</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {byCur.ARS.length
                                         ? byCur.ARS.map((r, i) => {
-                                            const pendingData = pending[r.res_id]; // <-- Se pasa 'pendingData'
-                                            {/* --- PROP AGREGADA --- */}
+                                            const pendingData = pending[r.res_id];
                                             return <Row key={`ARS_${r.res_id}_${i}`} {...r} pendingData={pendingData} onCellEdit={onCellEdit} onObsEdit={onObsEdit} showDepartmentColumn={showDepartmentColumn} />
                                         })
                                         : (
                                             <tr>
-                                                {/* --- COLSPAN ACTUALIZADO --- */}
                                                 <td className="td" colSpan={showDepartmentColumn ? 13 : 12} style={{ opacity: .6, textAlign: 'center' }}>Sin pagos en ARS</td>
                                             </tr>
                                         )}
@@ -626,6 +582,8 @@ export default function LiquidacionesPage() {
                             <table className="table btable liq-table">
                                 <thead>
                                     <tr>
+                                        {/* --- HEADER MOVIDO AL INICIO --- */}
+                                        {showDepartmentColumn && <th className="th">Departamento</th>}
                                         <th className="th">reserva</th>
                                         <th className="th">Huesped</th>
                                         <th className="th">check in</th>
@@ -638,20 +596,16 @@ export default function LiquidacionesPage() {
                                         <th className="th">Costo financiero</th>
                                         <th className="th">Neto</th>
                                         <th className="th">OBSERVACIONES</th>
-                                        {/* --- NUEVO HEADER CONDICIONAL --- */}
-                                        {showDepartmentColumn && <th className="th">Departamento</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {byCur.USD.length
                                         ? byCur.USD.map((r, i) => {
-                                            const pendingData = pending[r.res_id]; // <-- Se pasa 'pendingData'
-                                            {/* --- PROP AGREGADA --- */}
+                                            const pendingData = pending[r.res_id];
                                             return <Row key={`USD_${r.res_id}_${i}`} {...r} pendingData={pendingData} onCellEdit={onCellEdit} onObsEdit={onObsEdit} showDepartmentColumn={showDepartmentColumn} />
                                         })
                                         : (
                                             <tr>
-                                                {/* --- COLSPAN ACTUALIZADO --- */}
                                                 <td className="td" colSpan={showDepartmentColumn ? 13 : 12} style={{ opacity: .6, textAlign: 'center' }}>Sin pagos en USD</td>
                                             </tr>
                                         )}
@@ -661,8 +615,7 @@ export default function LiquidacionesPage() {
                     </>
                 )}
 
-                {/* ===== Vista POR PROPIEDAD (opcional) ===== */}
-                {/* --- LÓGICA DE MODO ELIMINADA --- */}
+                {/* Resumen por Propiedad (si existe) */}
                 {!loading && hasRun && groupsProp && propertyId !== 'all' && (
                     <div style={{ display: 'grid', gap: 16 }}>
                         <section className="liq-card">
@@ -675,3 +628,4 @@ export default function LiquidacionesPage() {
         </div>
     );
 }
+
