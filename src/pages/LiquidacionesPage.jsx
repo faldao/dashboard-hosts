@@ -1,11 +1,10 @@
 // =========================================================
 // LiquidacionesPage.jsx
-// - v12 (Flicker Fix + Columna Izquierda):
-// - Corrige el "parpadeo" (flicker) al salir de un campo.
-// - Columna "Departamento" ahora aparece a la izquierda.
-// - La columna "Departamento" es visible si se selecciona
-//   una Propiedad y "Todos" los Deptos.
-// - Lee 'depto_nombre' de la reserva, basado en BBDD.
+// - v14 (Parámetro API Fix):
+// - Elimina el "parche" de filtrado en el cliente.
+// - Corrige la llamada a la API en 'fetchData' para que
+//   envíe 'deptIds' (plural) en lugar de 'deptId' (singular),
+//   coincidiendo con lo que espera el backend.
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -180,10 +179,23 @@ export default function LiquidacionesPage() {
                 to: toISO,
                 includePayments: '1',
             };
-            if (deptId) params.deptId = deptId;
+            
+            // =================================================================
+            // INICIO DE LA CORRECCIÓN
+            // =================================================================
+            // El API espera 'deptIds' (plural), no 'deptId' (singular).
+            if (deptId) params.deptIds = deptId; // <-- CORREGIDO
+            // =================================================================
+            // FIN DE LA CORRECCIÓN
+            // =================================================================
 
             const { data } = await axios.get('/api/liquidaciones/reservasByCheckin', { params });
-            const itemsRaw = Array.isArray(data?.items) ? data.items : [];
+            let itemsRaw = Array.isArray(data?.items) ? data.items : [];
+
+            // =================================================================
+            // SE ELIMINA EL PARCHE DE FILTRADO EN EL CLIENTE
+            // (El API ahora se encarga de esto correctamente)
+            // =================================================================
 
             setItems(itemsRaw);
             setByCur(buildByCurrency(itemsRaw));
@@ -453,7 +465,7 @@ export default function LiquidacionesPage() {
                         className="text-input editable"
                         value={obs}
                         onChange={(e) => setObs(e.target.value)}
-                        onBlur={onBlurObs}
+                        onBlur={onObsEdit}
                     />
                 </td>
             </tr>
