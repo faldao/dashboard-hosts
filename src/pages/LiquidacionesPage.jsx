@@ -12,6 +12,7 @@ import { DateTime } from 'luxon';
 import { useAuth } from '../context/AuthContext';
 import HeaderUserInline from '../components/HeaderUserInline';
 import './LiquidacionesPage.css'; // <-- CSS EXTERNO IMPORTADO
+import ExportLiquidacionesExcel from '../components/ExportLiquidacionesExcel';
 
 // ---------- Constantes de formato ----------
 const TZ = 'America/Argentina/Buenos_Aires';
@@ -85,13 +86,13 @@ function buildByCurrency(items = []) {
 
     for (const res of items) {
         const pays = Array.isArray(res.payments) ? res.payments : [];
-        
+
         // =================================================================
         // INICIO DE LA MODIFICACIÓN (v17)
         // Si no hay pagos, creamos una "fila fantasma" para poder editarla.
         // Si hay pagos, funciona como antes.
         // =================================================================
-        
+
         if (pays.length === 0) {
             // Reserva sin pagos. Forzamos una fila.
             // Asumimos 'USD' como moneda base si no hay pagos, o usamos la de la reserva.
@@ -105,7 +106,7 @@ function buildByCurrency(items = []) {
             // Usamos el 'brutoUSD' guardado si existe, si no, 0.
             const accBrutoUSD = res.accounting?.brutoUSD;
             let initialBruto = 0; // Default para una fila nueva
-            
+
             if (cur === 'USD') {
                 initialBruto = accBrutoUSD ?? 0; // Usar guardado o 0
             } else { // ARS
@@ -220,9 +221,9 @@ export default function LiquidacionesPage() {
                 to: toISO,
                 includePayments: '1', // Este parámetro puede que ya no sea necesario si la API trae todo
             };
-            
+
             // Corrige nombre del parámetro para la API
-            if (deptId) params.deptIds = deptId; 
+            if (deptId) params.deptIds = deptId;
 
             const { data } = await axios.get('/api/liquidaciones/reservasByCheckin', { params });
             let itemsRaw = Array.isArray(data?.items) ? data.items : [];
@@ -253,7 +254,7 @@ export default function LiquidacionesPage() {
                 Object.entries(batch).map(async ([id, payload]) => {
                     try {
                         await axios.post('/api/liquidaciones/accountingMutations', { id, payload });
-                        
+
                         try {
                             await axios.post('/api/liquidaciones/activityLog', {
                                 type: 'acc_update',
@@ -268,7 +269,7 @@ export default function LiquidacionesPage() {
                             if (r.id !== id) return r;
                             const a = r.accounting || {};
                             const p = batch[id] || {};
-                            
+
                             const bruto = Number(p.brutoUSD ?? a.brutoUSD ?? 0);
                             const comis = Number(p.comisionCanalUSD ?? a.comisionCanalUSD ?? 0);
                             const tasa = Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD ?? 0);
@@ -276,41 +277,41 @@ export default function LiquidacionesPage() {
                             const obs = p.observaciones !== undefined ? p.observaciones : (a.observaciones || '');
 
                             const netoUSD = +(bruto + comis + tasa + costo).toFixed(2);
-                            
-                            const newAccounting = { 
-                                ...a, 
-                                ...p, 
-                                netoUSD, 
-                                observaciones: obs 
+
+                            const newAccounting = {
+                                ...a,
+                                ...p,
+                                netoUSD,
+                                observaciones: obs
                             };
                             return { ...r, accounting: newAccounting };
                         }));
 
                     } catch (err) {
                         console.error(`Error guardando ${id}:`, err);
-                        delete batch[id]; 
+                        delete batch[id];
                     }
                 })
             );
-             setItems(currentItems => {
+            setItems(currentItems => {
                 setByCur(buildByCurrency(currentItems));
                 return currentItems;
             });
- setPending(prev => {
+            setPending(prev => {
                 const next = { ...prev };
                 for (const id of Object.keys(batch)) {
-                    if (prev[id] === batch[id]) { 
+                    if (prev[id] === batch[id]) {
                         delete next[id];
                     }
                 }
                 return next;
             });
 
-        }, 600); 
+        }, 600);
 
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pending, user]); 
+    }, [pending, user]);
 
 
     // ----- D) Handlers de edición (staging) -----
@@ -371,7 +372,7 @@ export default function LiquidacionesPage() {
         const tasaCtl = useMoneyInput(Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD) || 0, 'USD');
         const costoCtl = useMoneyInput(Number(p.costoFinancieroUSD ?? a.costoFinancieroUSD) || 0, 'USD');
         const [obs, setObs] = React.useState(p.observaciones ?? (a.observaciones || ''));
-        
+
         const bruto = brutoCtl.num;
         const comis = comisionCtl.num;
         const tasa = tasaCtl.num;
@@ -491,7 +492,7 @@ export default function LiquidacionesPage() {
     // =====================================================
     return (
         <div className="liq-app">
-            
+
             <header className="header">
                 <div className="header__bar">
                     <div className="header__left">
@@ -549,13 +550,23 @@ export default function LiquidacionesPage() {
                         <button className="btn" onClick={fetchData} disabled={loading}>
                             {loading ? 'Cargando...' : 'Mostrar resultados'}
                         </button>
+                        + {/* Export per-depto: requiere deptId seleccionado */}
+                        <ExportLiquidacionesExcel
+                            byCur={byCur}
+                            deptId={deptId}
+                            fromISO={fromISO}
+                            toISO={toISO}
+                            tz={TZ}
+                            showDepartmentColumn={false}    // per-depto: no hace falta mostrarla
+                            filenamePrefix="liquidacion_depto"
+                        />
                     </div>
                 </div>
             </header>
 
             <main className="liq-main">
                 {loading && <div className="liq-loader">Cargando…</div>}
-                
+
                 {!loading && !hasRun && (
                     <div className="liq-empty" style={{ padding: '2rem', textAlign: 'center' }}>
                         Por favor, presiona "Mostrar resultados" para cargar los datos.
