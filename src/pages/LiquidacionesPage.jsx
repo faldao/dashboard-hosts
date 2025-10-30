@@ -1,10 +1,8 @@
 // =========================================================
 // LiquidacionesPage.jsx
-// - v14 (Parámetro API Fix):
-// - Elimina el "parche" de filtrado en el cliente.
-// - Corrige la llamada a la API en 'fetchData' para que
-//   envíe 'deptIds' (plural) en lugar de 'deptId' (singular),
-//   coincidiendo con lo que espera el backend.
+// - v16 (Limpia Resumen Viejo):
+// - Elimina la sección 'Vista "Por Propiedad" (Resumen)'
+//   al final del componente, ya que era funcionalidad vieja.
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -123,7 +121,6 @@ function buildByCurrency(items = []) {
                 res_id: res.id,
                 _res: res,
                 fx_used: fx,
-                // --- ACTUALIZADO ---
                 // Lee 'depto_nombre' (de BBDD) u otros fallbacks.
                 departamento_nombre: res.depto_nombre || res.departamento_nombre || res.department_name || '—', 
             };
@@ -163,7 +160,7 @@ export default function LiquidacionesPage() {
     const [loading, setLoading] = useState(false);
     const [items, setItems] = useState([]);
     const [byCur, setByCur] = useState({ ARS: [], USD: [] });
-    const [groupsProp, setGroupsProp] = useState(null);
+    // const [groupsProp, setGroupsProp] = useState(null); // Eliminado, no se usa
     const [hasRun, setHasRun] = useState(false);
 
     // --- LÓGICA DE COLUMNA ---
@@ -180,26 +177,15 @@ export default function LiquidacionesPage() {
                 includePayments: '1',
             };
             
-            // =================================================================
-            // INICIO DE LA CORRECCIÓN
-            // =================================================================
-            // El API espera 'deptIds' (plural), no 'deptId' (singular).
-            if (deptId) params.deptIds = deptId; // <-- CORREGIDO
-            // =================================================================
-            // FIN DE LA CORRECCIÓN
-            // =================================================================
+            // Corrige nombre del parámetro para la API
+            if (deptId) params.deptIds = deptId; 
 
             const { data } = await axios.get('/api/liquidaciones/reservasByCheckin', { params });
             let itemsRaw = Array.isArray(data?.items) ? data.items : [];
 
-            // =================================================================
-            // SE ELIMINA EL PARCHE DE FILTRADO EN EL CLIENTE
-            // (El API ahora se encarga de esto correctamente)
-            // =================================================================
-
             setItems(itemsRaw);
             setByCur(buildByCurrency(itemsRaw));
-            setGroupsProp(data?.groups || null);
+            // setGroupsProp(data?.groups || null); // Eliminado, no se usa
             setHasRun(true);
         } catch (err) {
             console.error("Error fetching data:", err);
@@ -221,7 +207,6 @@ export default function LiquidacionesPage() {
             if (!ids.length) return;
 
             const batch = { ...pending };
-            // setPending({}); // <-- 🚨 NO LIMPIAR AQUÍ
 
             await Promise.allSettled(
                 Object.entries(batch).map(async ([id, payload]) => {
@@ -465,7 +450,7 @@ export default function LiquidacionesPage() {
                         className="text-input editable"
                         value={obs}
                         onChange={(e) => setObs(e.target.value)}
-                        onBlur={onObsEdit}
+                        onBlur={onObsEdit} // Corregido: Debe ser onObsEdit, no onBlurObs
                     />
                 </td>
             </tr>
@@ -496,7 +481,7 @@ export default function LiquidacionesPage() {
                         <select
                             className="liq-filter__control"
                             value={propertyId}
-                            onChange={(e) => { setPropertyId(e.target.value); setDeptId(''); }}
+                            onChange={(e) => { setPropertyId(e.target.value); setDeptId(''); setHasRun(false); }}
                         >
                             <option value="all">Seleccionar…</option>
                             {propsList.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
@@ -507,7 +492,7 @@ export default function LiquidacionesPage() {
                         <select
                             className="liq-filter__control"
                             value={deptId}
-                            onChange={(e) => setDeptId(e.target.value)}
+                            onChange={(e) => { setDeptId(e.target.value); setHasRun(false); }}
                             disabled={deptsDisabled}
                         >
                             <option value="">Todos</option>
@@ -520,7 +505,7 @@ export default function LiquidacionesPage() {
                             type="date"
                             className="liq-filter__control"
                             value={fromISO}
-                            onChange={(e) => setFromISO(e.target.value)}
+                            onChange={(e) => { setFromISO(e.target.value); setHasRun(false); }}
                         />
                     </div>
                     <div className="liq-filter">
@@ -529,7 +514,7 @@ export default function LiquidacionesPage() {
                             type="date"
                             className="liq-filter__control"
                             value={toISO}
-                            onChange={(e) => setToISO(e.target.value)}
+                            onChange={(e) => { setToISO(e.target.value); setHasRun(false); }}
                         />
                     </div>
                     <div className="liq-actions">
@@ -627,15 +612,8 @@ export default function LiquidacionesPage() {
                     </>
                 )}
 
-                {/* Resumen por Propiedad (si existe) */}
-                {!loading && hasRun && groupsProp && propertyId !== 'all' && (
-                    <div style={{ display: 'grid', gap: 16 }}>
-                        <section className="liq-card">
-                            <h2 className="prop-group__title">Vista "Por Propiedad" (Resumen)</h2>
-                            {/* Aquí deberías iterar 'groupsProp' si mantienes esa lógica */}
-                        </section>
-                    </div>
-                )}
+                {/* --- SECCIÓN DE RESUMEN VIEJO ELIMINADA --- */}
+
             </main>
         </div>
     );
