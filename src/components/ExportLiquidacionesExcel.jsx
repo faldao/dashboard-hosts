@@ -1,10 +1,10 @@
-// components/ExportLiquidacionesExcel.jsx
 import React, { useState } from "react";
 import { DateTime } from "luxon";
 
 const DEFAULT_TZ = "America/Argentina/Buenos_Aires";
 
-function formatDate(iso, tz = DEFAULT_TZ) {
+// ---- helpers ----
+function fmtDay(iso, tz = DEFAULT_TZ) {
   if (!iso) return "";
   const d = DateTime.fromISO(iso, { zone: tz });
   return d.isValid ? d.toFormat("dd/MM/yyyy") : "";
@@ -53,15 +53,16 @@ function buildRowsFromByCur(byCur) {
 }
 
 export default function ExportLiquidacionesExcel({
-  byCur,
+  byCur,            // { ARS:[], USD:[] } => lo que ves en pantalla
   fromISO,
   toISO,
-  deptLabel,
+  deptLabel,        // nombre de depto para título y archivo
   tz = DEFAULT_TZ,
+  filenamePrefix = "", // no se usa: armamos el nombre exacto pedido
 }) {
   const [loading, setLoading] = useState(false);
 
-  const headers = [
+  const HEADERS = [
     "reserva",
     "Huesped",
     "check in",
@@ -76,6 +77,69 @@ export default function ExportLiquidacionesExcel({
     "OBSERVACIONES",
   ];
 
+  const writeSection = (ws, label, rows, styles) => {
+    // Fila título de sección (sin fill, negro)
+    const secRow = ws.addRow([label]);
+    ws.getRow(secRow.number).height = 15;
+    ws.mergeCells(secRow.number, 1, secRow.number, HEADERS.length);
+    const c = ws.getCell(secRow.number, 1);
+    c.font = styles.fontBlackBold;
+    c.alignment = styles.alignLeft;
+
+    // Filas de datos o "sin datos"
+    if (!rows.length) {
+      const r = ws.addRow(["sin datos"]);
+      ws.getRow(r.number).height = 15;
+      r.eachCell((cell, col) => {
+        cell.font = styles.fontBase;
+        cell.border = styles.borderThin;
+        cell.alignment = col === 1 ? styles.alignLeft : styles.alignRight;
+      });
+    } else {
+      rows.forEach((r) => {
+        const excelRow = ws.addRow([
+          r.reserva,
+          r.huesped,
+          r.checkin,
+          r.checkout,
+          r.canal,
+          r.forma,
+          r.bruto,
+          r.comision,
+          r.tasa,
+          r.costo,
+          r.neto,
+          r.observaciones,
+        ]);
+        ws.getRow(excelRow.number).height = 15;
+        excelRow.eachCell((cell, colNumber) => {
+          cell.font = styles.fontBase;
+          const isMoney = [7, 8, 9, 10, 11].includes(colNumber); // G,K = 7..11
+          cell.alignment = isMoney ? styles.alignRight : styles.alignLeft;
+          if (isMoney) cell.numFmt = '#,##0.00';
+          cell.border = styles.borderThin;
+        });
+      });
+    }
+
+    // Fila de total (no combinada)
+    const total = rows.reduce((sum, r) => sum + (Number(r.neto) || 0), 0);
+    const totalRow = ws.addRow(new Array(HEADERS.length).fill(""));
+    ws.getRow(totalRow.number).height = 15;
+
+    // Estilo de fila entera (negro, sin bordes)
+    for (let col = 1; col <= HEADERS.length; col++) {
+      const cell = ws.getCell(totalRow.number, col);
+      cell.fill = styles.fillBlack;
+      cell.font = styles.fontWhiteBold;
+      cell.border = { top: undefined, left: undefined, bottom: undefined, right: undefined };
+      cell.alignment = col === 11 ? styles.alignRight : styles.alignLeft;
+    }
+    ws.getCell(totalRow.number, 1).value = `TOTAL EN ${label.endsWith("USD") ? "USD" : "$"}`;
+    ws.getCell(totalRow.number, 11).value = total;
+    ws.getCell(totalRow.number, 11).numFmt = '#,##0.00';
+  };
+
   const handleExport = async () => {
     try {
       setLoading(true);
@@ -88,111 +152,72 @@ export default function ExportLiquidacionesExcel({
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("Liquidación");
 
-      // ======== ESTILOS ========
+      // ===== estilos y alineaciones
       const fontBase = { name: "Aptos Narrow", size: 11 };
       const fontHeader = { name: "Aptos Narrow", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+      const fontWhiteBold = { name: "Aptos Narrow", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+      const fontBlackBold = { name: "Aptos Narrow", size: 11, bold: true, color: { argb: "FF000000" } };
       const fillBlack = { type: "pattern", pattern: "solid", fgColor: { argb: "FF000000" } };
-      const borderThin = { style: "thin", color: { argb: "FFCCCCCC" } };
+      const borderThin = { top: { style: "thin", color: { argb: "FFCCCCCC" } },
+                           left: { style: "thin", color: { argb: "FFCCCCCC" } },
+                           bottom:{ style: "thin", color: { argb: "FFCCCCCC" } },
+                           right: { style: "thin", color: { argb: "FFCCCCCC" } } };
+      const alignCenter = { vertical: "middle", horizontal: "center", wrapText: true };
+      const alignLeft   = { vertical: "middle", horizontal: "left", wrapText: true };
+      const alignRight  = { vertical: "middle", horizontal: "right", wrapText: true };
 
-      const rowsUSD = (byCur?.USD || []).map(r => ({ ...r, moneda: "USD" }));
-      const rowsARS = (byCur?.ARS || []).map(r => ({ ...r, moneda: "ARS" }));
-      const allRows = buildRowsFromByCur(byCur);
-
-      const rango = `${formatDate(fromISO, tz)} al ${formatDate(toISO, tz)}`;
-      const monthLabel = DateTime.fromISO(fromISO).toFormat("LLLL yyyy");
-      const title = `Liquidacion ${monthLabel} (${rango}) - ${deptLabel || "Departamento"}`;
-      const filename = `${title.replace(/\s+/g, "_")}.xlsx`;
-
-      // ======== TITULO (FILA 1) ========
-      ws.addRow([title]);
-      ws.mergeCells(1, 1, 1, headers.length);
-      const titleCell = ws.getCell("A1");
-      titleCell.font = { name: "Aptos Narrow", size: 13, bold: true };
-      ws.getRow(1).height = 30;
-
-      // ======== FILA 2 VACÍA ========
-      ws.addRow([]);
-
-      // ======== FILA 3: HEADERS ========
-      const headerRow = ws.addRow(headers);
-      headerRow.eachCell((cell) => {
-        cell.font = fontHeader;
-        cell.fill = fillBlack;
-        cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-        cell.border = { top: borderThin, left: borderThin, bottom: borderThin, right: borderThin };
-      });
-      ws.getRow(3).height = 30;
-
-      // helper: función que agrega una sección (ARS o USD)
-      const writeSection = (label, items, startRow) => {
-        const secRow = ws.addRow([label]);
-        secRow.getCell(1).font = { ...fontHeader, bold: true };
-        secRow.getCell(1).fill = fillBlack;
-        ws.mergeCells(secRow.number, 1, secRow.number, headers.length);
-        ws.getRow(secRow.number).height = 30;
-
-        // datos
-        items.forEach((r) => {
-          const row = ws.addRow([
-            r.reserva,
-            r.huesped,
-            r.checkin,
-            r.checkout,
-            r.canal,
-            r.forma,
-            r.bruto,
-            r.comision,
-            r.tasa,
-            r.costo,
-            r.neto,
-            r.observaciones,
-          ]);
-          row.eachCell((cell, colNumber) => {
-            cell.font = fontBase;
-            const key = headers[colNumber - 1];
-            if (["Cobrado Bruto (reserva + comisión canal+ tasa limpieza+ IVA)",
-                 "Comisión Canal (booking, despegar, expedia)",
-                 "Tasa de limpieza pagada por el huesped",
-                 "Costo financiero (comision TC, IIBB etc)",
-                 "Neto"].includes(key)) {
-              cell.numFmt = '#,##0.00';
-              cell.alignment = { horizontal: "right", vertical: "middle" };
-            } else {
-              cell.alignment = { vertical: "middle" };
-            }
-            cell.border = { top: borderThin, left: borderThin, bottom: borderThin, right: borderThin };
-          });
-          ws.getRow(row.number).height = 30;
-        });
-
-        // fila total
-        const total = items.reduce((sum, r) => sum + (r.neto || 0), 0);
-        const totalRow = ws.addRow(["TOTAL " + label]);
-        totalRow.getCell(1).font = fontHeader;
-        totalRow.getCell(1).fill = fillBlack;
-        totalRow.getCell(11).value = total;
-        totalRow.getCell(11).numFmt = '#,##0.00';
-        totalRow.getCell(11).font = { ...fontHeader, color: { argb: "FFFFFFFF" } };
-        totalRow.getCell(11).alignment = { horizontal: "right", vertical: "middle" };
-        ws.mergeCells(totalRow.number, 1, totalRow.number, headers.length);
-        ws.getRow(totalRow.number).height = 30;
+      const styles = {
+        fontBase, fontHeader, fontWhiteBold, fontBlackBold,
+        fillBlack, borderThin, alignCenter, alignLeft, alignRight,
       };
 
-      // ======== SECCIÓN EN PESOS ========
-      writeSection("LIQUIDACION EN $", buildRowsFromByCur({ ARS: byCur.ARS || [] }), ws.lastRow.number + 1);
+      // ===== título y nombre de archivo (mes en español)
+      const dFrom = DateTime.fromISO(fromISO, { zone: tz }).setLocale("es");
+      const dTo   = DateTime.fromISO(toISO,   { zone: tz }).setLocale("es");
+      const monthShort = dFrom.toFormat("LLL yy"); // MMM YY en es (ej: oct 25)
+      const rango = `${dFrom.toFormat("dd/MM/yyyy")} al ${dTo.toFormat("dd/MM/yyyy")}`;
+      const dept = deptLabel || "Departamento";
 
-      // ======== SECCIÓN EN USD ========
-      writeSection("LIQUIDACION EN USD", buildRowsFromByCur({ USD: byCur.USD || [] }), ws.lastRow.number + 2);
+      const title = `Liquidacion ${monthShort} (${rango}) - ${dept}`;
+      const filename = `${title.replace(/\s+/g, "_")}.xlsx`;
 
-      ws.columns.forEach((col, i) => {
-        col.width = [12, 28, 14, 14, 16, 24, 22, 22, 26, 22, 14, 26][i] || 18;
+      // Fila 1: título (altura 50)
+      const tRow = ws.addRow([title]);
+      ws.mergeCells(1, 1, 1, HEADERS.length);
+      ws.getCell(1, 1).font = { name: "Aptos Narrow", size: 13, bold: true };
+      ws.getRow(1).height = 50;
+
+      // Fila 2: vacía
+      ws.addRow([]);
+      ws.getRow(2).height = 15;
+
+      // Fila 3: headers blanco/negro
+      const hr = ws.addRow(HEADERS);
+      hr.eachCell((cell) => {
+        cell.font = fontHeader;
+        cell.fill = fillBlack;
+        cell.alignment = alignCenter;
+        cell.border = borderThin;
       });
+      ws.getRow(3).height = 30; // header alto
 
-      // ======== DESCARGA ========
+      // Anchos
+      const widths = [12, 28, 14, 14, 16, 24, 22, 22, 26, 22, 14, 26];
+      ws.columns = widths.map((w) => ({ width: w }));
+
+      // Sección $ (fila 4 empieza con este título)
+      const rowsARS = buildRowsFromByCur({ ARS: byCur?.ARS || [] });
+      writeSection(ws, "LIQUIDACION EN $", rowsARS, styles);
+
+      // Sección USD (misma lógica y estilo)
+      const rowsUSD = buildRowsFromByCur({ USD: byCur?.USD || [] });
+      writeSection(ws, "LIQUIDACION EN USD", rowsUSD, styles);
+
+      // Descargar
       const buf = await wb.xlsx.writeBuffer();
       saveAs(new Blob([buf], { type: "application/octet-stream" }), filename);
-    } catch (err) {
-      console.error("[ExportLiquidacionesExcel] Error:", err);
+    } catch (e) {
+      console.error("[ExportLiquidacionesExcel] Error exportando:", e);
       alert("No se pudo exportar el Excel. Revisá la consola.");
     } finally {
       setLoading(false);
@@ -205,6 +230,7 @@ export default function ExportLiquidacionesExcel({
     </button>
   );
 }
+
 
 
 

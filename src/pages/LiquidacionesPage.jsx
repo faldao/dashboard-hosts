@@ -553,12 +553,10 @@ export default function LiquidacionesPage() {
                         {/* Export per-depto: requiere deptId seleccionado */}
                         <ExportLiquidacionesExcel
                             byCur={byCur}
-                            deptId={deptId}
                             fromISO={fromISO}
                             toISO={toISO}
                             tz={TZ}
-                            showDepartmentColumn={false}    // per-depto: no hace falta mostrarla
-                            filenamePrefix="liquidacion_depto"
+                            deptLabel={(deptOptions.find(d => String(d.id) === String(deptId))?.label) || undefined}
                         />
                     </div>
                 </div>
