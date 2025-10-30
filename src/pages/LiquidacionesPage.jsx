@@ -1,9 +1,12 @@
 // =========================================================
 // LiquidacionesPage.jsx
-// - Versión de Producción Definitiva
-// - Se eliminan todos los mocks (Auth, Header, luxon, axios).
-// - Se restauran las llamadas reales a la API.
-// - Se importa el CSS externo.
+// - v10 (Definitivo-Fix):
+// - Corrige el "parpadeo" (flicker) al salir de un campo.
+// - Pasa la data 'pending' a cada 'Row'.
+// - 'Row' ahora usa 'pendingData' para inicializar sus
+//   controles, evitando el reseteo visual.
+// - Corrige el error TS(5076) agregando paréntesis
+//   en la inicialización de 'obs'.
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -202,7 +205,7 @@ export default function LiquidacionesPage() {
             if (!ids.length) return;
 
             const batch = { ...pending };
-            setPending({}); // optimista
+            setPending({}); // Optimista: limpia 'pending' antes de guardar.
 
             await Promise.allSettled(
                 Object.entries(batch).map(async ([id, payload]) => {
@@ -225,7 +228,8 @@ export default function LiquidacionesPage() {
                         setItems(prev => prev.map(r => {
                             if (r.id !== id) return r;
                             const a = r.accounting || {};
-                            const p = payload || {};
+                            // Aplicar el payload *completo* del batch para este ID
+                            const p = batch[id] || {}; 
                             const bruto = Number(p.brutoUSD ?? a.brutoUSD ?? 0);
                             const comis = Number(p.comisionCanalUSD ?? a.comisionCanalUSD ?? 0);
                             const tasa = Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD ?? 0);
@@ -244,7 +248,6 @@ export default function LiquidacionesPage() {
             );
             
             // 4. Recalcular 'byCur' DESPUÉS de que 'items' se haya actualizado
-            // Esto asegura que la UI refleje los nuevos 'pay_amount' calculados
             setItems(currentItems => {
                 setByCur(buildByCurrency(currentItems));
                 return currentItems; 
@@ -254,10 +257,11 @@ export default function LiquidacionesPage() {
 
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pending, user]);
+    }, [pending, user]); // Solo depende de 'pending' y 'user'
 
 
     // ----- D) Handlers de edición (staging) -----
+    // Solo actualizan 'pending'. El useEffect se encarga del resto.
     const onCellEdit = (id, field, valueNumberOrNull) => {
         setPending(prev => ({
             ...prev,
@@ -287,7 +291,7 @@ export default function LiquidacionesPage() {
         const onBlur = () => setStr(formatNumberEs(num, currency));
         const onFocus = (e) => e.target.select();
 
-        // Sincronizar si el valor inicial cambia (ej: después de guardar)
+        // Sincronizar si el valor inicial cambia (ej: después de guardar o por 'pending')
         useEffect(() => {
             const n = Number(initialNumber) || 0;
             setNum(n);
@@ -300,15 +304,40 @@ export default function LiquidacionesPage() {
     // =====================================================
     // Render de una fila (Row)
     // =====================================================
-    const Row = ({ onCellEdit, onObsEdit, ...r }) => {
-        const a = r._res?.accounting || {};
+    const Row = ({ onCellEdit, onObsEdit, pendingData, ...r }) => {
         const fx = r.fx_used || getFxRateForRow(r._res, null) || 0; 
 
-        const brutoCtl = useMoneyInput(Number(r.pay_amount) || 0, r.pay_currency); 
-        const comisionCtl = useMoneyInput(Number(a.comisionCanalUSD) || 0, 'USD');
-        const tasaCtl = useMoneyInput(Number(a.tasaLimpiezaUSD) || 0, 'USD');
-        const costoCtl = useMoneyInput(Number(a.costoFinancieroUSD) || 0, 'USD');
-        const [obs, setObs] = React.useState(a.observaciones || '');
+        // === INICIO DE LA CORRECCIÓN DEL PARPADEO ===
+        // p = datos pendientes (lo que se está editando)
+        // a = datos de accounting (lo guardado en 'items')
+        const p = pendingData || {};
+        const a = r._res?.accounting || {};
+
+        // 1. Determinar 'initialBruto'
+        // Prioriza el 'brutoUSD' pendiente, si existe.
+        let initialBruto;
+        const pendingBrutoUSD = p.brutoUSD;
+        if (pendingBrutoUSD != null) {
+            // Si hay un bruto pendiente, conviértelo a la moneda de la fila
+            initialBruto = (r.pay_currency === 'USD') ? pendingBrutoUSD : (fx ? pendingBrutoUSD * fx : 0);
+        } else {
+            // Si no, usa el valor que ya vino calculado en 'r.pay_amount'
+            initialBruto = r.pay_amount; 
+        }
+
+        // 2. Inicializar los inputs usando 'p' (pending) o 'a' (accounting)
+        const brutoCtl = useMoneyInput(Number(initialBruto) || 0, r.pay_currency); 
+        const comisionCtl = useMoneyInput(Number(p.comisionCanalUSD ?? a.comisionCanalUSD) || 0, 'USD');
+        const tasaCtl = useMoneyInput(Number(p.tasaLimpiezaUSD ?? a.tasaLimpiezaUSD) || 0, 'USD');
+        const costoCtl = useMoneyInput(Number(p.costoFinancieroUSD ?? a.costoFinancieroUSD) || 0, 'USD');
+        
+        // === INICIO DE LA CORRECCIÓN TS(5076) ===
+        // Se agregan paréntesis: p.observaciones ?? (a.observaciones || '')
+        const [obs, setObs] = React.useState(p.observaciones ?? (a.observaciones || ''));
+        // === FIN DE LA CORRECCIÓN TS(5076) ===
+        
+        // === FIN DE LA CORRECCIÓN DEL PARPADEO ===
+
 
         // ---- Neto en vivo (reacciona a cada tecla) ----
         const bruto = brutoCtl.num;
@@ -316,8 +345,10 @@ export default function LiquidacionesPage() {
         const tasa = tasaCtl.num;
         const costo = costoCtl.num;
 
+        // El 'brutoUSD' que se va a guardar siempre se calcula en USD
         const brutoUSD = r.pay_currency === 'USD' ? bruto : (fx ? +(bruto / fx).toFixed(2) : 0);
 
+        // El 'neto' que se muestra se calcula en la moneda de la fila
         let netAmount, netCur;
         if (r.pay_currency === 'USD') {
             netAmount = +(brutoUSD + comis + tasa + costo).toFixed(2);
@@ -331,8 +362,10 @@ export default function LiquidacionesPage() {
         }
 
         // ---- Handlers de onBlur para guardar en "pending" ----
+        // (La lógica no cambia)
         const onBlurBruto = () => {
             brutoCtl.onBlur(); 
+            // Guardamos el valor *siempre* en USD
             const valBrutoUSD = r.pay_currency === 'USD' ? brutoCtl.num : (fx ? +(brutoCtl.num / fx).toFixed(2) : 0);
             onCellEdit(r.res_id, 'brutoUSD', valBrutoUSD);
         };
@@ -534,7 +567,10 @@ export default function LiquidacionesPage() {
                                 </thead>
                                 <tbody>
                                     {byCur.ARS.length
-                                        ? byCur.ARS.map((r, i) => <Row key={`ARS_${r.res_id}_${i}`} {...r} onCellEdit={onCellEdit} onObsEdit={onObsEdit} />)
+                                        ? byCur.ARS.map((r, i) => {
+                                            const pendingData = pending[r.res_id]; // <-- Se pasa 'pendingData'
+                                            return <Row key={`ARS_${r.res_id}_${i}`} {...r} pendingData={pendingData} onCellEdit={onCellEdit} onObsEdit={onObsEdit} />
+                                        })
                                         : (
                                             <tr>
                                                 <td className="td" colSpan={12} style={{ opacity: .6, textAlign: 'center' }}>Sin pagos en ARS</td>
@@ -566,7 +602,10 @@ export default function LiquidacionesPage() {
                                 </thead>
                                 <tbody>
                                     {byCur.USD.length
-                                        ? byCur.USD.map((r, i) => <Row key={`USD_${r.res_id}_${i}`} {...r} onCellEdit={onCellEdit} onObsEdit={onObsEdit} />)
+                                        ? byCur.USD.map((r, i) => {
+                                            const pendingData = pending[r.res_id]; // <-- Se pasa 'pendingData'
+                                            return <Row key={`USD_${r.res_id}_${i}`} {...r} pendingData={pendingData} onCellEdit={onCellEdit} onObsEdit={onObsEdit} />
+                                        })
                                         : (
                                             <tr>
                                                 <td className="td" colSpan={12} style={{ opacity: .6, textAlign: 'center' }}>Sin pagos en USD</td>
