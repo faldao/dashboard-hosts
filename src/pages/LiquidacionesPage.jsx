@@ -1,8 +1,9 @@
 // =========================================================
 // LiquidacionesPage.jsx
-// - v16 (Limpia Resumen Viejo):
-// - Elimina la sección 'Vista "Por Propiedad" (Resumen)'
-//   al final del componente, ya que era funcionalidad vieja.
+// - v17 (Incluye Reservas Vacías):
+// - Muestra reservas que coinciden con los filtros
+//   aunque no tengan un array de 'payments' (o esté vacío).
+// - Esto permite añadir montos contables por primera vez.
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -75,7 +76,6 @@ function getFxRateForRow(res, fallback) {
         if (Number.isFinite(sell) && sell > 0) return sell;
         if (Number.isFinite(buy) && buy > 0) return buy;
     } catch { }
-    // Fallback razonable si no hay FX (para evitar división por cero)
     return Number.isFinite(fallback) ? fallback : 1000.0;
 }
 
@@ -85,27 +85,31 @@ function buildByCurrency(items = []) {
 
     for (const res of items) {
         const pays = Array.isArray(res.payments) ? res.payments : [];
-        if (!pays.length) continue;
+        
+        // =================================================================
+        // INICIO DE LA MODIFICACIÓN (v17)
+        // Si no hay pagos, creamos una "fila fantasma" para poder editarla.
+        // Si hay pagos, funciona como antes.
+        // =================================================================
+        
+        if (pays.length === 0) {
+            // Reserva sin pagos. Forzamos una fila.
+            // Asumimos 'USD' como moneda base si no hay pagos, o usamos la de la reserva.
+            const cur = (res.currency || 'USD').toUpperCase();
+            if (cur !== 'ARS' && cur !== 'USD') continue; // Ignorar si la moneda es extraña
 
-        const fx = getFxRateForRow(res, null);
-
-        for (let i = 0; i < pays.length; i++) {
-            const p = pays[i];
-            const amt = Number(p.amount);
-            const cur = String(p.currency || '').toUpperCase();
-            if (!Number.isFinite(amt) || amt <= 0) continue;
-            if (cur !== 'ARS' && cur !== 'USD') continue;
-
+            const fx = getFxRateForRow(res, null);
             const checkin = res.arrival_iso ? DateTime.fromISO(res.arrival_iso).toFormat('dd/MM/yyyy') : '—';
             const checkout = res.departure_iso ? DateTime.fromISO(res.departure_iso).toFormat('dd/MM/yyyy') : '—';
 
-            // Lógica para determinar el bruto inicial
+            // Usamos el 'brutoUSD' guardado si existe, si no, 0.
             const accBrutoUSD = res.accounting?.brutoUSD;
-            let initialBruto;
+            let initialBruto = 0; // Default para una fila nueva
+            
             if (cur === 'USD') {
-                initialBruto = accBrutoUSD ?? amt;
+                initialBruto = accBrutoUSD ?? 0; // Usar guardado o 0
             } else { // ARS
-                initialBruto = (accBrutoUSD != null && fx) ? (accBrutoUSD * fx) : amt;
+                initialBruto = (accBrutoUSD != null && fx) ? (accBrutoUSD * fx) : 0; // Convertir guardado o 0
             }
 
             const row = {
@@ -114,19 +118,61 @@ function buildByCurrency(items = []) {
                 checkin: checkin,
                 checkout: checkout,
                 canal: res.source || res.channel_name || '—',
-                pay_method: p.method || '',
-                pay_concept: p.concept || '',
+                pay_method: '—', // No hay pago
+                pay_concept: 'Reserva sin pago', // Indicador
                 pay_currency: cur,
-                pay_amount: initialBruto, // Usar el valor calculado
+                pay_amount: initialBruto, // Empezará en 0 o valor guardado
                 res_id: res.id,
                 _res: res,
                 fx_used: fx,
-                // Lee 'depto_nombre' (de BBDD) u otros fallbacks.
-                departamento_nombre: res.depto_nombre || res.departamento_nombre || res.department_name || '—', 
+                departamento_nombre: res.depto_nombre || res.departamento_nombre || res.department_name || '—',
+                _is_ghost: true, // Flag para saber que es una fila sin pago
             };
-
             out[cur].push(row);
+
+        } else {
+            // Lógica original para reservas CON pagos
+            const fx = getFxRateForRow(res, null);
+
+            for (let i = 0; i < pays.length; i++) {
+                const p = pays[i];
+                const amt = Number(p.amount);
+                const cur = String(p.currency || '').toUpperCase();
+                if (!Number.isFinite(amt) || amt <= 0) continue;
+                if (cur !== 'ARS' && cur !== 'USD') continue;
+
+                const checkin = res.arrival_iso ? DateTime.fromISO(res.arrival_iso).toFormat('dd/MM/yyyy') : '—';
+                const checkout = res.departure_iso ? DateTime.fromISO(res.departure_iso).toFormat('dd/MM/yyyy') : '—';
+
+                const accBrutoUSD = res.accounting?.brutoUSD;
+                let initialBruto;
+                if (cur === 'USD') {
+                    initialBruto = accBrutoUSD ?? amt;
+                } else { // ARS
+                    initialBruto = (accBrutoUSD != null && fx) ? (accBrutoUSD * fx) : amt;
+                }
+
+                const row = {
+                    id_human: res.id_human || res.id || '—',
+                    huesped: res.nombre_huesped || '—',
+                    checkin: checkin,
+                    checkout: checkout,
+                    canal: res.source || res.channel_name || '—',
+                    pay_method: p.method || '',
+                    pay_concept: p.concept || '',
+                    pay_currency: cur,
+                    pay_amount: initialBruto,
+                    res_id: res.id,
+                    _res: res,
+                    fx_used: fx,
+                    departamento_nombre: res.depto_nombre || res.departamento_nombre || res.department_name || '—',
+                };
+                out[cur].push(row);
+            }
         }
+        // =================================================================
+        // FIN DE LA MODIFICACIÓN (v17)
+        // =================================================================
     }
 
     const sortFn = (a, b) => String(a.checkin).localeCompare(String(b.checkin)) || String(a.id_human).localeCompare(String(b.id_human));
@@ -160,10 +206,8 @@ export default function LiquidacionesPage() {
     const [loading, setLoading] = useState(false);
     const [items, setItems] = useState([]);
     const [byCur, setByCur] = useState({ ARS: [], USD: [] });
-    // const [groupsProp, setGroupsProp] = useState(null); // Eliminado, no se usa
     const [hasRun, setHasRun] = useState(false);
 
-    // --- LÓGICA DE COLUMNA ---
     // Determina si mostramos la columna extra de "Departamento"
     const showDepartmentColumn = propertyId !== 'all' && deptId === '';
 
@@ -174,7 +218,7 @@ export default function LiquidacionesPage() {
                 property: propertyId,
                 from: fromISO,
                 to: toISO,
-                includePayments: '1',
+                includePayments: '1', // Este parámetro puede que ya no sea necesario si la API trae todo
             };
             
             // Corrige nombre del parámetro para la API
@@ -185,7 +229,6 @@ export default function LiquidacionesPage() {
 
             setItems(itemsRaw);
             setByCur(buildByCurrency(itemsRaw));
-            // setGroupsProp(data?.groups || null); // Eliminado, no se usa
             setHasRun(true);
         } catch (err) {
             console.error("Error fetching data:", err);
@@ -198,9 +241,7 @@ export default function LiquidacionesPage() {
     const [pending, setPending] = useState({});
     const { user } = useAuth();
 
-    // ===================================================================
     // Corrección del "parpadeo" (Flicker Fix)
-    // ===================================================================
     useEffect(() => {
         const t = setTimeout(async () => {
             const ids = Object.keys(pending);
@@ -211,10 +252,8 @@ export default function LiquidacionesPage() {
             await Promise.allSettled(
                 Object.entries(batch).map(async ([id, payload]) => {
                     try {
-                        // 1. Guardar la mutación
                         await axios.post('/api/liquidaciones/accountingMutations', { id, payload });
                         
-                        // 2. Registrar en el log de actividad
                         try {
                             await axios.post('/api/liquidaciones/activityLog', {
                                 type: 'acc_update',
@@ -225,7 +264,6 @@ export default function LiquidacionesPage() {
                             console.warn("Error guardando en activityLog:", logErr);
                         }
 
-                        // 3. Refrescar el estado local (items)
                         setItems(prev => prev.map(r => {
                             if (r.id !== id) return r;
                             const a = r.accounting || {};
@@ -254,15 +292,11 @@ export default function LiquidacionesPage() {
                     }
                 })
             );
-            
-            // 4. Recalcular 'byCur'
-            setItems(currentItems => {
+             setItems(currentItems => {
                 setByCur(buildByCurrency(currentItems));
                 return currentItems;
             });
-
-            // 5. LIMPIAR 'pending' AL FINAL
-            setPending(prev => {
+ setPending(prev => {
                 const next = { ...prev };
                 for (const id of Object.keys(batch)) {
                     if (prev[id] === batch[id]) { 
@@ -272,14 +306,11 @@ export default function LiquidacionesPage() {
                 return next;
             });
 
-        }, 600); // 600ms debounce
+        }, 600); 
 
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pending, user]); 
-    // ===================================================================
-    // FIN DE LA CORRECCIÓN
-    // ===================================================================
 
 
     // ----- D) Handlers de edición (staging) -----
@@ -293,9 +324,7 @@ export default function LiquidacionesPage() {
         setPending(prev => ({ ...prev, [id]: { ...(prev[id] || {}), observaciones: value } }));
     };
 
-    // -----------------------------------------------------
-    // Hook chiquito para manejar inputs monetarios
-    // -----------------------------------------------------
+    // Hook para inputs monetarios
     function useMoneyInput(initialNumber = 0, currency = 'USD') {
         const [num, setNum] = React.useState(Number(initialNumber) || 0);
         const [str, setStr] = React.useState(
@@ -334,7 +363,7 @@ export default function LiquidacionesPage() {
         if (pendingBrutoUSD != null) {
             initialBruto = (r.pay_currency === 'USD') ? pendingBrutoUSD : (fx ? pendingBrutoUSD * fx : 0);
         } else {
-            initialBruto = r.pay_amount;
+            initialBruto = r.pay_amount; // Esto será 0 para las 'ghost rows'
         }
 
         const brutoCtl = useMoneyInput(Number(initialBruto) || 0, r.pay_currency);
@@ -386,7 +415,6 @@ export default function LiquidacionesPage() {
 
         return (
             <tr className="tr">
-                {/* --- COLUMNA MOVIDA AL INICIO --- */}
                 {showDepartmentColumn && (
                     <td className="td td--ro">{r.departamento_nombre}</td>
                 )}
@@ -396,7 +424,7 @@ export default function LiquidacionesPage() {
                 <td className="td td--ro">{r.checkin}</td>
                 <td className="td td--ro">{r.checkout}</td>
                 <td className="td td--ro">{r.canal}</td>
-                <td className="td td--mono td--ro">
+                <td className="td td--mono td--ro" style={{ opacity: r._is_ghost ? 0.6 : 1 }}>
                     {[r.pay_method || '—', r.pay_concept || ''].filter(Boolean).join(' · ')}
                 </td>
                 <td className="td">
@@ -450,7 +478,7 @@ export default function LiquidacionesPage() {
                         className="text-input editable"
                         value={obs}
                         onChange={(e) => setObs(e.target.value)}
-                        onBlur={onObsEdit} // Corregido: Debe ser onObsEdit, no onBlurObs
+                        onBlur={onBlurObs}
                     />
                 </td>
             </tr>
@@ -542,7 +570,6 @@ export default function LiquidacionesPage() {
                             <table className="table btable liq-table">
                                 <thead>
                                     <tr>
-                                        {/* --- HEADER MOVIDO AL INICIO --- */}
                                         {showDepartmentColumn && <th className="th">Departamento</th>}
                                         <th className="th">reserva</th>
                                         <th className="th">Huesped</th>
@@ -579,7 +606,6 @@ export default function LiquidacionesPage() {
                             <table className="table btable liq-table">
                                 <thead>
                                     <tr>
-                                        {/* --- HEADER MOVIDO AL INICIO --- */}
                                         {showDepartmentColumn && <th className="th">Departamento</th>}
                                         <th className="th">reserva</th>
                                         <th className="th">Huesped</th>
@@ -611,11 +637,7 @@ export default function LiquidacionesPage() {
                         </section>
                     </>
                 )}
-
-                {/* --- SECCIÓN DE RESUMEN VIEJO ELIMINADA --- */}
-
             </main>
         </div>
     );
 }
-
