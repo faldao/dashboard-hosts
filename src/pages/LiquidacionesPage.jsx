@@ -200,6 +200,15 @@ export default function LiquidacionesPage() {
     const [deptId, setDeptId] = useState('');
     const deptsDisabled = !propertyId || propertyId === 'all';
 
+    // 👉 Agregá ESTE bloque acá:
+    const propertyLabel = useMemo(() => {
+        return (propsList.find(p => String(p.id) === String(propertyId))?.nombre) || 'Propiedad';
+    }, [propsList, propertyId]);
+
+    const deptLabelForTitle = useMemo(() => {
+        return (deptOptions.find(d => String(d.id) === String(deptId))?.label) || 'Departamento';
+    }, [deptOptions, deptId]);
+
     const [fromISO, setFromISO] = useState(monthStart);
     const [toISO, setToISO] = useState(monthEnd);
 
@@ -550,13 +559,18 @@ export default function LiquidacionesPage() {
                         <button className="btn" onClick={fetchData} disabled={loading}>
                             {loading ? 'Cargando...' : 'Mostrar resultados'}
                         </button>
-                        {/* Export per-depto: requiere deptId seleccionado */}
+
+                        {/* Export unificado:
+                        - Si showDepartmentColumn === true => consulta por PROPIEDAD (agrega columna Departamento)
+                        - Si showDepartmentColumn === false => por DEPARTAMENTO (como antes)
+                        */}
                         <ExportLiquidacionesExcel
                             byCur={byCur}
                             fromISO={fromISO}
                             toISO={toISO}
                             tz={TZ}
-                            deptLabel={(deptOptions.find(d => String(d.id) === String(deptId))?.label) || undefined}
+                            mode={showDepartmentColumn ? 'property' : 'department'}
+                            titleSuffix={showDepartmentColumn ? propertyLabel : deptLabelForTitle}
                         />
                     </div>
                 </div>
