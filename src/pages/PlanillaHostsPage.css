@@ -444,3 +444,27 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
 /* ---- responsive: apilar In/Out en móviles muy angostos */
 @media (max-width:520px) { .status-stack-new > div[style*="display: flex"] { flex-direction:column; } .pill-btn--compact { width:100%; } } /* móvil: apilar botones */
 
+/* ---- Punto de estado (15px, borde negro) */
+.status-dot { display:inline-block; width:15px; height:15px; border-radius:50%; border:2px solid #000; margin-left:8px; vertical-align:middle; } /* punto base con borde negro */
+/* colores estáticos */
+.dot-contacted { background:#ffb020; } /* amarillo - contactado */
+.dot-checked_in { background:#bfeefc; } /* celeste - checked in */
+.dot-checked_out { background:#000000; } /* negro - checked out */
+.dot-no_show { background:#c63636; } /* rojo - no show */
+.dot-default { background:#9ca3af; } /* gris fallback */
+/* estados no informados: clases base (usa animación para titilar) */
+.dot-checkin_not_informed { background:#c63636; } /* comienza rojo */
+.dot-checkout_not_informed { background:#c63636; } /* comienza rojo */
+/* animaciones de titilar: rojo <-> celeste */
+@keyframes blinkRedCyan { 0% { background: #c63636; } 50% { background: #bfeefc; } 100% { background: #c63636; } }
+.blink-rc { animation: blinkRedCyan 1s linear infinite; } /* red <-> celeste */
+/* animación rojo <-> negro */
+@keyframes blinkRedBlack { 0% { background: #c63636; } 50% { background: #000000; } 100% { background: #c63636; } }
+.blink-rb { animation: blinkRedBlack 1s linear infinite; } /* red <-> black */
+/* etiqueta "Estado:" estilo */
+.left__line1 .estado { font-size:13px; margin-left:8px; color:#374151; font-weight:600; }
+/* ajuste menor: separar nombre y telefono */
+.left__line2 .name { margin-right:10px; display:inline-block; font-weight:600; }
+/* si necesitás override responsive, ajustar aquí */
+@media (max-width:520px) { .left__line1 .estado { display:block; margin-top:6px; } .status-dot { margin-left:0; margin-top:6px; } }
+

@@ -867,6 +867,26 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
     hosting === "checked_in" ? "tag--depto--in" : ""
   );
 
+  // helper: label y clase del punto segun hosting_status
+  const hostingLabelMap = {
+    contactado: "Contactado",
+    checked_in: "Check-in",
+    checked_out: "Check-out",
+    no_show: "No show",
+    checkin_not_informed: "Check-in no informado",
+    checkout_not_informed: "Check-out no informado",
+  };
+  const hostingLabel = hostingLabelMap[hosting] || (hosting ? hosting : "—");
+  const dotClassMap = {
+    contactado: "dot-contacted",
+    checked_in: "dot-checked_in",
+    checked_out: "dot-checked_out",
+    no_show: "dot-no_show",
+    checkin_not_informed: "dot-checkin_not_informed blink-rc",
+    checkout_not_informed: "dot-checkout_not_informed blink-rb",
+  };
+  const hostingDotClass = dotClassMap[hosting] || "dot-default";
+
   // Popover activo por card
   const isCardActive = !!activePopover && String(activePopover).startsWith(`${r.id}::`);
   const cardClassName = cls("res-card4", isCardActive && "res-card4--active");
@@ -895,14 +915,20 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
       <div className="res-cell res-cell--left">
         <div className="left__line1">
           <span className={deptoTagClass}>{depto}</span>
-          <span className={cls("name", r.contacted_at && "name--contacted")}>{r.nombre_huesped || "Sin nombre"}</span>
-          {flag && <span className="text-sm">{flag}</span>}
+
+          {/* Estado y punto de color */}
+          <span className="estado" style={{ marginLeft: 8 }}>Estado: {hostingLabel}</span>
+          <span className={cls("status-dot", hostingDotClass)} title={hostingLabel} />
+          
+          {flag && <span className="text-sm" style={{ marginLeft: 8 }}>{flag}</span>}
         </div>
 
         <div className="left__line2">
-          {phone && <span>{phone}</span>}
+          {/* Nombre pasa aquí, antes del telefono */}
+          <span className={cls("name", r.contacted_at && "name--contacted")}>{r.nombre_huesped || "Sin nombre"}</span>
+          {phone && <span style={{ marginLeft: 10 }}>{phone}</span>}
           {email && (
-            <a className="mail-link" href={`mailto:${email}`} title={email} onClick={(e) => e.stopPropagation()}>
+            <a className="mail-link" href={`mailto:${email}`} title={email} onClick={(e) => e.stopPropagation()} style={{ marginLeft: 8 }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" />
                 <path d="m22 8-10 6L2 8" />
