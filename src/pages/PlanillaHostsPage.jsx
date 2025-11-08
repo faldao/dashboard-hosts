@@ -290,44 +290,57 @@ function Paginator({ page, totalPages, onPage }) {
 
 /* ---------- UI: ActionButton con popover ---------- */
 
-function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, isOpen, onToggle, onDone }) {
-  const btnRef = useRef(null);               // ⟵ ANCLA
+function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, isOpen, onToggle, onDone, labelOverride, compact = false }) {
+  const btnRef = useRef(null);
   const [d, setD] = useState(defaultDateISO || "");
   const [t, setT] = useState(defaultTimeHHmm || "");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const label = type === "contact" ? "Contactado" : type === "checkin" ? "Check-in" : "Check-out";
-  const btnClass = cls("pill-btn", !active ? "pill-btn--neutral" :
-    tone === "amber" ? "pill-btn--amber-active" :
-      tone === "sky" ? "pill-btn--sky-active" : "pill-btn--gray-active");
+  const baseLabel = type === "contact" ? "Contactado" : type === "checkin" ? "Check-in" : type === "checkout" ? "Check-out" : (type === "noShow" ? "No Show" : String(type));
+  const label = labelOverride ?? baseLabel;
+
+  const btnClass = cls(
+    compact ? "pill-btn pill-btn--compact" : "pill-btn",
+    !active ? (compact ? "pill-btn--neutral-compact" : "pill-btn--neutral") :
+      tone === "amber" ? (compact ? "pill-btn--amber-active-compact" : "pill-btn--amber-active") :
+      tone === "sky" ? (compact ? "pill-btn--sky-active-compact" : "pill-btn--sky-active") :
+      (compact ? "pill-btn--gray-active-compact" : "pill-btn--gray-active")
+  );
 
   const confirm = async () => {
     try {
       setSubmitting(true);
-      let whenISO;
+      let whenISO = null;
       if (type === "contact") {
         whenISO = d && t ? toLocalIso(d, t) : null;
       } else if (type === "checkin") {
         whenISO = toLocalIso(d || (r.arrival_iso || ""), t || "15:00");
-      } else {
+      } else if (type === "checkout") {
         whenISO = toLocalIso(d || (r.departure_iso || ""), t || "11:00");
+      } else if (type === "noShow") {
+        whenISO = toLocalIso(d || (r.arrival_iso || ""), t || "00:00");
       }
+
       await axios.post("/api/reservationMutations", { id: r.id, action: type, payload: { when: whenISO } });
+
       const clean = (note || "").trim();
-      if (clean) await axios.post("/api/reservationMutations", { id: r.id, action: "addNote", payload: { text: clean } });
+        if (clean && type === "contact") {
+        await axios.post("/api/reservationMutations", { id: r.id, action: "addNote", payload: { text: clean } });
+      }
       setNote("");
       onDone?.();
     } finally { setSubmitting(false); }
   };
 
   return (
-    <div className="pill-wrap" onClick={(e) => e.stopPropagation()}>
+    <div className={compact ? "pill-wrap--compact" : "pill-wrap"} onClick={(e) => e.stopPropagation()}>
       <button ref={btnRef} type="button" className={btnClass} onClick={onToggle} disabled={submitting}>
         {label}
       </button>
 
-      <PopoverPortal anchorRef={btnRef} open={isOpen} onClose={onToggle} placement="top-right" maxWidth={300}>
+      <PopoverPortal anchorRef={btnRef} open={isOpen} onClose={onToggle} placement="top-right" maxWidth={compact ? 260 : 300}>
+        {/* mismo contenido que antes (fecha/hora/note) */}
         <div className="mini-popover__row">
           <label className="mini-popover__lab">Fecha</label>
           <input type="date" className="mini-popover__field" value={d} onChange={(e) => setD(e.target.value)} />
@@ -340,6 +353,7 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
           <label className="mini-popover__lab">Nota (opcional)</label>
           <textarea className="mini-popover__field h-16" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Agregar nota…" />
         </div>
+
         <div className="mini-popover__actions">
           <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle} disabled={submitting}>Cancelar</button>
           <button type="button" className="mini-popover__btn mini-popover__btn--ok" onClick={confirm} disabled={submitting}>
@@ -843,7 +857,15 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   const inDt = fmtDate(r.arrival_iso);
   const outDt = fmtDate(r.departure_iso);
   const channel = r.source || r.channel_name || "—";
-  const deptoTagClass = cls("tag", "tag--depto", r.checkin_at ? "tag--depto--in" : (r.checkout_at ? "tag--depto--out" : ""));
+  // prioridad: hosting_status/no_show_at > checkout_at > checkin_at
+  const hosting = String(r.hosting_status || (r.no_show_at ? "no_show" : (r.checkout_at ? "checked_out" : (r.checkin_at ? "checked_in" : ""))));
+  const deptoTagClass = cls(
+    "tag",
+    "tag--depto",
+    hosting === "no_show" ? "tag--depto--noshow" :
+    hosting === "checked_out" ? "tag--depto--out" :
+    hosting === "checked_in" ? "tag--depto--in" : ""
+  );
 
   // Popover activo por card
   const isCardActive = !!activePopover && String(activePopover).startsWith(`${r.id}::`);
@@ -960,7 +982,8 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
 
       {/* CELDA 4: Estado */}
       <div className="res-cell">
-        <div className="status-stack-new">
+        <div className="status-stack-new" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Línea 1: Contactado (full width) */}
           <ActionButton
             r={r}
             type="contact"
@@ -972,27 +995,49 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
             onToggle={() => onPopoverToggle(pidContact)}
             onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
           />
+
+          {/* Línea 2: In / Out (dos botones mitad ancho) */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <ActionButton
+              r={r}
+              type="checkin"
+              active={!!r.checkin_at}
+              defaultDateISO={defInDate}
+              defaultTimeHHmm={"15:00"}
+              tone="sky"
+              isOpen={activePopover === pidCheckIn}
+              onToggle={() => onPopoverToggle(pidCheckIn)}
+              onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
+              labelOverride="In"
+              compact={true}
+            />
+            <ActionButton
+              r={r}
+              type="checkout"
+              active={!!r.checkout_at}
+              defaultDateISO={defOutDate}
+              defaultTimeHHmm={"11:00"}
+              tone="gray"
+              isOpen={activePopover === pidCheckOut}
+              onToggle={() => onPopoverToggle(pidCheckOut)}
+              onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
+              labelOverride="Out"
+              compact={true}
+            />
+          </div>
+
+          {/* Línea 3: No Show */}
           <ActionButton
             r={r}
-            type="checkin"
-            active={!!r.checkin_at}
+            type="noShow"
+            active={!!r.no_show_at}
             defaultDateISO={defInDate}
-            defaultTimeHHmm={"15:00"}
-            tone="sky"
-            isOpen={activePopover === pidCheckIn}
-            onToggle={() => onPopoverToggle(pidCheckIn)}
-            onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
-          />
-          <ActionButton
-            r={r}
-            type="checkout"
-            active={!!r.checkout_at}
-            defaultDateISO={defOutDate}
-            defaultTimeHHmm={"11:00"}
+            defaultTimeHHmm={"00:00"}
             tone="gray"
-            isOpen={activePopover === pidCheckOut}
-            onToggle={() => onPopoverToggle(pidCheckOut)}
+            isOpen={activePopover === `${r.id}::noshow`}
+            onToggle={() => onPopoverToggle(`${r.id}::noshow`)}
             onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
+            labelOverride="No Show"
           />
         </div>
       </div>

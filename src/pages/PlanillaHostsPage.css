@@ -417,3 +417,27 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
   .header__userline__name{display:inline-flex!important}
 }
 
+/* ---- compact buttons para In/Out (mitad ancho dentro de un flex) */ 
+.pill-wrap--compact { display:flex; align-items:center; width:100%; } /* contenedor compacto */ 
+.pill-btn--compact { flex:1 1 0; min-width:0; padding:6px 8px; font-size:13px; line-height:1; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; gap:6px; cursor:pointer; white-space:nowrap; transition:background .12s,color .12s,border-color .12s; } /* botón compacto */ 
+.pill-btn--neutral-compact { background:#f3f4f6; color:#222; border:1px solid #e6e6e6; } /* estado neutral compacto */ 
+.pill-btn--amber-active-compact { background:#ffb020; color:#fff; border:1px solid rgba(0,0,0,0.06); } /* activo amber compacto */ 
+.pill-btn--sky-active-compact { background:#20a8d8; color:#fff; border:1px solid rgba(0,0,0,0.06); } /* activo sky compacto */ 
+.pill-btn--gray-active-compact { background:#333; color:#fff; border:1px solid rgba(255,255,255,0.04); } /* activo gray compacto */ 
+.pill-btn--compact:hover { filter:brightness(.96); } /* hover compacto */ 
+.pill-btn--compact:active { transform:translateY(0.5px); } /* active compacto */ 
+.pill-btn--compact:focus { outline:2px solid rgba(32,168,216,0.18); outline-offset:2px; } /* focus compacto */ 
+.status-stack-new > div[style*="display: flex"] .pill-btn--compact { width:100%; } /* asegura que ocupen 50% cada uno dentro del flex padre */
+
+/* ---- etiquetas de departamento (In / Out / No Show) */
+.tag--depto--in { background:#bfeefc; color:#08303a; border-color:rgba(3,50,60,0.08); } /* check-in: celeste */ 
+.tag--depto--out { background:#000000; color:#ffffff; border-color:rgba(255,255,255,0.06); } /* check-out: negro con texto blanco */ 
+.tag--depto--noshow { background:#c63636; color:#ffffff; border-color:rgba(0,0,0,0.06); } /* no show: rojo con texto blanco */
+
+/* ---- ajuste popover compacto y campos */
+.mini-popover--compact { max-width:320px; } /* variante compacta del popover */ 
+.mini-popover--compact .mini-popover__field { font-size:13px; padding:6px 8px; } /* campos más pequeños en popover compacto */
+
+/* ---- responsive: apilar In/Out en móviles muy angostos */
+@media (max-width:520px) { .status-stack-new > div[style*="display: flex"] { flex-direction:column; } .pill-btn--compact { width:100%; } } /* móvil: apilar botones */
+

@@ -180,12 +180,19 @@ export default async function handler(req, res) {
 
     if (action === 'checkin') {
       update.checkin_at = toTs(payload.when ?? null);
+      update.hosting_status = 'checked_in';
+      historyPayload.checkin = { when: update.checkin_at, by: actor };
 
     } else if (action === 'checkout') {
       update.checkout_at = toTs(payload.when ?? null);
+      update.hosting_status = 'checked_out';
+      historyPayload.checkout = { when: update.checkout_at, by: actor };
 
     } else if (action === 'contact') {
       update.contacted_at = toTs(payload.when ?? null);
+      // keep hosting_status unchanged except set to 'contactado' if not checked in/out/no_show
+      if (!before.checkout_at && !before.checkin_at && !before.no_show_at) update.hosting_status = 'contactado';
+      historyPayload.contact = { when: update.contacted_at, by: actor };
 
     } else if (action === 'addNote') {
       const text = String(payload?.text || '').trim();
@@ -250,6 +257,11 @@ export default async function handler(req, res) {
 
       historyPayload.payment = payment;
 
+    } else if (action === 'noShow') {
+      // marca No Show
+      update.no_show_at = toTs(payload.when ?? null);
+      update.hosting_status = 'no_show';
+      historyPayload.noShow = { when: update.no_show_at, by: actor };
     } else if (action === 'setToPay') {
       // ── valores previos del breakdown
       const prev = before?.toPay_breakdown || {};
