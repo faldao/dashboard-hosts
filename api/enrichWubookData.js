@@ -212,6 +212,14 @@ function mapWubookPaymentsToUnified(arr = []) {
       } catch {}
     }
 
+    // normalizar currency: aceptar currency o ccy, limpiar cadena y uppercase,
+    // si no viene currency -> default USD, pero si amount > 10000 => ARS
+    const rawCcy = (p.currency ?? p.ccy ?? '');
+    const cleaned = String(rawCcy || '').trim();
+    const currency = cleaned
+      ? cleaned.toUpperCase()
+      : (Number.isFinite(amt) && amt > 10000 ? 'ARS' : 'USD');
+
     return {
       ts,
       by: p.team_user || p.by || 'wubook',
@@ -220,7 +228,7 @@ function mapWubookPaymentsToUnified(arr = []) {
       source: 'wubook',
       wubook_id: p.id ?? null,
       amount: Number.isFinite(amt) ? amt : 0,
-      currency: (p.currency || p.ccy || null),
+      currency,
       method: String(p.type || p.method || 'unknown'),
       concept: (p.remarks ?? p.concept ?? null) ? String(p.remarks ?? p.concept).trim() : null,
       raw: p,
@@ -580,6 +588,8 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: error?.message || 'Unexpected error' });
   }
 }
+
+
 
 
 
