@@ -197,15 +197,33 @@ function dedupeNotes(arr = []) {
 // Payments
 function mapWubookPaymentsToUnified(arr = []) {
   return (Array.isArray(arr) ? arr : []).map(p => {
-    const amt = Number(p.amount ?? p.total ?? 0);
+    // monto: preferir value, luego amount/total
+    const rawAmount = p.value ?? p.amount ?? p.total ?? 0;
+    const amt = Number(rawAmount || 0);
+
+    // fecha: preferir created_at (ya puede ser Timestamp), si no parsear date dd/MM/yyyy
+    let ts = Timestamp.now();
+    if (p.created_at) {
+      ts = p.created_at;
+    } else if (p.date) {
+      try {
+        const dt = DateTime.fromFormat(String(p.date), 'dd/MM/yyyy', { zone: TZ });
+        if (dt?.isValid) ts = Timestamp.fromDate(dt.toJSDate());
+      } catch {}
+    }
+
     return {
-      ts: p.created_at || p.date || Timestamp.now(),
-      by: 'wubook',
+      ts,
+      by: p.team_user || p.by || 'wubook',
+      byUid: null,
+      byEmail: null,
       source: 'wubook',
       wubook_id: p.id ?? null,
       amount: Number.isFinite(amt) ? amt : 0,
-      currency: (p.currency || p.ccy || null),   // no asumir USD si falta
-      method: String(p.method || p.type || 'unknown')
+      currency: (p.currency || p.ccy || null),
+      method: String(p.type || p.method || 'unknown'),
+      concept: (p.remarks ?? p.concept ?? null) ? String(p.remarks ?? p.concept).trim() : null,
+      raw: p,
     };
   }).filter(p => p.amount > 0);
 }
