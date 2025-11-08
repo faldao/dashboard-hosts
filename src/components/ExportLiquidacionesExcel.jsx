@@ -7,7 +7,7 @@ import {
   writeSection,
   buildTitleAndFilename,
   rowHeights,
-} from "../../api/liquidaciones/exportUtilsLiquidaciones";
+} from "../../lib/exportUtilsLiquidaciones";
 
 export default function ExportLiquidacionesExcel({
   byCur,              // { ARS:[], USD:[] }

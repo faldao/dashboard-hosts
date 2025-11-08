@@ -10,6 +10,16 @@
  *   Recalcula `toPay` usando el `toPay_breakdown` existente (incluido su
  *   `extrasUSD` SI YA EXISTE), pero NO crea ni modifica extras.
  *
+ *   Adicionalmente, cuando detecta pagos en WuBook que no están registrados
+ *   previamente en Firestore, crea documentos individuales en la subcolección
+ *   "payments" de la reserva. La creación de estos docs:
+ *     - Usa el mismo esquema/criterio que /api/reservationMutations.js
+ *     - Evita duplicados usando una clave estable (wubook_id cuando existe,
+ *       o una clave construida a partir de ts+amount+currency+method)
+ *     - Pone timestamps (FieldValue.serverTimestamp) y guarda el raw original
+ *     - Se ejecuta tanto en el flujo de procesamiento por reservationId como
+ *       en el batch por query
+ *
  * MODOS: 'pending' | 'active' | forceUpdate
  *
  * ✅ Notas y Pagos unificados (fuente de verdad):
@@ -320,6 +330,34 @@ export default async function handler(req, res) {
       const changedKeys = Object.keys(diff);
 
       const batch = firestore.batch();
+
+      // --- crear docs individuales para pagos nuevos en subcolección "payments"
+      const paymentKey = (p) => p.wubook_id
+        ? `w:${p.wubook_id}`
+        : `s:${(p.ts?.seconds ?? p.ts?._seconds ?? p.ts ?? '')}|a:${p.amount}|c:${p.currency}|m:${p.method}`;
+      const existingKeys = new Set((existingUnifiedPays || []).map(paymentKey));
+      const newPaymentsFromWubook = (unifiedPaysFromWubook || []).filter(p => !existingKeys.has(paymentKey(p)));
+      for (const np of newPaymentsFromWubook) {
+        const payDocRef = doc.ref.collection('payments').doc();
+        batch.set(payDocRef, {
+          ts: np.ts || FieldValue.serverTimestamp(),
+          by: np.by || 'wubook',
+          byUid: np.byUid || null,
+          byEmail: np.byEmail || null,
+          source: np.source || 'wubook',
+          wubook_id: np.wubook_id || null,
+          amount: Number.isFinite(Number(np.amount)) ? Number(np.amount) : 0,
+          currency: np.currency || null,
+          method: np.method || null,
+          concept: np.concept || np.note || null,
+          usd_equiv: Number.isFinite(Number(np.usd_equiv)) ? Number(np.usd_equiv) : null,
+          fxRateUsed: Number.isFinite(Number(np.fxRateUsed)) ? Number(np.fxRateUsed) : null,
+          createdAt: FieldValue.serverTimestamp(),
+          raw: np,
+        });
+      }
+      // --- end pagos individuales
+
       batch.update(doc.ref, updateData);
       const histRef = doc.ref.collection('historial').doc(`${Date.now()}_sync`);
       batch.set(histRef, {
@@ -458,6 +496,33 @@ export default async function handler(req, res) {
       const changedKeys = Object.keys(diff);
 
       batch.update(doc.ref, updateData);
+
+      // --- crear docs individuales para pagos nuevos en subcolección "payments" (batch global)
+      const paymentKey = (p) => p.wubook_id
+        ? `w:${p.wubook_id}`
+        : `s:${(p.ts?.seconds ?? p.ts?._seconds ?? p.ts ?? '')}|a:${p.amount}|c:${p.currency}|m:${p.method}`;
+      const existingKeys = new Set((existingUnifiedPays || []).map(paymentKey));
+      const newPaymentsFromWubook = (unifiedPaysFromWubook || []).filter(p => !existingKeys.has(paymentKey(p)));
+      for (const np of newPaymentsFromWubook) {
+        const payDocRef = doc.ref.collection('payments').doc();
+        batch.set(payDocRef, {
+          ts: np.ts || FieldValue.serverTimestamp(),
+          by: np.by || 'wubook',
+          byUid: np.byUid || null,
+          byEmail: np.byEmail || null,
+          source: np.source || 'wubook',
+          wubook_id: np.wubook_id || null,
+          amount: Number.isFinite(Number(np.amount)) ? Number(np.amount) : 0,
+          currency: np.currency || null,
+          method: np.method || null,
+          concept: np.concept || np.note || null,
+          usd_equiv: Number.isFinite(Number(np.usd_equiv)) ? Number(np.usd_equiv) : null,
+          fxRateUsed: Number.isFinite(Number(np.fxRateUsed)) ? Number(np.fxRateUsed) : null,
+          createdAt: FieldValue.serverTimestamp(),
+          raw: np,
+        });
+      }
+      // --- end pagos individuales
 
       const histRef = doc.ref.collection('historial').doc(`${Date.now()}_sync`);
       batch.set(histRef, {
