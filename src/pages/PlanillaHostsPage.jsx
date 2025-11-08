@@ -890,7 +890,7 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   const toggleCurrency = () => setCurrency((c) => (c === "USD" ? "ARS" : "USD"));
 
   return (
-    <div className={cardClassName} onClick={(e) => e.stopPropagation()}>
+    <div className={cls(cardClassName, r.hosting_status && String(r.hosting_status).includes('not_informed') && 'res-card--alert')} onClick={(e) => e.stopPropagation()}>
       {/* CELDA 1 */}
       <div className="res-cell res-cell--left">
         <div className="left__line1">
