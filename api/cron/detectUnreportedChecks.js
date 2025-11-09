@@ -1,4 +1,4 @@
-import { firestore, FieldValue } from '../lib/firebaseAdmin.js';
+import { firestore, FieldValue } from '../../lib/firebaseAdmin.js';
 import { DateTime } from 'luxon';
 
 const TZ = 'America/Argentina/Buenos_Aires';

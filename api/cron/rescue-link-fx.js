@@ -39,7 +39,7 @@ export default async function handler(req, res) {
     };
 
     const headers = { "Content-Type": "application/json" };
-    if (process.env.AUTH_TOKEN) headers["Authorization"] = `Bearer ${process.env.AUTH_TOKEN}`;
+    //if (process.env.AUTH_TOKEN) headers["Authorization"] = `Bearer ${process.env.AUTH_TOKEN}`;
 
     const url = `${BASE.replace(/\/+$/, "")}/api/linkUsdFxToReservations`;
 
