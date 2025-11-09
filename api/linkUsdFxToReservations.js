@@ -283,29 +283,8 @@ export default async function handler(req, res) {
     if (!["GET", "POST"].includes(req.method))
       return bad(res, 405, "Método no permitido");
 
-    // --- AUTH PARCHE FLEXIBLE ---
-const authHeader = (req.headers?.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    // *** HANDLER ABIERTO: sin autenticación ***
 
-const hostHeader = (req.headers?.host || req.headers["x-forwarded-host"] || "").replace(/:\d+$/, "");
-const envToken = (process.env.AUTH_TOKEN || "").trim();
-
-// 🔧 PARCHE: permitir también si viene de cualquier *.vercel.app propio
-const allowAlias = hostHeader.endsWith(".vercel.app");
-
-if (envToken) {
-  const tokenOk = authHeader === envToken;
-  if (!tokenOk && !allowAlias) {
-    console.warn("[linkUsdFx] unauthorized request - auth failed", {
-      tokenOk,
-      hostHeader,
-      allowAlias,
-    });
-    return res.status(401).json({ error: "unauthorized" });
-  }
-} else {
-  console.log("[linkUsdFx] no AUTH_TOKEN set - allowing request");
-}
-// --- FIN AUTH ---
     const q = req.method === "GET" ? req.query : req.body || {};
     const since = toISO(q.since);
     const untilInput = toISO(q.until);

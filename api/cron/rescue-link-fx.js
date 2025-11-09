@@ -56,14 +56,8 @@ export default async function handler(req, res) {
 
     const headers = { "Content-Type": "application/json" };
 
-    // Enviar token SOLO si existe y limpio
-    const tk = (process.env.AUTH_TOKEN || "").trim();
-    if (tk) {
-      headers["Authorization"] = `Bearer ${tk}`;
-      console.log("[RescueFX] Auth token agregado al fetch interno. len:", tk.length);
-    } else {
-      console.warn("[RescueFX] AUTH_TOKEN no está definido. La llamada interna se hará sin token.");
-    }
+    // AUTH_TOKEN no se usa: no enviamos Authorization en el fetch interno
+    console.log("[RescueFX] AUTH_TOKEN no se enviará en la llamada interna (deshabilitado).");
 
     const url = `${BASE.replace(/\/+$/, "")}/api/linkUsdFxToReservations`;
 
