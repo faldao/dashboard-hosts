@@ -419,52 +419,20 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
 
 /* ---- compact buttons para In/Out (mitad ancho dentro de un flex) */ 
 .pill-wrap--compact { display:flex; align-items:center; width:100%; } /* contenedor compacto */ 
-.pill-btn--compact { flex:1 1 0; min-width:0; padding:6px 8px; font-size:13px; font-weight:600; line-height:1; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; gap:6px; cursor:pointer; white-space:nowrap; transition:background .12s,color .12s,border-color .12s; } /* botón compacto - tipografía fija */ 
-.pill-btn--neutral-compact { background:#ffffff; color:#374151; border:1px solid #e6e6e6; } /* inactivo neutral compacto */ 
-.pill-btn--amber-active-compact { background:#ffb020; color:#fff; border:1px solid rgba(0,0,0,0.06); } /* activo amber compacto */ 
-.pill-btn--sky-active-compact { background:#20a8d8; color:#fff; border:1px solid rgba(0,0,0,0.06); } /* activo sky compacto */ 
-.pill-btn--gray-active-compact { background:#111827; color:#fff; border:1px solid rgba(255,255,255,0.04); } /* activo gray compacto */ 
-.pill-btn--compact:hover { filter:brightness(.96); } /* hover compacto */ 
-.pill-btn--compact:focus { outline:2px solid rgba(32,168,216,0.12); outline-offset:2px; } /* focus compacto */ 
-.status-stack-new > div[style*="display: flex"] .pill-btn--compact { width:100%; } /* asegura que ocupen 50% cada uno dentro del flex padre */
-
-/* Marco rojo para reservas en estado "not informed" (similar a popover activo) */
-.res-card--alert { border:1px solid #c63636; box-shadow:0 0 0 4px rgba(198,54,54,0.06); } /* marco rojo + halo */
-@media (max-width:520px) { .status-stack-new > div[style*="display: flex"] { flex-direction:column; } .pill-btn--compact { width:100%; } } /* responsive */
-
-/* ---- etiquetas de departamento (In / Out / No Show) */
-.tag--depto--in { background:#bfeefc; color:#08303a; border-color:rgba(3,50,60,0.08); } /* check-in: celeste */ 
-.tag--depto--out { background:#000000; color:#ffffff; border-color:rgba(255,255,255,0.06); } /* check-out: negro con texto blanco */ 
-.tag--depto--noshow { background:#c63636; color:#ffffff; border-color:rgba(0,0,0,0.06); } /* no show: rojo con texto blanco */
-
-/* ---- ajuste popover compacto y campos */
-.mini-popover--compact { max-width:320px; } /* variante compacta del popover */ 
-.mini-popover--compact .mini-popover__field { font-size:13px; padding:6px 8px; } /* campos más pequeños en popover compacto */
-
-/* ---- responsive: apilar In/Out en móviles muy angostos */
-@media (max-width:520px) { .status-stack-new > div[style*="display: flex"] { flex-direction:column; } .pill-btn--compact { width:100%; } } /* móvil: apilar botones */
-
-/* ---- Punto de estado (15px, borde negro) */
-.status-dot { display:inline-block; width:15px; height:15px; border-radius:50%; border:2px solid #000; margin-left:8px; vertical-align:middle; } /* punto base con borde negro */
-/* colores estáticos */
-.dot-contacted { background:#ffb020; } /* amarillo - contactado */
-.dot-checked_in { background:#bfeefc; } /* celeste - checked in */
-.dot-checked_out { background:#000000; } /* negro - checked out */
-.dot-no_show { background:#c63636; } /* rojo - no show */
-.dot-default { background:#9ca3af; } /* gris fallback */
-/* estados no informados: clases base (usa animación para titilar) */
-.dot-checkin_not_informed { background:#c63636; } /* comienza rojo */
-.dot-checkout_not_informed { background:#c63636; } /* comienza rojo */
-/* animaciones de titilar: rojo <-> celeste */
-@keyframes blinkRedCyan { 0% { background: #c63636; } 50% { background: #bfeefc; } 100% { background: #c63636; } }
-.blink-rc { animation: blinkRedCyan 1s linear infinite; } /* red <-> celeste */
-/* animación rojo <-> negro */
-@keyframes blinkRedBlack { 0% { background: #c63636; } 50% { background: #000000; } 100% { background: #c63636; } }
-.blink-rb { animation: blinkRedBlack 1s linear infinite; } /* red <-> black */
-/* etiqueta "Estado:" estilo */
-.left__line1 .estado { font-size:13px; margin-left:8px; color:#374151; font-weight:600; }
-/* ajuste menor: separar nombre y telefono */
-.left__line2 .name { margin-right:10px; display:inline-block; font-weight:600; }
-/* si necesitás override responsive, ajustar aquí */
-@media (max-width:520px) { .left__line1 .estado { display:block; margin-top:6px; } .status-dot { margin-left:0; margin-top:6px; } }
+.pill-btn, .pill-btn--compact { font-family:inherit; font-size:13px; font-weight:600; line-height:1; color:#374151; background:#ffffff; border-radius:6px; border:1px solid #e6e6e6; display:inline-flex; align-items:center; justify-content:center; gap:6px; cursor:pointer; white-space:nowrap; transition:background .12s,color .12s,border-color .12s,transform .06s; } /* tipografía unificada */ 
+.pill-btn--compact { padding:6px 8px; min-width:0; } /* compact solo tamaño */ 
+.pill-btn--neutral { background:#ffffff; color:#374151; border:1px solid #e6e6e6; } /* neutral inactivo */ 
+.pill-btn--amber-active { background:#ffb020; color:#fff; border-color:rgba(0,0,0,0.06); } /* activo amber */ 
+.pill-btn--sky-active { background:#20a8d8; color:#fff; border-color:rgba(0,0,0,0.06); } /* activo sky */ 
+.pill-btn--gray-active { background:#111827; color:#fff; border-color:rgba(255,255,255,0.04); } /* activo gray */ 
+.pill-btn:hover { filter:brightness(.97); } .pill-btn:active { transform:translateY(0.5px); } .pill-btn:focus { outline:2px solid rgba(32,168,216,0.12); outline-offset:2px; } /* hover/active/focus */ 
+.status-stack-new > div[style*="display: flex"] .pill-btn--compact { width:100%; } /* asegura que ocupen 50% cada uno dentro del flex padre */ 
+.left__line1 { display:flex; align-items:center; justify-content:space-between; gap:8px; } /* depto izq / estado der */ 
+@media (max-width:640px) { .left__line1 .estado { display:none !important; } } /* mobile: ocultar la palabra "Estado" */ 
+.left__line2 .tag--rcode { font-size:11px; padding:2px 6px; margin-left:6px; } /* badge country */ 
+.left__line3 { display:flex; align-items:center; gap:8px; } /* in/out line */ 
+.status-dot { display:inline-block; width:15px; height:15px; border-radius:50%; border:2px solid #000; margin-left:8px; vertical-align:middle; } /* punto estado */ 
+.dot-contacted { background:#ffb020; } .dot-checked_in { background:#bfeefc; } .dot-checked_out { background:#000000; } .dot-no_show { background:#c63636; } .dot-default { background:#9ca3af; } .dot-checkin_not_informed { background:#c63636; } .dot-checkout_not_informed { background:#c63636; } /* colores punto */ 
+@keyframes blinkRedCyan { 0%{background:#c63636;} 50%{background:#bfeefc;} 100%{background:#c63636;} } .blink-rc { animation:blinkRedCyan 1s linear infinite; } @keyframes blinkRedBlack { 0%{background:#c63636;} 50%{background:#000000;} 100%{background:#c63636;} } .blink-rb { animation:blinkRedBlack 1s linear infinite; } /* animaciones titilar */ 
+@media (max-width:640px) { .left__line4{border-top:1px solid #e5e7eb;padding-top:8px;margin-top:8px;} .panel__list{border-top:1px solid #e5e7eb;padding-top:8px;margin-top:8px;} .payments-list{border-top:1px solid #e5e7eb;padding-top:8px;margin-top:8px;} } /* divisores móviles */
 
