@@ -11,6 +11,26 @@ const TZ = "America/Argentina/Buenos_Aires";
 
 export default async function handler(req, res) {
   try {
+    // validar método OPTIONS rápido
+    if (req.method === 'OPTIONS') return res.status(200).end();
+
+    // --- auth relax: si AUTH_TOKEN está definido se valida, si no está permitimos (modo prueba) ---
+    const authHeader = (req.headers?.authorization || '').replace(/^Bearer\s+/i, '');
+    const hostHeader = (req.headers?.host || req.headers['x-forwarded-host'] || '').replace(/:\d+$/, '');
+    console.log('[RescueFX] incoming auth present:', Boolean(req.headers?.authorization), 'host:', hostHeader, 'VERCEL_URL:', process.env.VERCEL_URL);
+
+    if (process.env.AUTH_TOKEN) {
+      const tokenOk = authHeader && authHeader === process.env.AUTH_TOKEN;
+      const fromSelf = process.env.VERCEL_URL && hostHeader === process.env.VERCEL_URL.replace(/^https?:\/\//, '');
+      if (!tokenOk && !fromSelf) {
+        console.warn('[RescueFX] unauthorized request - auth failed');
+        return res.status(401).json({ error: 'unauthorized' });
+      }
+    } else {
+      console.log('[RescueFX] no AUTH_TOKEN set - allowing request');
+    }
+    // --- fin auth ---
+
     // Construcción de base URL
     const BASE =
       process.env.RESCUE_BASE_URL ||
@@ -32,15 +52,13 @@ export default async function handler(req, res) {
       dryRun: false,
       force: false,
       pageSize: 500,
-      // Opcional: limitar por propiedades si defines PROPERTY_IDS="100,101"
       ...(process.env.PROPERTY_IDS
         ? { propertyIds: process.env.PROPERTY_IDS.split(",").map(s => s.trim()).filter(Boolean) }
         : {}),
     };
 
     const headers = { "Content-Type": "application/json" };
-    //if (process.env.AUTH_TOKEN) headers["Authorization"] = `Bearer ${process.env.AUTH_TOKEN}`;
-
+    // no enviamos Authorization desde aquí (el handler receptor decide si exige token)
     const url = `${BASE.replace(/\/+$/, "")}/api/linkUsdFxToReservations`;
 
     console.log("[RescueFX] POST", url, body);

@@ -333,3 +333,21 @@ export default async function handler(req, res) {
     return bad(res, 500, e.message || "Error interno");
   }
 }
+
+// reemplazar la validación de auth por este bloque:
+const authHeader = (req.headers?.authorization || "").replace(/^Bearer\s+/i, "");
+const hostHeader = (req.headers?.host || req.headers["x-forwarded-host"] || "").replace(/:\d+$/, "");
+console.log("[linkUsdFx] incoming auth present:", Boolean(req.headers?.authorization), "host:", hostHeader, "vercel_url:", process.env.VERCEL_URL);
+
+// Si NO hay AUTH_TOKEN configurado en env, permitimos la llamada (sin auth)
+// Si hay AUTH_TOKEN: aceptamos si coincide o si la petición viene del mismo VERCEL_URL (cron interno)
+if (process.env.AUTH_TOKEN) {
+  const tokenOk = authHeader && authHeader === process.env.AUTH_TOKEN;
+  const fromSelf = process.env.VERCEL_URL && hostHeader === process.env.VERCEL_URL.replace(/^https?:\/\//, "");
+  if (!tokenOk && !fromSelf) {
+    console.warn("[linkUsdFx] unauthorized request - auth failed");
+    return res.status(401).json({ error: "unauthorized" });
+  }
+} else {
+  console.log("[linkUsdFx] no AUTH_TOKEN set - allowing request");
+}
