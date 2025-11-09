@@ -82,11 +82,20 @@ const stamp = () => DateTime.now().setZone(TZ).toISO();
 const LOGP = "LinkFX";
 
 const log = (msg, extra = {}) =>
-  console.log(`[${LOGP}] ${stamp()} ${msg}`, Object.keys(extra).length ? extra : "");
+  console.log(
+    `[${LOGP}] ${stamp()} ${msg}`,
+    Object.keys(extra).length ? extra : ""
+  );
 const warn = (msg, extra = {}) =>
-  console.warn(`[${LOGP}] ${stamp()} ${msg}`, Object.keys(extra).length ? extra : "");
+  console.warn(
+    `[${LOGP}] ${stamp()} ${msg}`,
+    Object.keys(extra).length ? extra : ""
+  );
 const err = (msg, extra = {}) =>
-  console.error(`[${LOGP}] ${stamp()} ${msg}`, Object.keys(extra).length ? extra : "");
+  console.error(
+    `[${LOGP}] ${stamp()} ${msg}`,
+    Object.keys(extra).length ? extra : ""
+  );
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 function ok(res, data) {
@@ -115,11 +124,16 @@ async function getQuoteDoc(dateISO) {
   const mm = d.toFormat("MM");
   const dd = d.toFormat("dd");
   const ref = firestore
-    .collection("cotizaciones").doc("USD")
-    .collection(yyyy).doc(mm)
-    .collection(dd).doc("cot");
+    .collection("cotizaciones")
+    .doc("USD")
+    .collection(yyyy)
+    .doc(mm)
+    .collection(dd)
+    .doc("cot");
   const snap = await ref.get();
-  return snap.exists ? { id: ref.path, _sourceDate: dateISO, ...snap.data() } : null;
+  return snap.exists
+    ? { id: ref.path, _sourceDate: dateISO, ...snap.data() }
+    : null;
 }
 
 async function findLastQuoteDateFromFirestore(maxLookbackDays = 365) {
@@ -179,7 +193,9 @@ async function updateReservationsForDate({
 }) {
   log("DATE_START", { dateISO, usedFallback, fallbackFrom });
 
-  const baseQuery = firestore.collection("Reservas").where("arrival_iso", "==", dateISO);
+  const baseQuery = firestore
+    .collection("Reservas")
+    .where("arrival_iso", "==", dateISO);
 
   const chunks = [];
   if (Array.isArray(propertyIds) && propertyIds.length > 0) {
@@ -187,7 +203,9 @@ async function updateReservationsForDate({
       chunks.push(propertyIds.slice(i, i + 10));
   } else chunks.push(null);
 
-  let matched = 0, skippedExisting = 0, updated = 0;
+  let matched = 0,
+    skippedExisting = 0,
+    updated = 0;
 
   for (const sub of chunks) {
     let q = baseQuery;
@@ -201,21 +219,34 @@ async function updateReservationsForDate({
       const snap = await qry.get();
       if (snap.empty) break;
 
-      let batch = firestore.batch(), ops = 0;
+      let batch = firestore.batch(),
+        ops = 0;
 
       for (const doc of snap.docs) {
         matched++;
         const d = doc.data() || {};
-        if (d.usd_fx_on_checkin && !force) { skippedExisting++; continue; }
-        if (dryRun) { updated++; continue; }
+        if (d.usd_fx_on_checkin && !force) {
+          skippedExisting++;
+          continue;
+        }
+        if (dryRun) {
+          updated++;
+          continue;
+        }
 
         const payload = {
           usd_fx_on_checkin: {
             casa: (quote.casa || "oficial").toString().toLowerCase(),
             fecha: dateISO,
-            compra: Number.isFinite(Number(quote.compra)) ? Number(quote.compra) : null,
-            venta:  Number.isFinite(Number(quote.venta))  ? Number(quote.venta)  : null,
-            fuente: usedFallback ? "cotizaciones:firestore:fallback" : "cotizaciones:firestore",
+            compra: Number.isFinite(Number(quote.compra))
+              ? Number(quote.compra)
+              : null,
+            venta: Number.isFinite(Number(quote.venta))
+              ? Number(quote.venta)
+              : null,
+            fuente: usedFallback
+              ? "cotizaciones:firestore:fallback"
+              : "cotizaciones:firestore",
             origen_fecha: quote._sourceDate || fallbackFrom || dateISO,
             setAt: FieldValue.serverTimestamp(),
           },
@@ -223,9 +254,14 @@ async function updateReservationsForDate({
         };
 
         batch.set(doc.ref, payload, { merge: true });
-        ops++; updated++;
+        ops++;
+        updated++;
 
-        if (ops >= 450) { await batch.commit(); batch = firestore.batch(); ops = 0; }
+        if (ops >= 450) {
+          await batch.commit();
+          batch = firestore.batch();
+          ops = 0;
+        }
       }
       if (!dryRun && ops > 0) await batch.commit();
 
@@ -244,15 +280,57 @@ export default async function handler(req, res) {
     log("REQUEST_IN", { method: req.method, query: req.query });
 
     if (req.method === "OPTIONS") return ok(res, { ok: true });
-    if (!["GET", "POST"].includes(req.method)) return bad(res, 405, "Método no permitido");
+    if (!["GET", "POST"].includes(req.method))
+      return bad(res, 405, "Método no permitido");
 
     // --- auth relax: si AUTH_TOKEN está definido se valida, si no está permitimos (modo prueba) ---
-    const authHeader = (req.headers?.authorization || "").replace(/^Bearer\s+/i, "");
-    const hostHeader = (req.headers?.host || req.headers["x-forwarded-host"] || "").replace(/:\d+$/, "");
-    console.log("[linkUsdFx] incoming auth present:", Boolean(req.headers?.authorization), "host:", hostHeader, "VERCEL_URL:", process.env.VERCEL_URL);
+    const authHeader = (req.headers?.authorization || "").replace(
+      /^Bearer\s+/i,
+      ""
+    );
+    const hostHeader = (
+      req.headers?.host ||
+      req.headers["x-forwarded-host"] ||
+      ""
+    ).replace(/:\d+$/, "");
+
+    // ========================================================================
+    // !!! INICIO DE MODIFICACIÓN DE DEBUG !!!
+    // ADVERTENCIA: NUNCA loguear tokens en producción. Borrar esto después de la prueba.
+    const debugToken = process.env.AUTH_TOKEN;
+    console.log(
+      `[linkUsdFx-DEBUG] ¿process.env.AUTH_TOKEN está definido? ${Boolean(
+        debugToken
+      )}`
+    );
+    if (debugToken) {
+      // Mostramos solo una parte del token para no exponerlo por completo
+      console.log(
+        `[linkUsdFx-DEBUG] Token (parcial): ${debugToken.substring(
+          0,
+          4
+        )}...${debugToken.substring(debugToken.length - 4)}`
+      );
+    } else {
+      console.log("[linkUsdFx-DEBUG] Token: no está definido (es null o undefined)");
+    }
+    // !!! FIN DE MODIFICACIÓN DE DEBUG !!!
+    // ========================================================================
+
+    console.log(
+      "[linkUsdFx] incoming auth present:",
+      Boolean(req.headers?.authorization),
+      "host:",
+      hostHeader,
+      "VERCEL_URL:",
+      process.env.VERCEL_URL
+    );
+
     if (process.env.AUTH_TOKEN) {
       const tokenOk = authHeader && authHeader === process.env.AUTH_TOKEN;
-      const fromSelf = process.env.VERCEL_URL && hostHeader === (process.env.VERCEL_URL || "").replace(/^https?:\/\//, "");
+      const fromSelf =
+        process.env.VERCEL_URL &&
+        hostHeader === (process.env.VERCEL_URL || "").replace(/^https?:\/\//, "");
       if (!tokenOk && !fromSelf) {
         console.warn("[linkUsdFx] unauthorized request - auth failed");
         return res.status(401).json({ error: "unauthorized" });
@@ -262,28 +340,45 @@ export default async function handler(req, res) {
     }
     // --- fin auth ---
 
-    const q = req.method === "GET" ? req.query : (req.body || {});
+    const q = req.method === "GET" ? req.query : req.body || {};
     const since = toISO(q.since);
     const untilInput = toISO(q.until);
     const force = String(q.force).toLowerCase() === "true";
-    const dryRun = q.dryRun === undefined ? true : String(q.dryRun).toLowerCase() === "true";
+    const dryRun =
+      q.dryRun === undefined
+        ? true
+        : String(q.dryRun).toLowerCase() === "true";
     const pageSize = Math.max(50, Math.min(1000, Number(q.pageSize) || 500));
-    const backfillDays = Math.max(0, Math.min(60, Number(q.backfillDays) || 7));
+    const backfillDays = Math.max(
+      0,
+      Math.min(60, Number(q.backfillDays) || 7)
+    );
     const propertyIds =
       typeof q.propertyIds === "string"
-        ? q.propertyIds.split(",").map(s => s.trim()).filter(Boolean)
-        : Array.isArray(q.propertyIds) ? q.propertyIds : [];
+        ? q.propertyIds
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : Array.isArray(q.propertyIds)
+        ? q.propertyIds
+        : [];
 
     const meta = await readMeta();
     const lastLinkedDate = meta.data.lastLinkedDate || null;
-    let lastQuoteDate = meta.data.lastQuoteDate || await findLastQuoteDateFromFirestore(365);
-    if (!lastQuoteDate) return bad(res, 400, "No hay cotizaciones USD en Firestore");
+    let lastQuoteDate =
+      meta.data.lastQuoteDate || (await findLastQuoteDateFromFirestore(365));
+    if (!lastQuoteDate)
+      return bad(res, 400, "No hay cotizaciones USD en Firestore");
 
     let start =
       since ||
       (lastLinkedDate
-        ? DateTime.fromISO(lastLinkedDate, { zone: TZ }).plus({ days: 1 }).toISODate()
-        : DateTime.fromISO(lastQuoteDate, { zone: TZ }).minus({ days: backfillDays }).toISODate());
+        ? DateTime.fromISO(lastLinkedDate, { zone: TZ })
+            .plus({ days: 1 })
+            .toISODate()
+        : DateTime.fromISO(lastQuoteDate, { zone: TZ })
+            .minus({ days: backfillDays })
+            .toISODate());
 
     let end = untilInput || DateTime.now().setZone(TZ).toISODate();
 
@@ -299,12 +394,14 @@ export default async function handler(req, res) {
 
     log("RANGE_COMPUTED", { start, end, today, lastQuoteDate, afterCutoff });
 
-    if (start > end) return ok(res, { ok: true, reason: "No work", range: { start, end } });
+    if (start > end)
+      return ok(res, { ok: true, reason: "No work", range: { start, end } });
 
     const perDate = [];
     for (const d of dateRangeIterator(start, end)) {
       let qd = await getQuoteDoc(d);
-      let usedFallback = false, fallbackFrom = null;
+      let usedFallback = false,
+        fallbackFrom = null;
 
       if (!qd) {
         const isToday = d === today;
@@ -316,29 +413,57 @@ export default async function handler(req, res) {
             if (qd) log("DATE_FALLBACK_QUOTE", { date: d, fallbackFrom });
           }
         }
-        if (!qd) { perDate.push({ date: d, status: "no_quote" }); continue; }
+        if (!qd) {
+          perDate.push({ date: d, status: "no_quote" });
+          continue;
+        }
       } else {
-        log("DATE_HAS_QUOTE", { date: d, casa: qd.casa, compra: qd.compra, venta: qd.venta });
+        log("DATE_HAS_QUOTE", {
+          date: d,
+          casa: qd.casa,
+          compra: qd.compra,
+          venta: qd.venta,
+        });
       }
 
       const r = await updateReservationsForDate({
-        dateISO: d, quote: qd, propertyIds, force, dryRun, pageSize, usedFallback, fallbackFrom,
+        dateISO: d,
+        quote: qd,
+        propertyIds,
+        force,
+        dryRun,
+        pageSize,
+        usedFallback,
+        fallbackFrom,
       });
-      perDate.push({ date: d, status: "ok", matched: r.matched, skippedExisting: r.skippedExisting, updated: r.updated });
+      perDate.push({
+        date: d,
+        status: "ok",
+        matched: r.matched,
+        skippedExisting: r.skippedExisting,
+        updated: r.updated,
+      });
     }
 
     if (!dryRun) await writeMeta({ lastLinkedDate: end, lastQuoteDate });
 
     const summary = {
-      ok: true, dryRun, force,
-      range: { start, end }, lastQuoteDate, lastLinkedDateBefore: lastLinkedDate,
+      ok: true,
+      dryRun,
+      force,
+      range: { start, end },
+      lastQuoteDate,
+      lastLinkedDateBefore: lastLinkedDate,
       propertyIdsCount: propertyIds.length,
       totals: {
         dates: perDate.length,
         updated: perDate.reduce((s, x) => s + (x.updated || 0), 0),
         matched: perDate.reduce((s, x) => s + (x.matched || 0), 0),
-        skippedExisting: perDate.reduce((s, x) => s + (x.skippedExisting || 0), 0),
-        no_quote_days: perDate.filter(x => x.status === "no_quote").length,
+        skippedExisting: perDate.reduce(
+          (s, x) => s + (x.skippedExisting || 0),
+          0
+        ),
+        no_quote_days: perDate.filter((x) => x.status === "no_quote").length,
       },
       perDate,
     };
