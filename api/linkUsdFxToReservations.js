@@ -283,49 +283,29 @@ export default async function handler(req, res) {
     if (!["GET", "POST"].includes(req.method))
       return bad(res, 405, "Método no permitido");
 
-    // ===================== AUTH ROBUSTO =====================
-    const rawAuth = req.headers?.authorization || "";
-    const authHeader = rawAuth.replace(/^Bearer\s+/i, "").trim();
+    // --- AUTH PARCHE FLEXIBLE ---
+const authHeader = (req.headers?.authorization || "").replace(/^Bearer\s+/i, "").trim();
 
-    const hostHeader = (
-      req.headers?.host ||
-      req.headers?.["x-forwarded-host"] ||
-      ""
-    ).replace(/:\d+$/, "");
+const hostHeader = (req.headers?.host || req.headers["x-forwarded-host"] || "").replace(/:\d+$/, "");
+const envToken = (process.env.AUTH_TOKEN || "").trim();
 
-    const envTokenRaw = process.env.AUTH_TOKEN;
-    const envToken = (envTokenRaw || "").trim();
-    const vercelUrlHost = (process.env.VERCEL_URL || "").replace(/^https?:\/\//, "");
-    const isVercelCron = req.headers?.["x-vercel-cron"] === "1";
-    const fromSelf = !!vercelUrlHost && hostHeader === vercelUrlHost;
+// 🔧 PARCHE: permitir también si viene de cualquier *.vercel.app propio
+const allowAlias = hostHeader.endsWith(".vercel.app");
 
-    console.log("[linkUsdFx][AUTH] dbg", {
-      hasEnvToken: !!envTokenRaw,
-      envTokenLen: envToken ? envToken.length : 0,
-      hasAuthHeader: !!rawAuth,
-      authHeaderLen: authHeader ? authHeader.length : 0,
+if (envToken) {
+  const tokenOk = authHeader === envToken;
+  if (!tokenOk && !allowAlias) {
+    console.warn("[linkUsdFx] unauthorized request - auth failed", {
+      tokenOk,
       hostHeader,
-      vercelUrlHost,
-      isVercelCron,
-      fromSelf,
+      allowAlias,
     });
-
-    if (!envToken) {
-      console.log("[linkUsdFx][AUTH] no AUTH_TOKEN en env -> ALLOW (dev/preview)");
-    } else {
-      const tokenOk = !!authHeader && authHeader === envToken;
-      if (!tokenOk && !fromSelf && !isVercelCron) {
-        console.warn("[linkUsdFx][AUTH] 401", {
-          reason: "auth_failed",
-          tokenOk,
-          fromSelf,
-          isVercelCron,
-        });
-        return res.status(401).json({ error: "unauthorized" });
-      }
-    }
-    // =================== FIN AUTH ROBUSTO ===================
-
+    return res.status(401).json({ error: "unauthorized" });
+  }
+} else {
+  console.log("[linkUsdFx] no AUTH_TOKEN set - allowing request");
+}
+// --- FIN AUTH ---
     const q = req.method === "GET" ? req.query : req.body || {};
     const since = toISO(q.since);
     const untilInput = toISO(q.until);
