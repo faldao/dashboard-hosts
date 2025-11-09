@@ -246,6 +246,22 @@ export default async function handler(req, res) {
     if (req.method === "OPTIONS") return ok(res, { ok: true });
     if (!["GET", "POST"].includes(req.method)) return bad(res, 405, "Método no permitido");
 
+    // --- auth relax: si AUTH_TOKEN está definido se valida, si no está permitimos (modo prueba) ---
+    const authHeader = (req.headers?.authorization || "").replace(/^Bearer\s+/i, "");
+    const hostHeader = (req.headers?.host || req.headers["x-forwarded-host"] || "").replace(/:\d+$/, "");
+    console.log("[linkUsdFx] incoming auth present:", Boolean(req.headers?.authorization), "host:", hostHeader, "VERCEL_URL:", process.env.VERCEL_URL);
+    if (process.env.AUTH_TOKEN) {
+      const tokenOk = authHeader && authHeader === process.env.AUTH_TOKEN;
+      const fromSelf = process.env.VERCEL_URL && hostHeader === (process.env.VERCEL_URL || "").replace(/^https?:\/\//, "");
+      if (!tokenOk && !fromSelf) {
+        console.warn("[linkUsdFx] unauthorized request - auth failed");
+        return res.status(401).json({ error: "unauthorized" });
+      }
+    } else {
+      console.log("[linkUsdFx] no AUTH_TOKEN set - allowing request");
+    }
+    // --- fin auth ---
+
     const q = req.method === "GET" ? req.query : (req.body || {});
     const since = toISO(q.since);
     const untilInput = toISO(q.until);
@@ -333,19 +349,3 @@ export default async function handler(req, res) {
     return bad(res, 500, e.message || "Error interno");
   }
 }
-
-// --- auth relax: si AUTH_TOKEN está definido se valida, si no está permitimos (modo prueba) ---
-const authHeader = (req.headers?.authorization || "").replace(/^Bearer\s+/i, "");
-const hostHeader = (req.headers?.host || req.headers["x-forwarded-host"] || "").replace(/:\d+$/, "");
-console.log("[linkUsdFx] incoming auth present:", Boolean(req.headers?.authorization), "host:", hostHeader, "VERCEL_URL:", process.env.VERCEL_URL);
-if (process.env.AUTH_TOKEN) {
-  const tokenOk = authHeader && authHeader === process.env.AUTH_TOKEN;
-  const fromSelf = process.env.VERCEL_URL && hostHeader === (process.env.VERCEL_URL || "").replace(/^https?:\/\//, "");
-  if (!tokenOk && !fromSelf) {
-    console.warn("[linkUsdFx] unauthorized request - auth failed");
-    return res.status ? res.status(401).json({ error: "unauthorized" }) : new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
-  }
-} else {
-  console.log("[linkUsdFx] no AUTH_TOKEN set - allowing request");
-}
-// --- fin auth ---
