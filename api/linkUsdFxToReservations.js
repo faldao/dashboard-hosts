@@ -101,13 +101,13 @@ const err = (msg, extra = {}) =>
 function ok(res, data) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Vercel-Cron");
   return res.status(200).json(data);
 }
 function bad(res, code, error) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Vercel-Cron");
   return res.status(code).json({ error });
 }
 
@@ -283,62 +283,48 @@ export default async function handler(req, res) {
     if (!["GET", "POST"].includes(req.method))
       return bad(res, 405, "Método no permitido");
 
-    // --- auth relax: si AUTH_TOKEN está definido se valida, si no está permitimos (modo prueba) ---
-    const authHeader = (req.headers?.authorization || "").replace(
-      /^Bearer\s+/i,
-      ""
-    );
+    // ===================== AUTH ROBUSTO =====================
+    const rawAuth = req.headers?.authorization || "";
+    const authHeader = rawAuth.replace(/^Bearer\s+/i, "").trim();
+
     const hostHeader = (
       req.headers?.host ||
-      req.headers["x-forwarded-host"] ||
+      req.headers?.["x-forwarded-host"] ||
       ""
     ).replace(/:\d+$/, "");
 
-    // ========================================================================
-    // !!! INICIO DE MODIFICACIÓN DE DEBUG !!!
-    // ADVERTENCIA: NUNCA loguear tokens en producción. Borrar esto después de la prueba.
-    const debugToken = process.env.AUTH_TOKEN;
-    console.log(
-      `[linkUsdFx-DEBUG] ¿process.env.AUTH_TOKEN está definido? ${Boolean(
-        debugToken
-      )}`
-    );
-    if (debugToken) {
-      // Mostramos solo una parte del token para no exponerlo por completo
-      console.log(
-        `[linkUsdFx-DEBUG] Token (parcial): ${debugToken.substring(
-          0,
-          4
-        )}...${debugToken.substring(debugToken.length - 4)}`
-      );
-    } else {
-      console.log("[linkUsdFx-DEBUG] Token: no está definido (es null o undefined)");
-    }
-    // !!! FIN DE MODIFICACIÓN DE DEBUG !!!
-    // ========================================================================
+    const envTokenRaw = process.env.AUTH_TOKEN;
+    const envToken = (envTokenRaw || "").trim();
+    const vercelUrlHost = (process.env.VERCEL_URL || "").replace(/^https?:\/\//, "");
+    const isVercelCron = req.headers?.["x-vercel-cron"] === "1";
+    const fromSelf = !!vercelUrlHost && hostHeader === vercelUrlHost;
 
-    console.log(
-      "[linkUsdFx] incoming auth present:",
-      Boolean(req.headers?.authorization),
-      "host:",
+    console.log("[linkUsdFx][AUTH] dbg", {
+      hasEnvToken: !!envTokenRaw,
+      envTokenLen: envToken ? envToken.length : 0,
+      hasAuthHeader: !!rawAuth,
+      authHeaderLen: authHeader ? authHeader.length : 0,
       hostHeader,
-      "VERCEL_URL:",
-      process.env.VERCEL_URL
-    );
+      vercelUrlHost,
+      isVercelCron,
+      fromSelf,
+    });
 
-    if (process.env.AUTH_TOKEN) {
-      const tokenOk = authHeader && authHeader === process.env.AUTH_TOKEN;
-      const fromSelf =
-        process.env.VERCEL_URL &&
-        hostHeader === (process.env.VERCEL_URL || "").replace(/^https?:\/\//, "");
-      if (!tokenOk && !fromSelf) {
-        console.warn("[linkUsdFx] unauthorized request - auth failed");
+    if (!envToken) {
+      console.log("[linkUsdFx][AUTH] no AUTH_TOKEN en env -> ALLOW (dev/preview)");
+    } else {
+      const tokenOk = !!authHeader && authHeader === envToken;
+      if (!tokenOk && !fromSelf && !isVercelCron) {
+        console.warn("[linkUsdFx][AUTH] 401", {
+          reason: "auth_failed",
+          tokenOk,
+          fromSelf,
+          isVercelCron,
+        });
         return res.status(401).json({ error: "unauthorized" });
       }
-    } else {
-      console.log("[linkUsdFx] no AUTH_TOKEN set - allowing request");
     }
-    // --- fin auth ---
+    // =================== FIN AUTH ROBUSTO ===================
 
     const q = req.method === "GET" ? req.query : req.body || {};
     const since = toISO(q.since);
