@@ -23,14 +23,17 @@ export default async function handler(req, res) {
     console.log("[RescueFX] Endpoint de cron invocado.");
 
     const BASE =
-      process.env.RESCUE_BASE_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : null) ||
+  process.env.PUBLIC_BASE_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
 
-    if (!BASE) {
-      return res
-        .status(500)
-        .json({ error: "No RESCUE_BASE_URL/VERCEL_URL available" });
-    }
+if (!BASE) {
+  return res.status(500).json({ error: "No base URL (set VERCEL_PROJECT_PRODUCTION_URL or RESCUE_BASE_URL)" });
+}
+
+console.log("[RescueFX] BASE =", BASE);
 
     // Rango: hoy (AR) y 2 días atrás
     const end = DateTime.now().setZone(TZ).toISODate();
