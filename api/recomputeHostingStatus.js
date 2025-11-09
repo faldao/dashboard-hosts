@@ -1,8 +1,39 @@
 import { firestore, FieldValue } from '../lib/firebaseAdmin.js';
 
 const log = (...a) => console.log('[recomputeHostingStatus]', ...a);
-const ok = (res, data) => { res.setHeader('Access-Control-Allow-Origin','*'); res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS'); res.setHeader('Access-Control-Allow-Headers','Content-Type'); return res.status(200).json(data); };
-const bad = (res, code, error) => { res.setHeader('Access-Control-Allow-Origin','*'); res.setHeader('Access-Control-Allow-Methods','POST,OPTIONS'); res.setHeader('Access-Control-Allow-Headers','Content-Type'); return res.status(code).json({ error }); };
+const sendJson = (resObj, status, payload) => {
+  try {
+    // Node / Next.js API Route (res is express-like)
+    if (resObj && typeof resObj.setHeader === "function" && typeof resObj.status === "function" && typeof resObj.json === "function") {
+      resObj.setHeader("Access-Control-Allow-Origin", "*");
+      resObj.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+      resObj.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      return resObj.status(status).json(payload);
+    }
+
+    // Vercel Edge / Fetch handler: devolver Response
+    if (typeof Response !== "undefined") {
+      const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST,OPTIONS" };
+      return new Response(JSON.stringify(payload), { status, headers });
+    }
+
+    // Fallback: intentar escribir usando resObj (if writable)
+    if (resObj && typeof resObj.writeHead === "function") {
+      resObj.writeHead(status, { "Content-Type": "application/json" });
+      resObj.end(JSON.stringify(payload));
+      return;
+    }
+
+    // última opción: devolver payload (en ambientes test)
+    return payload;
+  } catch (err) {
+    console.error("sendJson error", err);
+    try { return resObj && resObj.status ? resObj.status(500).json({ error: "internal" }) : null; } catch {}
+  }
+};
+
+const ok = (res, data) => sendJson(res, 200, data);
+const bad = (res, code, error) => sendJson(res, code, { error });
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return ok(res, { ok: true });
@@ -40,7 +71,7 @@ export default async function handler(req, res) {
       last = snap.docs[snap.docs.length - 1];
       if (snap.size < batchSize) break;
     }
-    return ok({ ok: true, processed, updated, dryRun });
+    return ok(res, { ok: true, processed, updated, dryRun });
   } catch (err) {
     log('ERROR', err?.message || err);
     return bad(res, 500, err?.message || 'Error interno');
