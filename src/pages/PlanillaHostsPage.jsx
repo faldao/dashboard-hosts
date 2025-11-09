@@ -913,19 +913,25 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
     <div className={cls(cardClassName, r.hosting_status && String(r.hosting_status).includes('not_informed') && 'res-card--alert')} onClick={(e) => e.stopPropagation()}>
       {/* CELDA 1 */}
       <div className="res-cell res-cell--left">
-        <div className="left__line1">
-          <span className={deptoTagClass}>{depto}</span>
+        {/* Línea 1: depto a la izquierda, estado a la derecha */}
+        <div className="left__line1" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className={deptoTagClass}>{depto}</span>
+            {flag && <span className="text-sm" style={{ marginLeft: 8 }}>{flag}</span>}
+          </div>
 
-          {/* Estado y punto de color */}
-          <span className="estado" style={{ marginLeft: 8 }}>Estado: {hostingLabel}</span>
-          <span className={cls("status-dot", hostingDotClass)} title={hostingLabel} />
-          
-          {flag && <span className="text-sm" style={{ marginLeft: 8 }}>{flag}</span>}
+          {/* Estado a la derecha (desktop muestra "Estado: X", mobile sólo punto) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span className="estado" style={{ fontWeight: 600, color: "#374151" }}>Estado: {hostingLabel}</span>
+            <span className={cls("status-dot", hostingDotClass)} title={hostingLabel} />
+          </div>
         </div>
 
+        {/* Línea 2: nombre → código de país → teléfono */}
         <div className="left__line2">
-          {/* Nombre pasa aquí, antes del telefono */}
           <span className={cls("name", r.contacted_at && "name--contacted")}>{r.nombre_huesped || "Sin nombre"}</span>
+          {/* country code moved here (short badge) */}
+          {r.customer_country ? <span className="tag tag--rcode" style={{ marginLeft: 6 }}>{String(r.customer_country).toUpperCase()}</span> : null}
           {phone && <span style={{ marginLeft: 10 }}>{phone}</span>}
           {email && (
             <a className="mail-link" href={`mailto:${email}`} title={email} onClick={(e) => e.stopPropagation()} style={{ marginLeft: 8 }}>
@@ -939,8 +945,9 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
 
         <div className="left__line3">
           {r.id_human && <span className="tag tag--rcode">{r.id_human}</span>}
-          <span>In: {inDt} · Out: {outDt}</span>
-          <span className="tag--channel">{channel}</span>
+          {/* quitar textos "In:" / "Out:", usar flecha */}
+          <span style={{ marginLeft: 6 }}>{inDt} &rarr; {outDt}</span>
+          <span className="tag--channel" style={{ marginLeft: 8 }}>{channel}</span>
         </div>
 
         {/* Línea 4: total + toggle + chip de TC (promedio) */}

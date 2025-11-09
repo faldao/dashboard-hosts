@@ -117,50 +117,6 @@
 .mail-link svg { width:16px; height:16px; }
 .left__line3 { @apply flex flex-wrap items-center gap-2 text-xs text-gray-600; }
 
-/* Línea 4: total a pagar + estado */
-.left__line4 { @apply flex flex-wrap items-center gap-2 mt-1; }
-.toPay-view { @apply inline-flex items-center gap-1; }
-.toPay-cur  { @apply inline-flex items-center px-1.5 py-0.5 rounded-md border text-xs bg-white text-gray-800 border-gray-300; }
-.toPay-input { @apply w-28 border rounded p-1 text-sm; }
-.toPay-btn { @apply px-2 py-1 text-xs rounded border bg-white hover:bg-gray-50; }
-.toPay-btn--icon { @apply p-1 w-7 h-7 rounded-full flex items-center justify-center; }
-.toPay-btn--icon svg { width:16px; height:16px; }
-
-/* =========================================================
-   PANEL GENÉRICO (celdas 2 y 3)
-========================================================= */
-.panel { @apply h-full; display:grid; grid-template-columns:1fr auto; column-gap:.5rem; align-items:start; overflow:visible; }
-.panel__list { @apply flex-1 text-sm text-gray-700 overflow-auto pr-2; max-height:100px; }
-.panel__toolbar { @apply flex justify-end; align-self:start; }
-
-/* =========================================================
-   NOTAS
-========================================================= */
-.notes-empty { @apply text-gray-400 italic; }
-.note-item { @apply pb-2; }
-.note-head { @apply flex items-center justify-between; }
-.note-meta { font-size:11px; @apply text-gray-500; }
-.note-body { @apply whitespace-pre-wrap break-words; }
-.note-sep  { @apply my-2 border-t; border-color:#e5e7eb; }
-
-/* Botones + */
-.notes-addwrap, .pay-addwrap { position:static; right:auto; bottom:auto; z-index:auto; }
-.notes-addbtn, .pay-addbtn { @apply w-7 h-7 rounded-full border bg-white text-gray-700 leading-none flex items-center justify-center shadow hover:bg-gray-50; }
-
-/* =========================================================
-   PAGOS (lista interna)
-========================================================= */
-.payments-list { @apply pr-2 overflow-auto; max-height:100px; }
-.payments-empty { @apply text-gray-400 italic; }
-.pay-item { @apply grid items-center; grid-template-columns:1fr auto; gap:.25rem; padding:.125rem 0; }
-.pay-left { @apply flex items-center gap-2; }
-.pay-amt { @apply text-gray-700 text-right text-xs font-semibold; }
-.pay-cur { @apply inline-flex items-center px-1.5 py-0.5 rounded-md border text-xs bg-white text-gray-800 border-gray-300; }
-.pay-meta { font-size:11px; @apply text-gray-500; }
-.pay-sep { @apply my-2 border-t; border-color:#e5e7eb; }
-.pay-group-head { @apply flex items-center justify-between text-xs text-gray-600 mt-1 mb-1; }
-.pay-total { @apply text-right text-xs font-semibold text-black; }
-
 /* =========================================================
    NUEVO STACK DE ESTADOS (celda 4)
 ========================================================= */
@@ -467,4 +423,32 @@ BARRA DE NAVEGACIÓN (Dentro de una App)
 .left__line2 .name { margin-right:10px; display:inline-block; font-weight:600; }
 /* si necesitás override responsive, ajustar aquí */
 @media (max-width:520px) { .left__line1 .estado { display:block; margin-top:6px; } .status-dot { margin-left:0; margin-top:6px; } }
+
+/* Alineado: dejar depto a la izq y estado a la derecha en la misma línea (desktop) */
+.left__line1 { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+/* mobile: ocultar la palabra "Estado" para ahorrar espacio, mantener sólo el punto */
+@media (max-width:640px) { .left__line1 .estado { display:none !important; } .left__line1 { align-items:center; } }
+
+/* badge para country code entre nombre y teléfono */
+.left__line2 .tag--rcode { font-size:11px; padding:2px 6px; margin-left:6px; }
+
+/* quitar los prefijos "In:" y "Out:" (ya hecho en JSX), pero en CSS asegurar separación */
+.left__line3 { display:flex; align-items:center; gap:8px; }
+
+/* --- Botones In/Out: misma tipografía y estado inactivo igual a Contactado --- */
+.pill-btn--compact { font-size:13px; font-weight:600; line-height:1; color: #374151; background:#ffffff; border:1px solid #e6e6e6; } /* por defecto inactivo igual a contactado style */
+.pill-btn--neutral-compact { background:#ffffff; color:#374151; border:1px solid #e6e6e6; } /* redundante pero explícito */
+
+/* cuando están activos mantienen su esquema actual */
+.pill-btn--sky-active-compact, .pill-btn--amber-active-compact, .pill-btn--gray-active-compact { color:#fff; }
+
+/* --- Divisores horizontales en móvil entre ToPay / Notas / Pagos --- */
+@media (max-width:640px) {
+  /* asumiendo .left__line4 = toPay, .panel__list (primera) = notas, .payments-list = pagos */
+  .left__line4 { border-top:1px solid #e5e7eb; padding-top:8px; margin-top:8px; }
+  .panel__list { border-top:1px solid #e5e7eb; padding-top:8px; margin-top:8px; } /* notas area */
+  .payments-list { border-top:1px solid #e5e7eb; padding-top:8px; margin-top:8px; } /* pagos area */
+}
+
+/* preserve existing responsive rules below */
 
