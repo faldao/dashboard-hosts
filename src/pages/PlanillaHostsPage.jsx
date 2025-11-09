@@ -300,12 +300,17 @@ function ActionButton({ r, type, active, defaultDateISO, defaultTimeHHmm, tone, 
   const baseLabel = type === "contact" ? "Contactado" : type === "checkin" ? "Check-in" : type === "checkout" ? "Check-out" : (type === "noShow" ? "No Show" : String(type));
   const label = labelOverride ?? baseLabel;
 
+  // Unificar colores/estado con los botones grandes; compact solo cambia tamaño (pill-btn--compact)
   const btnClass = cls(
-    compact ? "pill-btn pill-btn--compact" : "pill-btn",
-    !active ? (compact ? "pill-btn--neutral-compact" : "pill-btn--neutral") :
-      tone === "amber" ? (compact ? "pill-btn--amber-active-compact" : "pill-btn--amber-active") :
-      tone === "sky" ? (compact ? "pill-btn--sky-active-compact" : "pill-btn--sky-active") :
-      (compact ? "pill-btn--gray-active-compact" : "pill-btn--gray-active")
+    "pill-btn",
+    compact && "pill-btn--compact",
+    !active
+      ? "pill-btn--neutral"
+      : tone === "amber"
+        ? "pill-btn--amber-active"
+        : tone === "sky"
+          ? "pill-btn--sky-active"
+          : "pill-btn--gray-active"
   );
 
   const confirm = async () => {
@@ -910,22 +915,26 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
   const toggleCurrency = () => setCurrency((c) => (c === "USD" ? "ARS" : "USD"));
 
   return (
-    <div className={cls(cardClassName, r.hosting_status && String(r.hosting_status).includes('not_informed') && 'res-card--alert')} onClick={(e) => e.stopPropagation()}>
+    <div className={cls(cardClassName, r.hosting_status && String(r.hosthosting_status).includes('not_informed') && 'res-card--alert')} onClick={(e) => e.stopPropagation()}>
       {/* CELDA 1 */}
       <div className="res-cell res-cell--left">
-        <div className="left__line1">
-          <span className={deptoTagClass}>{depto}</span>
+        {/* Línea 1: depto a la izquierda, estado a la derecha */}
+        <div className="left__line1" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className={deptoTagClass}>{depto}</span>
+          </div>
 
-          {/* Estado y punto de color */}
-          <span className="estado" style={{ marginLeft: 8 }}>Estado: {hostingLabel}</span>
-          <span className={cls("status-dot", hostingDotClass)} title={hostingLabel} />
-          
-          {flag && <span className="text-sm" style={{ marginLeft: 8 }}>{flag}</span>}
+          {/* Estado a la derecha (desktop muestra "Estado: ...", mobile CSS puede ocultar la palabra) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span className="estado" style={{ fontWeight: 600, color: "#374151" }}>Estado: {hostingLabel}</span>
+            <span className={cls("status-dot", hostingDotClass)} title={hostingLabel} />
+          </div>
         </div>
 
         <div className="left__line2">
-          {/* Nombre pasa aquí, antes del telefono */}
+          {/* Nombre pasa aquí, luego country flag, luego telefono */}
           <span className={cls("name", r.contacted_at && "name--contacted")}>{r.nombre_huesped || "Sin nombre"}</span>
+          {flag && <span className="text-sm" style={{ marginLeft: 6 }}>{flag}</span>}
           {phone && <span style={{ marginLeft: 10 }}>{phone}</span>}
           {email && (
             <a className="mail-link" href={`mailto:${email}`} title={email} onClick={(e) => e.stopPropagation()} style={{ marginLeft: 8 }}>
