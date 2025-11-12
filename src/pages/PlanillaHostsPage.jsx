@@ -378,63 +378,87 @@ function PaymentAddButton({ r, isOpen, onToggle, onDone }) {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState((r.currency || "ARS").toUpperCase());
   const [method, setMethod] = useState("Efectivo");
-  const [concept, setConcept] = useState("");             // NUEVO
+  const [concept, setConcept] = useState("");
   const [sending, setSending] = useState(false);
 
-  const save = async () => {
-    const val = Number(amount);
-    if (!isFinite(val) || val === 0) return; //permite negativos
-    try {
-      setSending(true);
-      await axios.post("/api/reservationMutations", {
-        id: r.id,
-        action: "addPayment",
-        payload: {
-          amount: val,
-          currency: (currency || "ARS").toUpperCase(),
-          method,
-          concept: concept || undefined,                  // NUEVO
-          // quitamos fecha/hora: 'when' va como null
-          when: null
-        },
-              });
-      setAmount(""); setConcept("");                      // limpiar inputs
-      onDone?.();
-    } finally { setSending(false); }
-  };
+  const [paymentMethods, setPaymentMethods] = useState([]);
 
-  return (
-    <div className="pay-addwrap" onClick={(e) => e.stopPropagation()}>
-      <button ref={btnRef} type="button" className="pay-addbtn" title="Agregar pago" onClick={onToggle}>+</button>
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await axios.get("/api/config/paymentMethods");
+        if (!mounted) return;
+        if (Array.isArray(data?.methods) && data.methods.length) {
+          setPaymentMethods(data.methods);
+          // if current method not in list, set to first
+          if (!data.methods.includes(method)) setMethod(String(data.methods[0] || "Efectivo"));
+        } else {
+          // fallback local list
+          setPaymentMethods(["Efectivo", "Tarjeta de credito", "Tarjeta de debito", "Transferencia", "Otro"]);
+        }
+      } catch (e) {
+        if (!mounted) return;
+        console.warn("[PaymentAddButton] failed loading payment methods:", e?.message || e);
+        setPaymentMethods(["Efectivo", "Tarjeta de credito", "Tarjeta de debito", "Transferencia", "Otro"]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []); // run once
 
-      <PopoverPortal anchorRef={btnRef} open={isOpen} onClose={onToggle} placement="top-right" maxWidth={320}>
-        <div className="mini-popover__title">Agregar pago</div>
+   const save = async () => {
+     const val = Number(amount);
+     if (!isFinite(val) || val === 0) return; //permite negativos
+     try {
+       setSending(true);
+       await axios.post("/api/reservationMutations", {
+         id: r.id,
+         action: "addPayment",
+         payload: {
+           amount: val,
+           currency: (currency || "ARS").toUpperCase(),
+           method,
+           concept: concept || undefined,
+           when: null
+         },
+               });
+       setAmount(""); setConcept("");
+       onDone?.();
+     } finally { setSending(false); }
+   };
 
-        <div className="mini-popover__row">
-          <label className="mini-popover__lab">Monto</label>
-          <input className="mini-popover__field" type="number" step="0.01" 
-            value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
-        </div>
+   return (
+     <div className="pay-addwrap" onClick={(e) => e.stopPropagation()}>
+       <button ref={btnRef} type="button" className="pay-addbtn" title="Agregar pago" onClick={onToggle}>+</button>
 
-        <div className="mini-popover__row">
-          <label className="mini-popover__lab">Moneda</label>
-          <select className="mini-popover__field" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            <option>ARS</option><option>USD</option><option>EUR</option><option>BRL</option><option>CLP</option>
-          </select>
-        </div>
+       <PopoverPortal anchorRef={btnRef} open={isOpen} onClose={onToggle} placement="top-right" maxWidth={320}>
+         <div className="mini-popover__title">Agregar pago</div>
 
-        <div className="mini-popover__row">
-          <label className="mini-popover__lab">Método</label>
-          <select className="mini-popover__field" value={method} onChange={(e) => setMethod(e.target.value)}>
-            <option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>MercadoPago</option><option>Otro</option>
-          </select>
-        </div>
+         <div className="mini-popover__row">
+           <label className="mini-popover__lab">Monto</label>
+           <input className="mini-popover__field" type="number" step="0.01" 
+             value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+         </div>
 
-        <div className="mini-popover__row">
-          <label className="mini-popover__lab">Concepto</label>
-          <input className="mini-popover__field" type="text" maxLength={80}
-            value={concept} onChange={(e) => setConcept(e.target.value)} placeholder="Ej. seña, saldo, limpieza…" />
-        </div>
+         <div className="mini-popover__row">
+           <label className="mini-popover__lab">Moneda</label>
+           <select className="mini-popover__field" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+             <option>ARS</option><option>USD</option><option>EUR</option><option>BRL</option><option>CLP</option>
+           </select>
+         </div>
+
+         <div className="mini-popover__row">
+           <label className="mini-popover__lab">Método</label>
+           <select className="mini-popover__field" value={method} onChange={(e) => setMethod(e.target.value)}>
+             {paymentMethods.map((m, i) => <option key={i} value={m}>{m}</option>)}
+           </select>
+         </div>
+ 
+         <div className="mini-popover__row">
+           <label className="mini-popover__lab">Concepto</label>
+           <input className="mini-popover__field" type="text" maxLength={80}
+             value={concept} onChange={(e) => setConcept(e.target.value)} placeholder="Ej. seña, saldo, limpieza…" />
+         </div>
 
         <div className="mini-popover__actions">
           <button type="button" className="mini-popover__btn mini-popover__btn--muted" onClick={onToggle}>Cancelar</button>
@@ -924,10 +948,13 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
             <span className={deptoTagClass}>{depto}</span>
           </div>
 
-          {/* Estado a la derecha (desktop muestra "Estado: ...", mobile CSS puede ocultar la palabra) */}
+          {/* Estado a la derecha (desktop muestra "Estado: ...", mobile CSS ocultará solo el prefijo) */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span className="estado" style={{ fontWeight: 600, color: "#374151" }}>Estado: {hostingLabel}</span>
-            <span className={cls("status-dot", hostingDotClass)} title={hostingLabel} />
+            <span className="estado" style={{ fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="estado__prefix" aria-hidden>Estado:&nbsp;</span>
+              <span className="estado__label">{hostingLabel}</span>
+            </span>
+             <span className={cls("status-dot", hostingDotClass)} title={hostingLabel} />
           </div>
         </div>
 
@@ -1068,11 +1095,12 @@ function ReservationCard({ r, onRefresh, activePopover, onPopoverToggle }) {
             active={!!r.no_show_at}
             defaultDateISO={defInDate}
             defaultTimeHHmm={"00:00"}
-            tone="gray"
+            tone="red"
+            labelOverride="No Show"
+            //compact={true}  opcional para tamaño igual
             isOpen={activePopover === `${r.id}::noshow`}
             onToggle={() => onPopoverToggle(`${r.id}::noshow`)}
             onDone={() => { onPopoverToggle(null); onRefresh?.(); }}
-            labelOverride="No Show"
           />
         </div>
       </div>

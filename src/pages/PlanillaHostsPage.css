@@ -173,6 +173,7 @@
 .pill-btn--sky-active  { @apply bg-sky-100 border-sky-500 text-sky-900; }
 .pill-btn--amber-active{ @apply bg-yellow-100 border-yellow-500 text-yellow-900; }
 .pill-btn--gray-active { @apply bg-gray-200 border-gray-500 text-gray-900; }
+.pill-btn--red-active { @apply bg-red-100 border-red-500 text-red-900; }
 
 /* =========================================================
    MINI POPOVER (PORTAL) + FIXES
