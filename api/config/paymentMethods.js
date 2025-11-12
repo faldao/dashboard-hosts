@@ -32,25 +32,45 @@ export default async function handler(req, res) {
     const snap = await docRef.get();
     if (!snap.exists) return res.status(200).json({ methods: [] });
 
-    const data = snap.data() || {};
+    const data = snap.data();
 
-    // doc can be stored as { methods: [...] } or as indexed fields 0:"Efectivo",1:"Tarjeta",...
+    // Manejo robusto: el documento puede ser:
+    // - directamente un array (unlikely pero manejado)
+    // - { methods: [ ... ] }
+    // - campos indexados 0:"Efectivo",1:"Tarjeta",...
+    // - object con values como lista concatenada en una única cadena
     let methods = [];
-    if (Array.isArray(data.methods)) {
-      methods = data.methods;
+
+    if (Array.isArray(data)) {
+      // documento leído como array
+      methods = data.slice();
+    } else if (Array.isArray(data.methods)) {
+      methods = data.methods.slice();
     } else {
-      // take values ordered by numeric keys if present, otherwise object values
-      const keys = Object.keys(data);
-      if (keys.length === 0) methods = [];
-      else if (keys.every(k => String(k).match(/^\d+$/))) {
-        methods = keys.sort((a,b) => Number(a)-Number(b)).map(k => data[k]);
+      // si el doc tiene una sola clave cuyo valor es un array, úsalo
+      const vals = Object.values(data || {});
+      if (vals.length === 1 && Array.isArray(vals[0])) {
+        methods = vals[0].slice();
       } else {
-        methods = Object.values(data);
+        const keys = Object.keys(data || {});
+        if (keys.length === 0) {
+          methods = [];
+        } else if (keys.every(k => String(k).match(/^\d+$/))) {
+          methods = keys.sort((a,b) => Number(a)-Number(b)).map(k => data[k]);
+        } else {
+          methods = Object.values(data || {});
+        }
       }
     }
 
     // normalize to strings
-    methods = methods.map(m => (m === null || m === undefined) ? "" : String(m));
+    methods = methods.map(m => (m === null || m === undefined) ? "" : String(m).trim()).filter(Boolean);
+
+    // Si quedó como una única cadena con separadores, dividirla en múltiples opciones
+    if (methods.length === 1 && typeof methods[0] === "string" && /[,;\r\n]/.test(methods[0])) {
+      methods = methods[0].split(/[,;\r\n]+/).map(s => s.trim()).filter(Boolean);
+    }
+
     return res.status(200).json({ methods });
   } catch (err) {
     console.error("[paymentMethods] error", err);
