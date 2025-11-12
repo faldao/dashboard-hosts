@@ -12,24 +12,22 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "method not allowed" });
 
   try {
-    // init admin with application default credentials (works with GOOGLE_APPLICATION_CREDENTIALS or on Vercel with service account)
-    if (!admin.apps.length) {
-      try {
-        admin.initializeApp({
-          credential: admin.credential.applicationDefault(),
-        });
-      } catch (e) {
-        // if initialize fails, continue and return fallback below
-        console.warn("[paymentMethods] firebase admin init failed:", e?.message || e);
-      }
+    // intentar cargar el helper central que inicializa admin con FIREBASE_SERVICE_ACCOUNT_JSON
+    let db = null;
+    try {
+      const mod = await import("../../lib/firebaseAdmin.js");
+      db = mod.firestore;
+    } catch (e) {
+      console.warn("[paymentMethods] could not init firebaseAdmin helper:", e?.message || e);
     }
 
-    if (!admin.apps.length) {
-      // cannot access Firestore: return empty and let client fallback
+    if (!db) {
+      // no credentials/config disponibles -> devolver vacío (cliente usará fallback)
+      console.warn("[paymentMethods] no Firestore available - returning empty methods");
       return res.status(200).json({ methods: [] });
     }
 
-    const db = admin.firestore();
+    // ahora usamos el firestore exportado por lib/firebaseAdmin
     const docRef = db.collection("configuracion").doc("metodos_de_pago");
     const snap = await docRef.get();
     if (!snap.exists) return res.status(200).json({ methods: [] });
