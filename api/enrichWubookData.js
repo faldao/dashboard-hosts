@@ -39,6 +39,20 @@
  *
  * TZ
  *   - Luxon con zona fija 'America/Argentina/Buenos_Aires' para filtros.
+ *
+ * NUEVO: FILTRO OPTATIVO POR FECHA (Backwards compatible)
+ *   - Si NO se envían parámetros de fecha, el endpoint se comporta igual que antes.
+ *   - Parámetros soportados (todos OPTATIVOS):
+ *       • date:     'YYYY-MM-DD' (día puntual)
+ *       • dateFrom: 'YYYY-MM-DD' (inicio de rango)
+ *       • dateTo:   'YYYY-MM-DD' (fin de rango, inclusivo)
+ *       • dateField: 'arrival_iso' | 'departure_iso' (default: 'arrival_iso')
+ *   - El filtro se aplica sobre Firestore (no sobre WuBook) al seleccionar reservas.
+ *
+ * NUEVO: CHUNKING DE BATCH (evita exceder 500 writes)
+ *   - Firestore batch soporta hasta 500 operaciones. Este endpoint puede excederlo
+ *     al crear historial + pagos individuales.
+ *   - Se hace commit parcial cuando se llega a un umbral seguro (~450 ops).
  */
 
 import axios from 'axios';
@@ -253,8 +267,56 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   try {
-    const { limit = 10, dryRun = false, forceUpdate = false, reservationId = null, syncMode = 'pending' } = req.body;
-    log('INIT', { limit, dryRun, forceUpdate, reservationId, syncMode });
+    const {
+      limit = 10,
+      dryRun = false,
+      forceUpdate = false,
+      reservationId = null,
+      syncMode = 'pending',
+
+      // ---- NUEVO: filtro optativo por fecha (Backwards compatible)
+      date = null,         // 'YYYY-MM-DD' (día puntual)
+      dateFrom = null,     // 'YYYY-MM-DD' (inicio rango)
+      dateTo = null,       // 'YYYY-MM-DD' (fin rango, inclusivo)
+      dateField = 'arrival_iso', // 'arrival_iso' | 'departure_iso' (default: arrival_iso)
+    } = req.body;
+
+    log('INIT', { limit, dryRun, forceUpdate, reservationId, syncMode, date, dateFrom, dateTo, dateField });
+
+    // ---- helper local para aplicar filtro por fecha a la query
+    const applyDateFilter = (q) => {
+      const field = (dateField === 'departure_iso') ? 'departure_iso' : 'arrival_iso';
+
+      // Si NO hay parámetros, mantener comportamiento anterior (sin filtros)
+      if (!date && !dateFrom && !dateTo) {
+        log('Date filter applied: NONE');
+        return q;
+      }
+
+      if (date) {
+        const d = DateTime.fromISO(String(date), { zone: TZ });
+        if (!d.isValid) {
+          log('Invalid date param. Skipping date filter.', { date });
+          return q;
+        }
+        const iso = d.toISODate();
+        log('Date filter applied: DAY', { field, iso });
+        return q.where(field, '==', iso);
+      }
+
+      const fromDT = dateFrom ? DateTime.fromISO(String(dateFrom), { zone: TZ }) : null;
+      const toDT   = dateTo   ? DateTime.fromISO(String(dateTo),   { zone: TZ }) : null;
+
+      const fromIso = (fromDT && fromDT.isValid) ? fromDT.toISODate() : null;
+      const toIso   = (toDT && toDT.isValid) ? toDT.toISODate() : null;
+
+      let qq = q;
+      if (fromIso) qq = qq.where(field, '>=', fromIso);
+      if (toIso)   qq = qq.where(field, '<=', toIso);
+
+      log('Date filter applied: RANGE', { field, fromIso, toIso });
+      return qq;
+    };
 
     // ---- Si viene reservationId, procesamos ese doc puntual
     if (reservationId) {
@@ -409,7 +471,7 @@ export default async function handler(req, res) {
     let query = firestore.collection('Reservas');
     if (forceUpdate) {
       log('Mode: forceUpdate');
-      // sin filtros: procesa lo que devuelva el limit
+      // sin filtros: procesa lo que devuelva el limit (salvo filtro por fecha si se manda)
     } else if (syncMode === 'active') {
       log('Mode: syncActive');
       const today = DateTime.now().setZone(TZ).toISODate();
@@ -419,6 +481,9 @@ export default async function handler(req, res) {
       query = query.where('enrichmentStatus', '==', 'pending');
     }
 
+    // ---- NUEVO: aplicar filtro optativo por fecha (sin romper comportamiento anterior)
+    query = applyDateFilter(query);
+
     const reservationsToProcess = await query.limit(limit).get();
     if (reservationsToProcess.empty) {
       log('DONE - No reservations found for the selected mode.');
@@ -426,7 +491,20 @@ export default async function handler(req, res) {
     }
     log(`Found ${reservationsToProcess.size} reservations to process.`);
 
-    const batch = firestore.batch();
+    // ---- NUEVO: batch chunking para evitar exceder 500 writes
+    let batch = firestore.batch();
+    let opCount = 0;
+    const SAFE_BATCH_OPS = 450; // margen para no rozar 500 (historial + pagos individuales puede sumar rápido)
+    const commitIfNeeded = async () => {
+      if (dryRun) return;
+      if (opCount >= SAFE_BATCH_OPS) {
+        log(`Batch ops reached ${opCount}. Committing partial batch...`);
+        await batch.commit();
+        batch = firestore.batch();
+        opCount = 0;
+      }
+    };
+
     let processedCount = 0;
 
     for (const doc of reservationsToProcess.docs) {
@@ -521,7 +599,9 @@ export default async function handler(req, res) {
       );
       const changedKeys = Object.keys(diff);
 
-      batch.update(doc.ref, updateData);
+      // --- update principal
+      await commitIfNeeded();
+      batch.update(doc.ref, updateData); opCount++;
 
       // --- crear docs individuales para pagos nuevos en subcolección "payments" (batch global)
       const paymentKey = (p) => p.wubook_id
@@ -530,6 +610,7 @@ export default async function handler(req, res) {
       const existingKeys = new Set((existingUnifiedPays || []).map(paymentKey));
       const newPaymentsFromWubook = (unifiedPaysFromWubook || []).filter(p => !existingKeys.has(paymentKey(p)));
       for (const np of newPaymentsFromWubook) {
+        await commitIfNeeded();
         const payDocRef = doc.ref.collection('payments').doc();
         batch.set(payDocRef, {
           ts: np.ts || FieldValue.serverTimestamp(),
@@ -547,9 +628,12 @@ export default async function handler(req, res) {
           createdAt: FieldValue.serverTimestamp(),
           raw: np,
         });
+        opCount++;
       }
       // --- end pagos individuales
 
+      // --- historial
+      await commitIfNeeded();
       const histRef = doc.ref.collection('historial').doc(`${Date.now()}_sync`);
       batch.set(histRef, {
         ts: FieldValue.serverTimestamp(),
@@ -562,13 +646,15 @@ export default async function handler(req, res) {
         hashTo: newHash,
         snapshotAfter: { ...oldDoc, ...updateData },
       });
+      opCount++;
 
       processedCount++;
     }
 
-    if (!dryRun && processedCount > 0) {
+    // Commit final si quedaron ops pendientes
+    if (!dryRun && opCount > 0) {
       await batch.commit();
-      log(`Batch commit successful for ${processedCount} documents.`);
+      log(`Final batch commit successful. ops=${opCount}, docsProcessed=${processedCount}`);
     } else if (processedCount === 0 && reservationsToProcess.size > 0) {
       log('All processed reservations were up-to-date. No batch commit needed.');
     }
