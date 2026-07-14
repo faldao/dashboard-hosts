@@ -122,6 +122,30 @@ function recomputeToPayFrom(breakdown, extrasUSDFinal) {
   return { total, baseUSD: b, ivaPercent: ivaPct, ivaUSD: (ivaUSD ?? 0), extrasUSD: e };
 }
 
+function computePaidUSD(payments = []) {
+  let paidUSD = 0;
+  for (const p of payments || []) {
+    const curr = String(p.currency || '').toUpperCase();
+    const amt = numOrZero(p.amount);
+    if (!amt) continue;
+    if (curr === 'USD') paidUSD += amt;
+    else if (curr === 'ARS') {
+      const usdEquiv = Number(p.usd_equiv);
+      if (Number.isFinite(usdEquiv)) paidUSD += usdEquiv;
+    }
+  }
+  return paidUSD;
+}
+
+function computePaymentStatus(payments = [], toPay) {
+  const paidUSD = computePaidUSD(payments);
+  const toPayUSD = Number(toPay);
+  if (Number.isFinite(toPayUSD) && toPayUSD > 0) {
+    return paidUSD >= toPayUSD ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid');
+  }
+  return paidUSD > 0 ? 'partial' : 'unpaid';
+}
+
 // ===================== API HELPERS =====================
 async function getApiKey(propId) {
   if (apiKeyCache.has(propId)) return apiKeyCache.get(propId);
@@ -227,12 +251,12 @@ function mapWubookPaymentsToUnified(arr = []) {
     }
 
     // normalizar currency: aceptar currency o ccy, limpiar cadena y uppercase,
-    // si no viene currency -> default USD, pero si amount > 10000 => ARS
+    // si no viene currency -> default USD, pero si |amount| > 10000 => ARS
     const rawCcy = (p.currency ?? p.ccy ?? '');
     const cleaned = String(rawCcy || '').trim();
     const currency = cleaned
       ? cleaned.toUpperCase()
-      : (Number.isFinite(amt) && amt > 10000 ? 'ARS' : 'USD');
+      : (Number.isFinite(amt) && Math.abs(amt) > 10000 ? 'ARS' : 'USD');
 
     return {
       ts,
@@ -247,7 +271,7 @@ function mapWubookPaymentsToUnified(arr = []) {
       concept: (p.remarks ?? p.concept ?? null) ? String(p.remarks ?? p.concept).trim() : null,
       raw: p,
     };
-  }).filter(p => p.amount > 0);
+  }).filter(p => p.amount !== 0);
 }
 function dedupePayments(arr = []) {
   const seen = new Set(); const out = [];
@@ -361,6 +385,7 @@ export default async function handler(req, res) {
       };
       const { total: newToPay } = recomputeToPayFrom(preservedBD, preservedBD.extrasUSD);
       const newBreakdown = { ...currentBD, ...preservedBD };
+      const newPaymentStatus = computePaymentStatus(mergedPayments, newToPay);
 
       // 🔹 info de solo lectura para UI (sin extras)
       const wubookOriginal = {
@@ -384,6 +409,7 @@ export default async function handler(req, res) {
         // operativos (sin tocar extras)
         toPay: newToPay,
         toPay_breakdown: newBreakdown,
+        payment_status: newPaymentStatus,
 
         // solo lectura para UI
         wubook_original: wubookOriginal,
@@ -542,6 +568,7 @@ export default async function handler(req, res) {
       };
       const { total: newToPay } = recomputeToPayFrom(preservedBD, preservedBD.extrasUSD);
       const newBreakdown = { ...currentBD, ...preservedBD };
+      const newPaymentStatus = computePaymentStatus(mergedPayments, newToPay);
 
       const wubookOriginal = {
         baseUSD: numOrNull(currentBD?.baseUSD) ?? null,
@@ -564,6 +591,7 @@ export default async function handler(req, res) {
         // operativos (sin tocar extras)
         toPay: newToPay,
         toPay_breakdown: newBreakdown,
+        payment_status: newPaymentStatus,
 
         // solo lectura para UI
         wubook_original: wubookOriginal,
@@ -674,9 +702,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: error?.message || 'Unexpected error' });
   }
 }
-
-
-
 
 
 
