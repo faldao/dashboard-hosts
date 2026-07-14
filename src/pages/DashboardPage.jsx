@@ -8,6 +8,22 @@ import { firestore } from '../../lib/firebase'; // Asegúrate que la ruta a tu c
 // Esta es la lista "maestra" de todas las aplicaciones que existen en tu sistema.
 // Firestore solo dirá a CUÁLES tiene acceso el usuario, pero aquí definimos
 // los detalles de cada una (nombre, ícono, ruta, etc.).
+const REPORTES_APP = {
+  name: 'Reportes',
+  description: 'Consulta recaudacion por periodo, forma de pago y propiedad.',
+  href: '/reportes',
+  icon: '\uD83D\uDCCA',
+};
+
+const GASTOS_APP = {
+  name: 'Gastos',
+  description: 'Registra pagos y gastos operativos por proveedor, concepto y origen.',
+  href: '/gastos',
+  icon: '\uD83D\uDCB8',
+};
+
+const DEFAULT_APP_IDS = ['reportes', 'gastos'];
+
 const ALL_APPS = {
   'planilla_hosts': {
     name: 'Planilla de Hosts',
@@ -16,12 +32,18 @@ const ALL_APPS = {
     icon: '📅' // Los emojis son una forma fácil y rápida de poner íconos
   },
   'reportes_financieros': {
-    name: 'Reportes Financieros',
-    description: 'Visualiza ingresos, gastos y proyecciones futuras.',
+    name: REPORTES_APP.name,
+    description: REPORTES_APP.description,
     href: '/reportes', // Ruta para una futura app
     icon: '📊'
   },
-    
+  'reportes': {
+    ...REPORTES_APP,
+  },
+  'gastos': {
+    ...GASTOS_APP,
+  },
+
   'liquidaciones': {
     name: 'Liquidaciones',
     description: 'Arma liquidaciones por unidad o por propiedad (por check-in).',
@@ -57,12 +79,13 @@ export default function DashboardPage() {
 
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          const accessibleAppIds = userData.apps || []; // Obtenemos el array 'apps'
+          const accessibleAppIds = Array.from(new Set([...(userData.apps || []), ...DEFAULT_APP_IDS])); // Obtenemos el array 'apps'
 
           // Mapeamos los IDs de las apps a los objetos completos de nuestra lista ALL_APPS
           const appsToShow = accessibleAppIds
             .map(appId => ALL_APPS[appId])
-            .filter(Boolean); // Este filtro elimina cualquier app que no exista en nuestra lista maestra
+            .filter(Boolean) // Este filtro elimina cualquier app que no exista en nuestra lista maestra
+            .filter((app, index, apps) => apps.findIndex(a => a.href === app.href) === index);
 
           setUserApps(appsToShow);
         } else {

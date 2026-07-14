@@ -139,7 +139,7 @@ function buildByCurrency(items = []) {
                 const p = pays[i];
                 const amt = Number(p.amount);
                 const cur = String(p.currency || '').toUpperCase();
-                if (!Number.isFinite(amt) || amt <= 0) continue;
+                if (!Number.isFinite(amt) || amt === 0) continue;
                 if (cur !== 'ARS' && cur !== 'USD') continue;
 
                 const checkin = res.arrival_iso ? DateTime.fromISO(res.arrival_iso).toFormat('dd/MM/yyyy') : '—';
@@ -148,9 +148,9 @@ function buildByCurrency(items = []) {
                 const accBrutoUSD = res.accounting?.brutoUSD;
                 let initialBruto;
                 if (cur === 'USD') {
-                    initialBruto = accBrutoUSD ?? amt;
+                    initialBruto = amt < 0 ? amt : (accBrutoUSD ?? amt);
                 } else { // ARS
-                    initialBruto = (accBrutoUSD != null && fx) ? (accBrutoUSD * fx) : amt;
+                    initialBruto = amt < 0 ? amt : ((accBrutoUSD != null && fx) ? (accBrutoUSD * fx) : amt);
                 }
 
                 const row = {

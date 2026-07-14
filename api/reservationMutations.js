@@ -137,7 +137,7 @@ function computePaidUSD(payments = []) {
     if (curr === 'USD') paidUSD += amt;
     else if (curr === 'ARS') {
       const ue = Number(p.usd_equiv);
-      if (Number.isFinite(ue) && ue > 0) paidUSD += ue;
+      if (Number.isFinite(ue)) paidUSD += ue;
     }
   }
   return paidUSD;

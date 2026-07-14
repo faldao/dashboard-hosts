@@ -6,6 +6,8 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import PlanillaHostsPage from './pages/PlanillaHostsPage';
 import LiquidacionesPage from './pages/LiquidacionesPage';
+import ReportesPage from './pages/ReportesPage';
+import GastosPage from './pages/GastosPage';
 
 // 2. Importa tu componente de ruta protegida
 import ProtectedRoute from './components/ProtectedRoute';
@@ -54,6 +56,24 @@ function App() {
 
       {/* RUTA POR DEFECTO / REDIRECCIÓN */}
       {/* Si un usuario entra a la raíz del sitio ('/'), lo mandamos directo al dashboard. */}
+      <Route
+        path="/reportes"
+        element={
+          <ProtectedRoute>
+            <ReportesPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/gastos"
+        element={
+          <ProtectedRoute>
+            <GastosPage />
+          </ProtectedRoute>
+        }
+      />
+
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       
       {/* Opcional: Una ruta "catch-all" para manejar URLs no encontradas (404) */}
