@@ -3,6 +3,7 @@ import axios from 'axios';
 import { DateTime } from 'luxon';
 import HeaderUserInline from '../components/HeaderUserInline';
 import ExportReportesExcel from '../components/ExportReportesExcel';
+import { buildRecaudacionRows } from '../lib/recaudacion';
 import './LiquidacionesPage.css';
 import './ReportesPage.css';
 
@@ -19,18 +20,6 @@ function moneyIntl(amount, cur = 'ARS') {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Number(amount) || 0);
-}
-
-function normLabel(value, fallback = 'Sin dato') {
-  const txt = String(value || '').trim();
-  return txt || fallback;
-}
-
-function getReservationNights(res) {
-  const arrival = res?.arrival_iso ? DateTime.fromISO(res.arrival_iso, { zone: TZ }) : null;
-  const departure = res?.departure_iso ? DateTime.fromISO(res.departure_iso, { zone: TZ }) : null;
-  if (!arrival?.isValid || !departure?.isValid) return 0;
-  return Math.max(0, Math.round(departure.startOf('day').diff(arrival.startOf('day'), 'days').days));
 }
 
 function useProperties() {
@@ -58,59 +47,6 @@ function useDepartments(propertyId) {
     })();
   }, [propertyId]);
   return list;
-}
-
-function buildRecaudacionRows(items = []) {
-  const groups = new Map();
-
-  for (const res of items) {
-    const payments = Array.isArray(res.payments) ? res.payments : [];
-    const usablePayments = payments.length
-      ? payments
-      : [{ amount: 0, currency: res.currency || 'ARS', method: 'Sin pago', concept: '' }];
-
-    for (const pay of usablePayments) {
-      const amount = Number(pay.amount);
-      const currency = String(pay.currency || res.currency || 'ARS').toUpperCase();
-      if (currency !== 'ARS' && currency !== 'USD') continue;
-      if (!Number.isFinite(amount)) continue;
-
-      const propertyId = normLabel(res.propiedad_id, 'sin_propiedad');
-      const propertyName = normLabel(res.propiedad_nombre || propertyId, 'Sin propiedad');
-      const paymentMethod = normLabel(pay.method, 'Sin forma de pago');
-      const key = [propertyId, propertyName, paymentMethod, currency].join('||');
-
-      if (!groups.has(key)) {
-        groups.set(key, {
-          propertyId,
-          propertyName,
-          paymentMethod,
-          currency,
-          total: 0,
-          reservationIds: new Set(),
-          nightsByReservation: new Map(),
-        });
-      }
-
-      const group = groups.get(key);
-      group.total += amount;
-      group.reservationIds.add(res.id);
-      group.nightsByReservation.set(res.id, getReservationNights(res));
-    }
-  }
-
-  return Array.from(groups.values())
-    .map((group) => ({
-      ...group,
-      total: +group.total.toFixed(2),
-      reservationCount: group.reservationIds.size,
-      nightCount: Array.from(group.nightsByReservation.values()).reduce((sum, nights) => sum + nights, 0),
-    }))
-    .sort((a, b) => (
-      a.paymentMethod.localeCompare(b.paymentMethod)
-      || a.propertyName.localeCompare(b.propertyName)
-      || a.currency.localeCompare(b.currency)
-    ));
 }
 
 function buildPaymentMethodSections(rows = []) {
