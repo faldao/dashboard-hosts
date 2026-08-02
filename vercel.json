@@ -14,6 +14,7 @@
     { "path": "/api/linkUsdFxToReservations?range=today&dryRun=false", "schedule": "15 16 * * *" },
     { "path": "/api/cron/cronOrchestrator", "schedule": "*/30 * * * *" },
     { "path": "/api/rebuildDailyIndexes?mode=auto", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/enrich-wubook-last-week", "schedule": "0 2 * * *" },
     { "path": "/api/cron/rescue-link-fx", "schedule": "30 1 * * *" },
     { "path": "/api/detectUnreportedChecks", "schedule": "30 0 * * *" }
   ]

@@ -157,31 +157,52 @@ async function getApiKey(propId) {
   return apiKey;
 }
 
+const INVALID_GUEST_NAMES = new Set([
+  '', 'undefined', 'null', 'n/d', 'sin nombre', 'error al buscar nombre',
+  'cliente no encontrado (sin main_info)'
+]);
+
+function isUsefulGuestName(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return Boolean(normalized) && !INVALID_GUEST_NAMES.has(normalized) && !/^\d+$/.test(normalized);
+}
+
+function resolveBookerId(reservation = {}) {
+  const candidates = [
+    reservation.wubook_booker_id,
+    reservation.booker_id,
+    reservation.customer_id,
+    reservation.id_customer,
+    reservation.nombre_huesped,
+  ];
+  return candidates.find((value) => /^\d+$/.test(String(value ?? '').trim())) ?? null;
+}
+
 async function fetchCustomerData(apiKey, bookerId) {
-  if (!bookerId || !/^\d+$/.test(String(bookerId))) return { nombre_huesped: String(bookerId) };
+  if (!bookerId || !/^\d+$/.test(String(bookerId))) return { data: {}, status: 'no_id' };
   try {
     const headers = { 'x-api-key': apiKey, 'Content-Type': 'application/x-www-form-urlencoded' };
     const payload = qs.stringify({ id: bookerId });
     const resp = await axios.post(`${BASE_URL_KP}/customers/fetch_one`, payload, { headers });
     const mainInfo = resp.data?.data?.main_info;
     const contacts = resp.data?.data?.contacts;
-    if (!mainInfo) return { nombre_huesped: 'Cliente no encontrado (sin main_info)' };
+    if (!mainInfo) return { data: {}, status: 'not_found' };
     const fullName = `${mainInfo.name || ''} ${mainInfo.surname || ''}`.trim() || 'Cliente Anónimo';
     return {
-      nombre_huesped: fullName,
-      customer_email: contacts?.email || null,
-      customer_phone: contacts?.phone || null,
-      customer_address: mainInfo?.address || null,
-      customer_city: mainInfo?.city || null,
-      customer_country: mainInfo?.country || null,
+      status: 'resolved',
+      data: {
+        nombre_huesped: fullName,
+        wubook_booker_id: String(bookerId),
+        customer_email: contacts?.email || null,
+        customer_phone: contacts?.phone || null,
+        customer_address: mainInfo?.address || null,
+        customer_city: mainInfo?.city || null,
+        customer_country: mainInfo?.country || null,
+      }
     };
   } catch (error) {
     log(`Error fetching customer ${bookerId}:`, error.response?.data || error.message);
-    return {
-      nombre_huesped: 'Error al buscar nombre',
-      customer_email: null, customer_phone: null,
-      customer_address: null, customer_city: null, customer_country: null
-    };
+    return { data: {}, status: 'error' };
   }
 }
 
@@ -349,7 +370,8 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, message: 'Reservation not found.', processed: 0 });
       }
       const singleOld = doc.data();
-      const { propiedad_id, id_human, nombre_huesped: bookerId } = singleOld || {};
+      const { propiedad_id, id_human } = singleOld || {};
+      const bookerId = resolveBookerId(singleOld);
       if (!propiedad_id || !id_human) {
         return res.status(200).json({ ok: true, message: 'Doc missing propiedad_id/id_human.', processed: 0 });
       }
@@ -358,11 +380,12 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, message: 'No apiKey for propiedad.', processed: 0 });
       }
 
-      const [customerData, wubookPaysRaw, wubookNotesRaw] = await Promise.all([
+      const [customerResult, wubookPaysRaw, wubookNotesRaw] = await Promise.all([
         fetchCustomerData(apiKey, bookerId),
         fetchPayments(apiKey, id_human),
         fetchNotes(apiKey, id_human),
       ]);
+      const customerData = customerResult.data;
 
       // ======= UNIFICACIÓN =======
       const unifiedNotesFromWubook = mapWubookNotesToUnified(wubookNotesRaw);
@@ -532,10 +555,12 @@ export default async function handler(req, res) {
     };
 
     let processedCount = 0;
+    const guestNames = { resolved: 0, preserved: 0, missing: 0, fetchErrors: 0 };
 
     for (const doc of reservationsToProcess.docs) {
       const oldDoc = doc.data();
-      const { propiedad_id, id_human, nombre_huesped: bookerId } = oldDoc || {};
+      const { propiedad_id, id_human } = oldDoc || {};
+      const bookerId = resolveBookerId(oldDoc);
       if (!propiedad_id || !id_human) continue;
 
       const apiKey = await getApiKey(propiedad_id);
@@ -543,11 +568,16 @@ export default async function handler(req, res) {
 
       log(`Processing doc ${doc.id} (rcode: ${id_human})...`);
 
-      const [customerData, wubookPaysRaw, wubookNotesRaw] = await Promise.all([
+      const [customerResult, wubookPaysRaw, wubookNotesRaw] = await Promise.all([
         fetchCustomerData(apiKey, bookerId),
         fetchPayments(apiKey, id_human),
         fetchNotes(apiKey, id_human),
       ]);
+      const customerData = customerResult.data;
+      if (customerResult.status === 'resolved') guestNames.resolved++;
+      else if (customerResult.status === 'error') guestNames.fetchErrors++;
+      else if (isUsefulGuestName(oldDoc.nombre_huesped)) guestNames.preserved++;
+      if (!isUsefulGuestName(customerData.nombre_huesped ?? oldDoc.nombre_huesped)) guestNames.missing++;
 
       // ======= UNIFICACIÓN =======
       const unifiedNotesFromWubook = mapWubookNotesToUnified(wubookNotesRaw);
@@ -692,6 +722,7 @@ export default async function handler(req, res) {
       dryRun,
       processed: processedCount,
       totalFound: reservationsToProcess.size,
+      guestNames,
       message: dryRun
         ? `Simulated sync for ${processedCount} reservations.`
         : `Successfully synced ${processedCount} reservations. ${reservationsToProcess.size - processedCount} were already up-to-date.`
@@ -702,7 +733,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: error?.message || 'Unexpected error' });
   }
 }
-
-
 
 
