@@ -5,7 +5,7 @@ const AUDIT_COLLECTION = 'attendanceAdminEvents';
 
 function setHeaders(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Cache-Control', 'no-store');
 }
@@ -64,7 +64,7 @@ function cleanText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
-function validateUser(body) {
+function validateUser(body, { passwordRequired = true } = {}) {
   const displayName = cleanText(body.displayName);
   const email = cleanText(body.email).toLowerCase();
   const password = String(body.password || '');
@@ -75,7 +75,7 @@ function validateUser(body) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
     return { error: 'Ingresa un email valido' };
   }
-  if (password.length < 8 || password.length > 128) {
+  if ((passwordRequired || password) && (password.length < 8 || password.length > 128)) {
     return { error: 'La contraseña debe tener entre 8 y 128 caracteres' };
   }
 
@@ -173,6 +173,76 @@ async function createUser(body, administrator) {
   };
 }
 
+async function updateUser(body, administrator) {
+  const uid = cleanText(body.uid);
+  if (!uid) {
+    const error = new Error('Falta identificar el usuario');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const validated = validateUser(body, { passwordRequired: false });
+  if (validated.error) {
+    const error = new Error(validated.error);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const active = body.active !== false;
+  const authUpdate = {
+    displayName: validated.displayName,
+    email: validated.email,
+    disabled: !active,
+  };
+  if (validated.password) authUpdate.password = validated.password;
+
+  try {
+    await authAdmin.updateUser(uid, authUpdate);
+  } catch (caught) {
+    if (caught?.code === 'auth/email-already-exists') {
+      const error = new Error('Ya existe una cuenta con ese email');
+      error.statusCode = 409;
+      throw error;
+    }
+    if (caught?.code === 'auth/user-not-found') {
+      const error = new Error('La cuenta ya no existe');
+      error.statusCode = 404;
+      throw error;
+    }
+    throw caught;
+  }
+
+  const userRef = firestore.collection(USERS_COLLECTION).doc(uid);
+  const auditRef = firestore.collection(AUDIT_COLLECTION).doc();
+  const batch = firestore.batch();
+  batch.set(userRef, {
+    uid,
+    displayName: validated.displayName,
+    email: validated.email,
+    active,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: administrator.uid,
+    updatedByEmail: administrator.email || null,
+  }, { merge: true });
+  batch.set(auditRef, {
+    type: 'employee_updated',
+    employeeUid: uid,
+    employeeEmail: validated.email,
+    passwordReset: Boolean(validated.password),
+    administratorUid: administrator.uid,
+    administratorEmail: administrator.email || null,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  await batch.commit();
+
+  return {
+    uid,
+    displayName: validated.displayName,
+    email: validated.email,
+    active,
+  };
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'OPTIONS') return send(res, 200, { ok: true });
@@ -186,6 +256,11 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const user = await createUser(parseBody(req), administrator);
       return send(res, 201, { ok: true, user });
+    }
+
+    if (req.method === 'PATCH') {
+      const user = await updateUser(parseBody(req), administrator);
+      return send(res, 200, { ok: true, user });
     }
 
     return send(res, 405, { error: 'Metodo no permitido' });

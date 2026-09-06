@@ -125,7 +125,8 @@
   font-weight: 700;
 }
 
-.attendance-admin-form input {
+.attendance-admin-form input:not([type="checkbox"]),
+.attendance-admin-edit-form input:not([type="checkbox"]) {
   background: #fff;
   border: 1px solid #ccd7dc;
   border-radius: 9px;
@@ -136,7 +137,8 @@
   width: 100%;
 }
 
-.attendance-admin-form input:focus {
+.attendance-admin-form input:focus,
+.attendance-admin-edit-form input:focus {
   border-color: #139c77;
   box-shadow: 0 0 0 3px rgb(19 156 119 / 0.14);
   outline: none;
@@ -183,6 +185,15 @@
   color: #146a52;
 }
 
+.attendance-admin-list-message {
+  background: #eafaf4;
+  border-bottom: 1px solid #bcead8;
+  color: #146a52;
+  font-size: 0.84rem;
+  margin: 0;
+  padding: 11px 20px;
+}
+
 .attendance-admin-users {
   max-height: 520px;
   overflow: auto;
@@ -193,8 +204,97 @@
   border-bottom: 1px solid #edf1f3;
   display: grid;
   gap: 13px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   padding: 14px 20px;
+}
+
+.attendance-admin-edit-button {
+  background: transparent;
+  border: 1px solid #b9c8cf;
+  border-radius: 8px;
+  color: #1a566f;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 750;
+  padding: 7px 10px;
+}
+
+.attendance-admin-edit-button:hover {
+  background: #f1f7f9;
+}
+
+.attendance-admin-password-field {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.attendance-admin-password-field button,
+.attendance-admin-edit-actions button {
+  background: #eef3f5;
+  border: 1px solid #ccd7dc;
+  border-radius: 9px;
+  color: #274958;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  padding: 8px 11px;
+}
+
+.attendance-admin-edit-form {
+  background: #f7fafb;
+  border-bottom: 1px solid #dfe7ea;
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px 20px 71px;
+}
+
+.attendance-admin-edit-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.attendance-admin-edit-form label > span,
+.attendance-admin-active-field span {
+  color: #425460;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.attendance-admin-edit-form small {
+  color: #73838c;
+  font-size: 0.74rem;
+}
+
+.attendance-admin-active-field {
+  align-items: center;
+  display: flex !important;
+  gap: 9px !important;
+}
+
+.attendance-admin-active-field input {
+  accent-color: #087c5f;
+  height: 18px;
+  width: 18px;
+}
+
+.attendance-admin-edit-actions {
+  display: flex;
+  gap: 9px;
+  justify-content: flex-end;
+}
+
+.attendance-admin-edit-actions button[type="submit"] {
+  background: #0c2638;
+  border-color: #0c2638;
+  color: #fff;
+}
+
+.attendance-admin-edit-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .attendance-admin-user:last-child {
@@ -295,5 +395,18 @@
   .attendance-admin-user {
     padding-left: 16px;
     padding-right: 16px;
+  }
+
+  .attendance-admin-user {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .attendance-admin-edit-button {
+    grid-column: 2 / 4;
+    justify-self: start;
+  }
+
+  .attendance-admin-edit-form {
+    padding: 17px;
   }
 }
