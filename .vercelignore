@@ -1,0 +1,12 @@
+node_modules/
+dist/
+outputs/
+registro-laboral/
+Docs/
+tests/
+.git/
+.vercel/
+.env
+.env.*
+*.log
+*.tmp
