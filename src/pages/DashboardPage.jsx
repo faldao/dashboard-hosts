@@ -23,7 +23,7 @@ const GASTOS_APP = {
 };
 
 const ASISTENCIA_ADMIN_APP = {
-  name: 'Usuarios de Presente',
+  name: 'Usuarios de Reloj',
   description: 'Crea y administra las cuentas del registro laboral.',
   href: '/asistencia-admin',
   icon: '👤',

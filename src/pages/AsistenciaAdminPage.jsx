@@ -73,7 +73,7 @@ export default function AsistenciaAdminPage() {
           <div>
             <p className="attendance-admin-kicker">Registro laboral</p>
             <h1>Administración de usuarios</h1>
-            <p>Creá las cuentas que podrán ingresar a la aplicación Presente.</p>
+            <p>Creá las cuentas que podrán ingresar a la aplicación Reloj.</p>
           </div>
           <div className="attendance-admin-count">
             <strong>{users.length}</strong>
@@ -148,7 +148,7 @@ export default function AsistenciaAdminPage() {
             <div className="attendance-admin-card__head">
               <span className="attendance-admin-step">02</span>
               <div>
-                <h2>Usuarios de Presente</h2>
+                <h2>Usuarios de Reloj</h2>
                 <p>Cuentas creadas para el registro laboral.</p>
               </div>
             </div>
