@@ -8,6 +8,7 @@ import PlanillaHostsPage from './pages/PlanillaHostsPage';
 import LiquidacionesPage from './pages/LiquidacionesPage';
 import ReportesPage from './pages/ReportesPage';
 import GastosPage from './pages/GastosPage';
+import AsistenciaAdminPage from './pages/AsistenciaAdminPage';
 
 // 2. Importa tu componente de ruta protegida
 import ProtectedRoute from './components/ProtectedRoute';
@@ -70,6 +71,15 @@ function App() {
         element={
           <ProtectedRoute>
             <GastosPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/asistencia-admin"
+        element={
+          <ProtectedRoute>
+            <AsistenciaAdminPage />
           </ProtectedRoute>
         }
       />

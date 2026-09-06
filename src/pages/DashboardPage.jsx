@@ -22,7 +22,14 @@ const GASTOS_APP = {
   icon: '\uD83D\uDCB8',
 };
 
-const DEFAULT_APP_IDS = ['reportes', 'gastos'];
+const ASISTENCIA_ADMIN_APP = {
+  name: 'Usuarios de Presente',
+  description: 'Crea y administra las cuentas del registro laboral.',
+  href: '/asistencia-admin',
+  icon: '👤',
+};
+
+const DEFAULT_APP_IDS = ['reportes', 'gastos', 'asistencia_admin'];
 
 const ALL_APPS = {
   'planilla_hosts': {
@@ -42,6 +49,9 @@ const ALL_APPS = {
   },
   'gastos': {
     ...GASTOS_APP,
+  },
+  'asistencia_admin': {
+    ...ASISTENCIA_ADMIN_APP,
   },
 
   'liquidaciones': {
