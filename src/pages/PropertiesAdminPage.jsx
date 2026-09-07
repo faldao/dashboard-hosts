@@ -1,38 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import GalleryManager from '../components/GalleryManager';
 import './PropertiesAdminPage.css';
 
 const emptyProperty = {
   id: '', nombre: '', short_name: '', descripcion: '', api_key: '', chatbot_rate: '',
   activar_para_planillas_diarias: false, activar_para_venta: false,
   estacionamiento: '', mascotas: '', wifi: '', descripcion_detallada: '',
-  tipo_viajero: '', historia: '', galeriaText: '', caracteristicasText: '{}', faqText: '[]',
-};
-
-const emptyDepartment = {
-  id: '', nombre: '', wubook_shortname: '', descripcion: '', consulta: '',
-  activar_para_venta: false, m2: '', m2_num: '', vista: '', dormitorios: '',
-  capacidad: '', capacidad_num: '', galeriaText: '', caracteristicasText: '{}', faqText: '[]',
+  tipo_viajero: '', historia: '', galeria: [], caracteristicasText: '{}', faqText: '[]',
 };
 
 const jsonText = (value, fallback) => JSON.stringify(value ?? fallback, null, 2);
 const propertyToForm = (item) => ({
   ...emptyProperty,
   ...item,
-  galeriaText: (item.galeria || []).join('\n'),
+  galeria: Array.isArray(item.galeria) ? item.galeria : [],
   caracteristicasText: jsonText(item.caracteristicas, {}),
   faqText: jsonText(item.faq, []),
 });
-const departmentToForm = (item) => ({
-  ...emptyDepartment,
-  ...item,
-  galeriaText: (item.galeria || []).join('\n'),
-  caracteristicasText: jsonText(item.caracteristicas, {}),
-  faqText: jsonText(item.faq, []),
-});
-
 function parseJsonField(value, fallback, label) {
   if (!String(value || '').trim()) return fallback;
   try {
@@ -43,10 +30,9 @@ function parseJsonField(value, fallback, label) {
 }
 
 function formData(form) {
-  const { id, galeriaText, caracteristicasText, faqText, ...data } = form;
+  const { id, caracteristicasText, faqText, ...data } = form;
   return {
     ...data,
-    galeria: galeriaText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
     caracteristicas: parseJsonField(caracteristicasText, {}, 'Características'),
     faq: parseJsonField(faqText, [], 'Preguntas frecuentes'),
   };
@@ -82,12 +68,11 @@ function ToggleField({ label, name, checked, onChange }) {
 
 export default function PropertiesAdminPage() {
   const { idToken } = useAuth();
+  const navigate = useNavigate();
   const [properties, setProperties] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [propertyForm, setPropertyForm] = useState(emptyProperty);
   const [propertyIsNew, setPropertyIsNew] = useState(false);
-  const [departmentForm, setDepartmentForm] = useState(null);
-  const [departmentIsNew, setDepartmentIsNew] = useState(false);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -141,7 +126,6 @@ export default function PropertiesAdminPage() {
     setSelectedId(item.id);
     setPropertyForm(propertyToForm(item));
     setPropertyIsNew(false);
-    setDepartmentForm(null);
     setError('');
     setSuccess('');
   };
@@ -150,7 +134,6 @@ export default function PropertiesAdminPage() {
     setSelectedId('');
     setPropertyForm(emptyProperty);
     setPropertyIsNew(true);
-    setDepartmentForm(null);
     setError('');
     setSuccess('');
   };
@@ -176,38 +159,11 @@ export default function PropertiesAdminPage() {
   };
 
   const editDepartment = (item) => {
-    setDepartmentForm(departmentToForm(item));
-    setDepartmentIsNew(false);
-    setError('');
-    setSuccess('');
+    navigate(`/propiedades-admin/${encodeURIComponent(selectedId)}/departamentos/${encodeURIComponent(item.id)}`);
   };
 
   const newDepartment = () => {
-    setDepartmentForm(emptyDepartment);
-    setDepartmentIsNew(true);
-    setError('');
-    setSuccess('');
-  };
-
-  const saveDepartment = async (event) => {
-    event.preventDefault();
-    setSaving(true);
-    setError('');
-    setSuccess('');
-    try {
-      const method = departmentIsNew ? 'post' : 'patch';
-      await axios[method]('/api/admin/properties', {
-        entity: 'department', propertyId: selectedId,
-        departmentId: departmentForm.id.trim(), data: formData(departmentForm),
-      });
-      setSuccess(`El departamento ${departmentForm.nombre} fue guardado correctamente.`);
-      setDepartmentForm(null);
-      await loadProperties(selectedId);
-    } catch (caught) {
-      setError(caught?.response?.data?.error || caught.message || 'No se pudo guardar el departamento.');
-    } finally {
-      setSaving(false);
-    }
+    navigate(`/propiedades-admin/${encodeURIComponent(selectedId)}/departamentos/nuevo`);
   };
 
   return (
@@ -267,7 +223,13 @@ export default function PropertiesAdminPage() {
                 <TextField label="Tipo de viajero" name="tipo_viajero" value={propertyForm.tipo_viajero} onChange={changeForm(setPropertyForm)} />
                 <TextAreaField label="Descripción detallada" name="descripcion_detallada" value={propertyForm.descripcion_detallada} onChange={changeForm(setPropertyForm)} rows={4} />
                 <TextAreaField label="Historia" name="historia" value={propertyForm.historia} onChange={changeForm(setPropertyForm)} rows={4} />
-                <TextAreaField label="Galería" name="galeriaText" value={propertyForm.galeriaText} onChange={changeForm(setPropertyForm)} hint="Una URL por línea." />
+                <GalleryManager
+                  entity="property"
+                  propertyId={propertyForm.id}
+                  items={propertyForm.galeria}
+                  disabled={propertyIsNew}
+                  onChange={(galeria) => setPropertyForm((current) => ({ ...current, galeria }))}
+                />
                 <TextAreaField label="Características (JSON)" name="caracteristicasText" value={propertyForm.caracteristicasText} onChange={changeForm(setPropertyForm)} rows={5} />
                 <TextAreaField label="Preguntas frecuentes (JSON)" name="faqText" value={propertyForm.faqText} onChange={changeForm(setPropertyForm)} rows={5} />
               </div>
@@ -291,35 +253,6 @@ export default function PropertiesAdminPage() {
                   {!selectedProperty.departments?.length ? <p className="property-admin-empty">Esta propiedad todavía no tiene departamentos.</p> : null}
                 </div>
 
-                {departmentForm ? (
-                  <form className="property-admin-department-form" onSubmit={saveDepartment}>
-                    <div className="property-admin-department-form__title">
-                      <h3>{departmentIsNew ? 'Nuevo departamento' : `Editar ${departmentForm.nombre}`}</h3>
-                      <button type="button" onClick={() => setDepartmentForm(null)}>Cerrar</button>
-                    </div>
-                    <div className="property-admin-form-grid">
-                      <TextField label="ID de departamento" name="id" value={departmentForm.id} onChange={changeForm(setDepartmentForm)} required disabled={!departmentIsNew} />
-                      <TextField label="Nombre" name="nombre" value={departmentForm.nombre} onChange={changeForm(setDepartmentForm)} required />
-                      <TextField label="Nombre corto Wubook" name="wubook_shortname" value={departmentForm.wubook_shortname} onChange={changeForm(setDepartmentForm)} />
-                      <TextField label="Superficie (m²)" name="m2_num" type="number" value={departmentForm.m2_num} onChange={changeForm(setDepartmentForm)} />
-                      <TextField label="Superficie descriptiva" name="m2" value={departmentForm.m2} onChange={changeForm(setDepartmentForm)} />
-                      <TextField label="Capacidad" name="capacidad_num" type="number" value={departmentForm.capacidad_num} onChange={changeForm(setDepartmentForm)} />
-                      <TextField label="Capacidad descriptiva" name="capacidad" value={departmentForm.capacidad} onChange={changeForm(setDepartmentForm)} />
-                      <TextField label="Dormitorios" name="dormitorios" value={departmentForm.dormitorios} onChange={changeForm(setDepartmentForm)} />
-                      <TextField label="Vista" name="vista" value={departmentForm.vista} onChange={changeForm(setDepartmentForm)} />
-                      <ToggleField label="Activo para venta" name="activar_para_venta" checked={departmentForm.activar_para_venta} onChange={changeForm(setDepartmentForm)} />
-                      <TextAreaField label="Descripción" name="descripcion" value={departmentForm.descripcion} onChange={changeForm(setDepartmentForm)} />
-                      <TextAreaField label="Consulta" name="consulta" value={departmentForm.consulta} onChange={changeForm(setDepartmentForm)} />
-                      <TextAreaField label="Galería" name="galeriaText" value={departmentForm.galeriaText} onChange={changeForm(setDepartmentForm)} hint="Una URL por línea." />
-                      <TextAreaField label="Características (JSON)" name="caracteristicasText" value={departmentForm.caracteristicasText} onChange={changeForm(setDepartmentForm)} rows={5} />
-                      <TextAreaField label="Preguntas frecuentes (JSON)" name="faqText" value={departmentForm.faqText} onChange={changeForm(setDepartmentForm)} rows={5} />
-                    </div>
-                    <div className="property-admin-department-form__actions">
-                      <button type="button" onClick={() => setDepartmentForm(null)}>Cancelar</button>
-                      <button type="submit" disabled={saving}>{saving ? 'Guardando…' : 'Guardar departamento'}</button>
-                    </div>
-                  </form>
-                ) : null}
               </section>
             ) : null}
           </section>

@@ -1,0 +1,8 @@
+.department-admin-main { max-width: 1050px; }
+.department-admin-header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+.department-admin-header p { margin: 0 0 6px; color: #087c5f; font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.department-admin-header h1 { margin: 0; font-size: clamp(1.65rem, 4vw, 2.35rem); letter-spacing: -.035em; }
+.department-admin-header span { display: block; margin-top: 7px; color: #6c7a83; }
+.department-admin-header button { border: 1px solid #bdcbd1; border-radius: 9px; background: white; color: #245065; cursor: pointer; font: inherit; font-weight: 750; padding: 9px 13px; }
+.department-admin-loading { padding: 40px 22px; color: #72818a; }
+@media (max-width: 560px) { .department-admin-header { align-items: flex-start; flex-direction: column; } }

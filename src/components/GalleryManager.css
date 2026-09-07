@@ -1,0 +1,21 @@
+.gallery-manager { grid-column: 1 / -1; border: 1px solid #dbe5e9; border-radius: 13px; background: #f7fafb; overflow: hidden; }
+.gallery-manager__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid #dfe7ea; }
+.gallery-manager__head > div:first-child { display: grid; gap: 3px; }
+.gallery-manager__head strong { color: #263e4b; font-size: .86rem; }
+.gallery-manager__head span { color: #74838c; font-size: .72rem; }
+.gallery-manager__actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.gallery-manager__actions input { display: none; }
+.gallery-manager button { border: 1px solid #bdcbd1; border-radius: 8px; background: white; color: #245065; cursor: pointer; font: inherit; font-size: .75rem; font-weight: 750; padding: 8px 11px; }
+.gallery-manager button.gallery-manager__upload { border-color: #0c2638; background: #0c2638; color: white; }
+.gallery-manager button:disabled { cursor: not-allowed; opacity: .5; }
+.gallery-manager__message { margin: 0; padding: 10px 16px 0; color: #61737d; font-size: .78rem; }
+.gallery-manager__selection { display: flex; gap: 8px; overflow-x: auto; padding: 12px 16px 0; }
+.gallery-manager__selection img { flex: 0 0 74px; width: 74px; height: 58px; border-radius: 7px; object-fit: cover; }
+.gallery-manager__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 12px; padding: 16px; }
+.gallery-manager__grid > p { grid-column: 1 / -1; margin: 5px 0; color: #78878f; font-size: .8rem; }
+.gallery-manager__grid article { min-width: 0; overflow: hidden; border: 1px solid #d8e1e5; border-radius: 10px; background: white; }
+.gallery-manager__grid article > img { display: block; width: 100%; aspect-ratio: 4 / 3; background: #e8edef; object-fit: cover; }
+.gallery-manager__grid article > div { display: grid; gap: 7px; padding: 8px; }
+.gallery-manager__grid article span { overflow: hidden; color: #5a6c76; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.gallery-manager__grid article button { justify-self: start; border-color: #efc8c8; color: #9b2e2e; padding: 5px 8px; font-size: .68rem; }
+@media (max-width: 620px) { .gallery-manager__head { align-items: flex-start; flex-direction: column; } .gallery-manager__actions { justify-content: flex-start; } .gallery-manager__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

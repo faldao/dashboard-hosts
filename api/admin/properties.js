@@ -80,9 +80,22 @@ function cleanNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function cleanStringArray(value) {
+function cleanGallery(value) {
   if (!Array.isArray(value)) return [];
-  return value.map((item) => cleanString(item, 2000)).filter(Boolean).slice(0, 100);
+  return value.map((item) => {
+    if (typeof item === 'string') {
+      const url = cleanString(item, 4000);
+      return url ? { tag: null, url } : null;
+    }
+    if (!item || typeof item !== 'object') return null;
+    const url = cleanString(item.url, 4000);
+    if (!url) return null;
+    return {
+      tag: cleanString(item.tag, 250),
+      url,
+      ...(cleanString(item.storagePath, 1000) ? { storagePath: cleanString(item.storagePath, 1000) } : {}),
+    };
+  }).filter(Boolean).slice(0, 100);
 }
 
 function cleanFaq(value) {
@@ -114,7 +127,7 @@ function normalizeProperty(data = {}) {
     estacionamiento: cleanString(data.estacionamiento, 1000),
     mascotas: cleanString(data.mascotas, 1000),
     wifi: cleanString(data.wifi, 1000),
-    galeria: cleanStringArray(data.galeria),
+    galeria: cleanGallery(data.galeria),
     caracteristicas: cleanObject(data.caracteristicas),
     descripcion_detallada: cleanString(data.descripcion_detallada, 15000),
     faq: cleanFaq(data.faq),
@@ -139,7 +152,7 @@ function normalizeDepartment(data = {}) {
     activar_para_venta: data.activar_para_venta === true,
     caracteristicas: cleanObject(data.caracteristicas),
     faq: cleanFaq(data.faq),
-    galeria: cleanStringArray(data.galeria),
+    galeria: cleanGallery(data.galeria),
     m2: cleanString(data.m2, 120),
     m2_num: cleanNumber(data.m2_num),
     vista: cleanString(data.vista, 500),
