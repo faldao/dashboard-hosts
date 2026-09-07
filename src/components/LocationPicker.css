@@ -18,7 +18,6 @@
 .location-picker-pin span::after { content: ''; position: absolute; top: 9px; left: 9px; width: 7px; height: 7px; border-radius: 50%; background: white; }
 .location-picker__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 15px 16px; }
 .location-picker__fields label { display: grid; gap: 5px; }
-.location-picker__fields label:last-child { grid-column: 1 / -1; max-width: 260px; }
 .location-picker__fields span { color: #425460; font-size: .76rem; font-weight: 700; }
 .location-picker__help { margin: 0; padding: 0 16px 16px; color: #6b7d87; font-size: .75rem; line-height: 1.45; }
-@media (max-width: 620px) { .location-picker__title { align-items: flex-start; flex-direction: column; } .location-picker__search { grid-template-columns: 1fr; } .location-picker__map { height: 300px; } .location-picker__fields { grid-template-columns: 1fr; } .location-picker__fields label:last-child { grid-column: auto; max-width: none; } }
+@media (max-width: 620px) { .location-picker__title { align-items: flex-start; flex-direction: column; } .location-picker__search { grid-template-columns: 1fr; } .location-picker__map { height: 300px; } .location-picker__fields { grid-template-columns: 1fr; } }

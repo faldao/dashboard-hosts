@@ -8,6 +8,7 @@ const initialForm = {
   displayName: '',
   email: '',
   password: '',
+  propertyAssignments: [],
 };
 
 const initialEditForm = {
@@ -16,11 +17,69 @@ const initialEditForm = {
   email: '',
   password: '',
   active: true,
+  propertyAssignments: [],
 };
+
+function PropertyAssignments({ properties, value, onChange }) {
+  const assignments = Array.isArray(value) ? value : [];
+  const toggle = (property) => {
+    const current = assignments.find((item) => item.propertyId === property.id);
+    onChange(current
+      ? assignments.filter((item) => item.propertyId !== property.id)
+      : [...assignments, { propertyId: property.id, radiusMeters: 100 }]);
+  };
+  const updateRadius = (propertyId, radiusMeters) => {
+    onChange(assignments.map((item) => item.propertyId === propertyId
+      ? { ...item, radiusMeters }
+      : item));
+  };
+
+  return (
+    <fieldset className="attendance-property-assignments">
+      <legend>Propiedades habilitadas</legend>
+      <p>Seleccioná una o más y definí el radio permitido para este usuario.</p>
+      <div>
+        {properties.map((property) => {
+          const assignment = assignments.find((item) => item.propertyId === property.id);
+          return (
+            <label className={property.hasLocation ? '' : 'is-missing-location'} key={property.id}>
+              <input
+                type="checkbox"
+                checked={Boolean(assignment)}
+                disabled={!property.hasLocation && !assignment}
+                onChange={() => toggle(property)}
+              />
+              <span>
+                <strong>{property.name}</strong>
+                <small>{property.hasLocation ? `ID ${property.id}` : 'Falta configurar su localización'}</small>
+              </span>
+              {assignment ? (
+                <span className="attendance-property-radius">
+                  <input
+                    type="number"
+                    min="10"
+                    max="5000"
+                    step="10"
+                    value={assignment.radiusMeters}
+                    onChange={(event) => updateRadius(property.id, event.target.value)}
+                    aria-label={`Radio permitido para ${property.name}`}
+                  />
+                  <em>metros</em>
+                </span>
+              ) : null}
+            </label>
+          );
+        })}
+        {!properties.length ? <p className="attendance-property-empty">No hay propiedades disponibles.</p> : null}
+      </div>
+    </fieldset>
+  );
+}
 
 export default function AsistenciaAdminPage() {
   const { idToken } = useAuth();
   const [users, setUsers] = useState([]);
+  const [properties, setProperties] = useState([]);
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -41,6 +100,7 @@ export default function AsistenciaAdminPage() {
     try {
       const { data } = await axios.get('/api/asistencia/users');
       setUsers(Array.isArray(data?.users) ? data.users : []);
+      setProperties(Array.isArray(data?.properties) ? data.properties : []);
     } catch (caught) {
       setError(caught?.response?.data?.error || 'No se pudieron cargar los usuarios.');
     } finally {
@@ -86,6 +146,7 @@ export default function AsistenciaAdminPage() {
       email: item.email,
       password: '',
       active: item.active,
+      propertyAssignments: item.propertyAssignments || [],
     });
     setShowEditPassword(true);
     setEditError('');
@@ -205,6 +266,12 @@ export default function AsistenciaAdminPage() {
                 </div>
               </label>
 
+              <PropertyAssignments
+                properties={properties}
+                value={form.propertyAssignments}
+                onChange={(propertyAssignments) => setForm((current) => ({ ...current, propertyAssignments }))}
+              />
+
               {error ? <p className="attendance-admin-message attendance-admin-message--error">{error}</p> : null}
               {success ? <p className="attendance-admin-message attendance-admin-message--success">{success}</p> : null}
 
@@ -239,7 +306,7 @@ export default function AsistenciaAdminPage() {
                       </span>
                       <div>
                         <strong>{item.displayName}</strong>
-                        <span>{item.email}</span>
+                        <span>{item.email} · {item.propertyAssignments?.length || 0} propiedades</span>
                       </div>
                       <span className={item.active ? 'attendance-admin-status' : 'attendance-admin-status attendance-admin-status--inactive'}>
                         {item.active ? 'Activo' : 'Inactivo'}
@@ -278,6 +345,11 @@ export default function AsistenciaAdminPage() {
                           </div>
                           <small>La contraseña actual no puede consultarse. Podés asignar una nueva.</small>
                         </label>
+                        <PropertyAssignments
+                          properties={properties}
+                          value={editForm.propertyAssignments}
+                          onChange={(propertyAssignments) => setEditForm((current) => ({ ...current, propertyAssignments }))}
+                        />
                         {editError ? <p className="attendance-admin-message attendance-admin-message--error">{editError}</p> : null}
                         <label className="attendance-admin-active-field">
                           <input name="active" type="checkbox" checked={editForm.active} onChange={updateEditField} />

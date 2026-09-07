@@ -11,7 +11,7 @@ const emptyProperty = {
   activar_para_planillas_diarias: false, activar_para_venta: false,
   estacionamiento: '', mascotas: '', wifi: '', descripcion_detallada: '',
   tipo_viajero: '', historia: '', galeria: [], caracteristicasText: '{}', faqText: '[]',
-  ubicacion: { direccion: '', zona: '', lat: '', lng: '', radio_m: 100 },
+  ubicacion: { direccion: '', zona: '', lat: '', lng: '' },
 };
 
 const jsonText = (value, fallback) => JSON.stringify(value ?? fallback, null, 2);
@@ -24,7 +24,6 @@ const propertyToForm = (item) => ({
     zona: item.ubicacion?.zona || '',
     lat: item.ubicacion?.lat ?? '',
     lng: item.ubicacion?.lng ?? '',
-    radio_m: item.ubicacion?.radio_m ?? 100,
   },
   caracteristicasText: jsonText(item.caracteristicas, {}),
   faqText: jsonText(item.faq, []),

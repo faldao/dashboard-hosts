@@ -111,7 +111,6 @@ function cleanObject(value) {
 function normalizeLocation(value = {}) {
   const lat = cleanNumber(value.lat);
   const lng = cleanNumber(value.lng);
-  const radius = cleanNumber(value.radio_m);
   if ((lat === null) !== (lng === null)) {
     const error = new Error('Ingresá latitud y longitud, o dejá ambas vacías');
     error.statusCode = 400;
@@ -127,17 +126,11 @@ function normalizeLocation(value = {}) {
     error.statusCode = 400;
     throw error;
   }
-  if (radius !== null && (radius < 10 || radius > 5000)) {
-    const error = new Error('El radio permitido debe estar entre 10 y 5000 metros');
-    error.statusCode = 400;
-    throw error;
-  }
   return {
     direccion: cleanString(value.direccion, 1000),
     zona: cleanString(value.zona, 500),
     lat,
     lng,
-    radio_m: radius ?? 100,
   };
 }
 

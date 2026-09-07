@@ -88,6 +88,75 @@ function serializeTimestamp(value) {
   return null;
 }
 
+function normalizeAssignments(value) {
+  const items = Array.isArray(value) ? value : [];
+  const unique = new Map();
+  for (const item of items) {
+    const propertyId = cleanText(item?.propertyId);
+    const radiusMeters = Number(item?.radiusMeters);
+    if (!propertyId || propertyId.includes('/')) continue;
+    if (!Number.isFinite(radiusMeters) || radiusMeters < 10 || radiusMeters > 5000) {
+      const error = new Error('El radio permitido debe estar entre 10 y 5000 metros');
+      error.statusCode = 400;
+      throw error;
+    }
+    unique.set(propertyId, { propertyId, radiusMeters: Math.round(radiusMeters) });
+  }
+  const assignments = [...unique.values()];
+  if (!assignments.length) {
+    const error = new Error('Asigná al menos una propiedad al usuario');
+    error.statusCode = 400;
+    throw error;
+  }
+  return assignments;
+}
+
+function hasCoordinates(location) {
+  return location
+    && location.lat !== null
+    && location.lat !== ''
+    && location.lng !== null
+    && location.lng !== ''
+    && Number.isFinite(Number(location.lat))
+    && Number.isFinite(Number(location.lng));
+}
+
+async function validateAssignments(value) {
+  const assignments = normalizeAssignments(value);
+  const refs = assignments.map((item) => firestore.collection('propiedades').doc(item.propertyId));
+  const snapshots = await firestore.getAll(...refs);
+  const missing = snapshots.findIndex((snapshot) => !snapshot.exists);
+  if (missing >= 0) {
+    const error = new Error(`La propiedad ${assignments[missing].propertyId} ya no existe`);
+    error.statusCode = 400;
+    throw error;
+  }
+  const withoutLocation = snapshots.findIndex((snapshot) => {
+    const location = snapshot.data()?.ubicacion;
+    return !hasCoordinates(location);
+  });
+  if (withoutLocation >= 0) {
+    const data = snapshots[withoutLocation].data() || {};
+    const error = new Error(`Configurá primero la localización de ${data.nombre || assignments[withoutLocation].propertyId}`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return assignments;
+}
+
+async function listAssignableProperties() {
+  const snapshot = await firestore.collection('propiedades').limit(200).get();
+  return snapshot.docs.map((doc) => {
+    const data = doc.data() || {};
+    const location = data.ubicacion || {};
+    return {
+      id: doc.id,
+      name: data.nombre || data.name || doc.id,
+      hasLocation: hasCoordinates(location),
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+}
+
 async function listUsers() {
   const snapshot = await firestore
     .collection(USERS_COLLECTION)
@@ -102,6 +171,14 @@ async function listUsers() {
       displayName: data.displayName || '',
       email: data.email || '',
       active: data.active !== false,
+      propertyAssignments: Array.isArray(data.propertyAssignments)
+        ? data.propertyAssignments.map((item) => ({
+          propertyId: String(item.propertyId || ''),
+          radiusMeters: Number(item.radiusMeters) || 100,
+        })).filter((item) => item.propertyId)
+        : (Array.isArray(data.propertyIds) ? data.propertyIds : []).map((propertyId) => ({
+          propertyId: String(propertyId), radiusMeters: 100,
+        })),
       createdAt: serializeTimestamp(data.createdAt),
     };
   });
@@ -114,6 +191,7 @@ async function createUser(body, administrator) {
     error.statusCode = 400;
     throw error;
   }
+  const propertyAssignments = await validateAssignments(body.propertyAssignments);
 
   let authUser;
   try {
@@ -144,7 +222,8 @@ async function createUser(body, administrator) {
       email: validated.email,
       active: true,
       role: 'employee',
-      propertyIds: [],
+      propertyIds: propertyAssignments.map((item) => item.propertyId),
+      propertyAssignments,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
       createdBy: administrator.uid,
@@ -154,6 +233,7 @@ async function createUser(body, administrator) {
       type: 'employee_created',
       employeeUid: authUser.uid,
       employeeEmail: validated.email,
+      propertyIds: propertyAssignments.map((item) => item.propertyId),
       administratorUid: administrator.uid,
       administratorEmail: administrator.email || null,
       createdAt: FieldValue.serverTimestamp(),
@@ -170,6 +250,7 @@ async function createUser(body, administrator) {
     displayName: validated.displayName,
     email: validated.email,
     active: true,
+    propertyAssignments,
   };
 }
 
@@ -187,6 +268,7 @@ async function updateUser(body, administrator) {
     error.statusCode = 400;
     throw error;
   }
+  const propertyAssignments = await validateAssignments(body.propertyAssignments);
 
   const active = body.active !== false;
   const authUpdate = {
@@ -220,6 +302,8 @@ async function updateUser(body, administrator) {
     displayName: validated.displayName,
     email: validated.email,
     active,
+    propertyIds: propertyAssignments.map((item) => item.propertyId),
+    propertyAssignments,
     updatedAt: FieldValue.serverTimestamp(),
     updatedBy: administrator.uid,
     updatedByEmail: administrator.email || null,
@@ -229,6 +313,7 @@ async function updateUser(body, administrator) {
     employeeUid: uid,
     employeeEmail: validated.email,
     passwordReset: Boolean(validated.password),
+    propertyIds: propertyAssignments.map((item) => item.propertyId),
     administratorUid: administrator.uid,
     administratorEmail: administrator.email || null,
     createdAt: FieldValue.serverTimestamp(),
@@ -240,6 +325,7 @@ async function updateUser(body, administrator) {
     displayName: validated.displayName,
     email: validated.email,
     active,
+    propertyAssignments,
   };
 }
 
@@ -250,7 +336,8 @@ export default async function handler(req, res) {
     const administrator = await requireDashboardUser(req);
 
     if (req.method === 'GET') {
-      return send(res, 200, { ok: true, users: await listUsers() });
+      const [users, properties] = await Promise.all([listUsers(), listAssignableProperties()]);
+      return send(res, 200, { ok: true, users, properties });
     }
 
     if (req.method === 'POST') {

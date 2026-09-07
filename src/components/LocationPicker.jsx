@@ -16,7 +16,6 @@ export default function LocationPicker({ value, onChange }) {
   const mapElementRef = useRef(null);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
-  const circleRef = useRef(null);
   const valueRef = useRef(value);
   const [query, setQuery] = useState(value?.direccion || '');
   const [results, setResults] = useState([]);
@@ -31,7 +30,6 @@ export default function LocationPicker({ value, onChange }) {
       ...extra,
       lat: Number(Number(lat).toFixed(7)),
       lng: Number(Number(lng).toFixed(7)),
-      radio_m: Number(valueRef.current?.radio_m) || 100,
     });
   };
 
@@ -52,7 +50,6 @@ export default function LocationPicker({ value, onChange }) {
       map.remove();
       mapRef.current = null;
       markerRef.current = null;
-      circleRef.current = null;
     };
   }, []);
 
@@ -61,9 +58,7 @@ export default function LocationPicker({ value, onChange }) {
     if (!map) return;
     if (!validCoordinates(value)) {
       if (markerRef.current) markerRef.current.remove();
-      if (circleRef.current) circleRef.current.remove();
       markerRef.current = null;
-      circleRef.current = null;
       return;
     }
     const position = [Number(value.lat), Number(value.lng)];
@@ -76,17 +71,12 @@ export default function LocationPicker({ value, onChange }) {
         const next = markerRef.current.getLatLng();
         setCoordinates(next.lat, next.lng);
       });
-      circleRef.current = L.circle(position, {
-        radius: Number(value.radio_m) || 100,
-        color: '#087c5f', fillColor: '#30c798', fillOpacity: 0.16, weight: 2,
-      }).addTo(map);
       map.setView(position, 17);
     } else {
       markerRef.current.setLatLng(position);
-      circleRef.current?.setLatLng(position).setRadius(Number(value.radio_m) || 100);
       map.panTo(position);
     }
-  }, [value?.lat, value?.lng, value?.radio_m]);
+  }, [value?.lat, value?.lng]);
 
   useEffect(() => {
     setQuery(value?.direccion || '');
@@ -154,9 +144,8 @@ export default function LocationPicker({ value, onChange }) {
         <label><span>Zona</span><input name="zona" value={value?.zona || ''} onChange={updateField} /></label>
         <label><span>Latitud</span><input name="lat" type="number" step="any" min="-90" max="90" value={value?.lat ?? ''} onChange={updateField} /></label>
         <label><span>Longitud</span><input name="lng" type="number" step="any" min="-180" max="180" value={value?.lng ?? ''} onChange={updateField} /></label>
-        <label><span>Radio permitido (metros)</span><input name="radio_m" type="number" min="10" max="5000" step="10" value={value?.radio_m ?? 100} onChange={updateField} /></label>
       </div>
-      <p className="location-picker__help">Podés hacer clic sobre el mapa o arrastrar el marcador. El círculo representa el área donde Reloj permitirá registrar ingreso y salida.</p>
+      <p className="location-picker__help">Podés hacer clic sobre el mapa o arrastrar el marcador para definir el punto exacto de la propiedad.</p>
     </section>
   );
 }

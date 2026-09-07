@@ -144,6 +144,102 @@
   outline: none;
 }
 
+.attendance-property-assignments {
+  border: 1px solid #d7e1e5;
+  border-radius: 12px;
+  margin: 2px 0;
+  min-width: 0;
+  padding: 13px;
+}
+
+.attendance-property-assignments legend {
+  color: #425460;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0 5px;
+}
+
+.attendance-property-assignments > p {
+  color: #73838c;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  margin: 0 0 11px;
+}
+
+.attendance-property-assignments > div {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.attendance-property-assignments > div > label {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e0e7ea;
+  border-radius: 9px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 10px;
+}
+
+.attendance-property-assignments > div > label.is-missing-location {
+  background: #f5f6f7;
+  color: #7a8891;
+}
+
+.attendance-property-assignments input[type="checkbox"] {
+  accent-color: #087c5f;
+  height: 18px;
+  width: 18px;
+}
+
+.attendance-property-assignments label > span:not(.attendance-property-radius) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.attendance-property-assignments label strong {
+  color: #20333f;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-property-assignments label small {
+  color: #7a8891;
+  font-size: 0.7rem;
+}
+
+.attendance-property-radius {
+  align-items: center;
+  color: #667681;
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 650;
+  gap: 6px;
+}
+
+.attendance-property-radius input[type="number"] {
+  min-height: 36px;
+  padding: 6px 8px;
+  width: 84px;
+}
+
+.attendance-property-radius em {
+  font-style: normal;
+}
+
+.attendance-property-empty {
+  color: #7a8891;
+  font-size: 0.8rem;
+  margin: 8px 0;
+  text-align: center;
+}
+
 .attendance-admin-submit {
   background: #0c2638;
   border: 0;
@@ -408,5 +504,14 @@
 
   .attendance-admin-edit-form {
     padding: 17px;
+  }
+
+  .attendance-property-assignments > div > label {
+    align-items: start;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .attendance-property-radius {
+    grid-column: 2;
   }
 }
