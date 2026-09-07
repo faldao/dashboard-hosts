@@ -108,6 +108,39 @@ function cleanObject(value) {
   return value;
 }
 
+function normalizeLocation(value = {}) {
+  const lat = cleanNumber(value.lat);
+  const lng = cleanNumber(value.lng);
+  const radius = cleanNumber(value.radio_m);
+  if ((lat === null) !== (lng === null)) {
+    const error = new Error('Ingresá latitud y longitud, o dejá ambas vacías');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (lat !== null && (lat < -90 || lat > 90)) {
+    const error = new Error('La latitud debe estar entre -90 y 90');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (lng !== null && (lng < -180 || lng > 180)) {
+    const error = new Error('La longitud debe estar entre -180 y 180');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (radius !== null && (radius < 10 || radius > 5000)) {
+    const error = new Error('El radio permitido debe estar entre 10 y 5000 metros');
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    direccion: cleanString(value.direccion, 1000),
+    zona: cleanString(value.zona, 500),
+    lat,
+    lng,
+    radio_m: radius ?? 100,
+  };
+}
+
 function normalizeProperty(data = {}) {
   const nombre = cleanString(data.nombre, 200);
   if (!nombre) {
@@ -133,6 +166,7 @@ function normalizeProperty(data = {}) {
     faq: cleanFaq(data.faq),
     tipo_viajero: cleanString(data.tipo_viajero, 1000),
     historia: cleanString(data.historia, 10000),
+    ubicacion: normalizeLocation(data.ubicacion),
   };
 }
 
@@ -231,9 +265,6 @@ async function saveEntity(body, administrator, create) {
 
   if (entity === 'property') {
     data = normalizeProperty(body.data);
-    if (create) {
-      data.ubicacion = { direccion: null, lat: null, lng: null, zona: null };
-    }
   } else if (entity === 'department') {
     departmentId = cleanId(body.departmentId || body.id, 'ID de departamento');
     const propertySnapshot = await propertyRef.get();

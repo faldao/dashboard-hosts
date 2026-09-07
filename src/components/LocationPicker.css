@@ -1,0 +1,24 @@
+.location-picker { grid-column: 1 / -1; overflow: hidden; border: 1px solid #d8e3e7; border-radius: 14px; background: #f7fafb; }
+.location-picker__title { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 16px; border-bottom: 1px solid #dfe7ea; }
+.location-picker__title > div { display: grid; gap: 3px; }
+.location-picker__title strong { color: #263e4b; font-size: .87rem; }
+.location-picker__title span { color: #74838c; font-size: .74rem; }
+.location-picker button { border: 1px solid #bdcbd1; border-radius: 8px; background: white; color: #245065; cursor: pointer; font: inherit; font-size: .76rem; font-weight: 750; padding: 8px 11px; }
+.location-picker button:disabled { cursor: not-allowed; opacity: .55; }
+.location-picker__search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px; padding: 14px 16px; }
+.location-picker__search input, .location-picker__fields input { width: 100%; min-height: 40px; border: 1px solid #cbd7dc; border-radius: 8px; background: white; color: #102230; font: inherit; padding: 8px 10px; }
+.location-picker__search button { border-color: #0c2638; background: #0c2638; color: white; }
+.location-picker__results { display: grid; gap: 1px; margin: 0 16px 14px; overflow: hidden; border: 1px solid #d6e0e4; border-radius: 9px; }
+.location-picker__results button { border: 0; border-radius: 0; border-bottom: 1px solid #e8edef; text-align: left; font-weight: 550; line-height: 1.35; }
+.location-picker__results button:last-child { border-bottom: 0; }
+.location-picker__message { margin: 0; padding: 0 16px 12px; color: #526b78; font-size: .77rem; }
+.location-picker__map { width: 100%; height: 360px; border-top: 1px solid #dbe4e8; border-bottom: 1px solid #dbe4e8; background: #e7edef; z-index: 0; }
+.location-picker-pin { position: relative; border: 0; background: transparent; }
+.location-picker-pin span { display: block; width: 28px; height: 28px; transform: rotate(45deg); border: 3px solid white; border-radius: 50% 50% 50% 0; background: #e13f3f; box-shadow: 0 3px 10px rgb(0 0 0 / .35); }
+.location-picker-pin span::after { content: ''; position: absolute; top: 9px; left: 9px; width: 7px; height: 7px; border-radius: 50%; background: white; }
+.location-picker__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 15px 16px; }
+.location-picker__fields label { display: grid; gap: 5px; }
+.location-picker__fields label:last-child { grid-column: 1 / -1; max-width: 260px; }
+.location-picker__fields span { color: #425460; font-size: .76rem; font-weight: 700; }
+.location-picker__help { margin: 0; padding: 0 16px 16px; color: #6b7d87; font-size: .75rem; line-height: 1.45; }
+@media (max-width: 620px) { .location-picker__title { align-items: flex-start; flex-direction: column; } .location-picker__search { grid-template-columns: 1fr; } .location-picker__map { height: 300px; } .location-picker__fields { grid-template-columns: 1fr; } .location-picker__fields label:last-child { grid-column: auto; max-width: none; } }

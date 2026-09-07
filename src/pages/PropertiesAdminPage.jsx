@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import GalleryManager from '../components/GalleryManager';
+import LocationPicker from '../components/LocationPicker';
 import './PropertiesAdminPage.css';
 
 const emptyProperty = {
@@ -10,6 +11,7 @@ const emptyProperty = {
   activar_para_planillas_diarias: false, activar_para_venta: false,
   estacionamiento: '', mascotas: '', wifi: '', descripcion_detallada: '',
   tipo_viajero: '', historia: '', galeria: [], caracteristicasText: '{}', faqText: '[]',
+  ubicacion: { direccion: '', zona: '', lat: '', lng: '', radio_m: 100 },
 };
 
 const jsonText = (value, fallback) => JSON.stringify(value ?? fallback, null, 2);
@@ -17,6 +19,13 @@ const propertyToForm = (item) => ({
   ...emptyProperty,
   ...item,
   galeria: Array.isArray(item.galeria) ? item.galeria : [],
+  ubicacion: {
+    direccion: item.ubicacion?.direccion || '',
+    zona: item.ubicacion?.zona || '',
+    lat: item.ubicacion?.lat ?? '',
+    lng: item.ubicacion?.lng ?? '',
+    radio_m: item.ubicacion?.radio_m ?? 100,
+  },
   caracteristicasText: jsonText(item.caracteristicas, {}),
   faqText: jsonText(item.faq, []),
 });
@@ -221,6 +230,10 @@ export default function PropertiesAdminPage() {
                 <TextField label="Mascotas" name="mascotas" value={propertyForm.mascotas} onChange={changeForm(setPropertyForm)} />
                 <TextField label="Wifi" name="wifi" value={propertyForm.wifi} onChange={changeForm(setPropertyForm)} />
                 <TextField label="Tipo de viajero" name="tipo_viajero" value={propertyForm.tipo_viajero} onChange={changeForm(setPropertyForm)} />
+                <LocationPicker
+                  value={propertyForm.ubicacion}
+                  onChange={(ubicacion) => setPropertyForm((current) => ({ ...current, ubicacion }))}
+                />
                 <TextAreaField label="Descripción detallada" name="descripcion_detallada" value={propertyForm.descripcion_detallada} onChange={changeForm(setPropertyForm)} rows={4} />
                 <TextAreaField label="Historia" name="historia" value={propertyForm.historia} onChange={changeForm(setPropertyForm)} rows={4} />
                 <GalleryManager
