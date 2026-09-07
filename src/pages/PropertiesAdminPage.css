@@ -1,0 +1,52 @@
+.property-admin-page { min-height: 100vh; background: #f3f6f8; color: #102230; }
+.property-admin-main { max-width: 1360px; margin: 0 auto; padding: 30px 24px 60px; }
+.property-admin-header { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.property-admin-header p, .property-admin-card__head p { margin: 0 0 6px; color: #087c5f; font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.property-admin-header h1 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.4rem); letter-spacing: -.035em; }
+.property-admin-header span { display: block; margin-top: 7px; color: #6c7a83; }
+.property-admin-header button, .property-admin-card__head button { border: 0; border-radius: 10px; background: #0c2638; color: white; cursor: pointer; font: inherit; font-weight: 750; padding: 11px 16px; }
+.property-admin-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); align-items: start; gap: 20px; }
+.property-admin-sidebar, .property-admin-card { overflow: hidden; border: 1px solid #dce5e9; border-radius: 17px; background: white; box-shadow: 0 8px 28px rgb(16 34 48 / .05); }
+.property-admin-sidebar { position: sticky; top: 18px; }
+.property-admin-sidebar__head { display: grid; gap: 12px; padding: 17px; border-bottom: 1px solid #e5ebee; }
+.property-admin-sidebar__head strong { font-size: .88rem; }
+.property-admin-sidebar__head input { width: 100%; min-height: 40px; border: 1px solid #ccd7dc; border-radius: 9px; padding: 8px 11px; font: inherit; }
+.property-admin-property-list { max-height: 72vh; overflow: auto; }
+.property-admin-property-list > p, .property-admin-empty { margin: 0; padding: 28px 17px; color: #77868e; font-size: .84rem; }
+.property-admin-property-list button { display: grid; gap: 4px; width: 100%; border: 0; border-bottom: 1px solid #edf1f3; background: white; color: inherit; cursor: pointer; padding: 13px 17px; text-align: left; }
+.property-admin-property-list button:hover { background: #f6faf9; }
+.property-admin-property-list button.is-selected { background: #e8f8f2; box-shadow: inset 4px 0 #0c9872; }
+.property-admin-property-list strong { font-size: .86rem; }
+.property-admin-property-list span { color: #79878f; font-size: .73rem; }
+.property-admin-workspace { display: grid; gap: 20px; min-width: 0; }
+.property-admin-card__head { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 21px; border-bottom: 1px solid #e5ebee; }
+.property-admin-card__head h2 { margin: 0; font-size: 1.15rem; }
+.property-admin-card__head button:disabled { cursor: not-allowed; opacity: .55; }
+.property-admin-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 21px; }
+.property-admin-field { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.property-admin-field--wide { grid-column: 1 / -1; }
+.property-admin-field > span, .property-admin-toggle span { color: #425460; font-size: .8rem; font-weight: 700; }
+.property-admin-field input, .property-admin-field textarea { width: 100%; min-height: 42px; border: 1px solid #ccd7dc; border-radius: 9px; background: white; color: #102230; font: inherit; padding: 9px 11px; resize: vertical; }
+.property-admin-field input:disabled { background: #edf1f3; color: #667680; }
+.property-admin-field input:focus, .property-admin-field textarea:focus, .property-admin-sidebar__head input:focus { border-color: #139c77; box-shadow: 0 0 0 3px rgb(19 156 119 / .14); outline: none; }
+.property-admin-field small { color: #78868e; font-size: .72rem; }
+.property-admin-toggle { display: flex; align-items: center; gap: 9px; padding-top: 25px; }
+.property-admin-toggle input { width: 18px; height: 18px; accent-color: #087c5f; }
+.property-admin-message { margin: 0 0 18px; border-radius: 10px; padding: 11px 14px; font-size: .85rem; }
+.property-admin-message--error { border: 1px solid #ffd0d0; background: #fff0f0; color: #9b2626; }
+.property-admin-message--success { border: 1px solid #bcead8; background: #eafaf4; color: #146a52; }
+.property-admin-department-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 13px 20px; border-bottom: 1px solid #edf1f3; }
+.property-admin-department-list article div { display: grid; min-width: 0; gap: 3px; }
+.property-admin-department-list article strong, .property-admin-department-list article div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.property-admin-department-list article strong { font-size: .86rem; }
+.property-admin-department-list article div span { color: #7a8891; font-size: .73rem; }
+.property-admin-department-list article > span { border-radius: 999px; background: #f0f2f3; color: #7a8891; font-size: .7rem; font-weight: 800; padding: 5px 8px; }
+.property-admin-department-list article > span.is-active { background: #e7f8f1; color: #147458; }
+.property-admin-department-list article button, .property-admin-department-form__title button, .property-admin-department-form__actions button { border: 1px solid #bdcbd1; border-radius: 8px; background: white; color: #245065; cursor: pointer; font: inherit; font-size: .76rem; font-weight: 750; padding: 7px 10px; }
+.property-admin-department-form { border-top: 1px solid #dce5e9; background: #f7fafb; }
+.property-admin-department-form__title { display: flex; align-items: center; justify-content: space-between; padding: 17px 21px 0; }
+.property-admin-department-form__title h3 { margin: 0; font-size: 1rem; }
+.property-admin-department-form__actions { display: flex; justify-content: flex-end; gap: 9px; padding: 0 21px 21px; }
+.property-admin-department-form__actions button[type="submit"] { border-color: #0c2638; background: #0c2638; color: white; }
+@media (max-width: 900px) { .property-admin-layout { grid-template-columns: 1fr; } .property-admin-sidebar { position: static; } .property-admin-property-list { max-height: 280px; } }
+@media (max-width: 560px) { .property-admin-main { padding: 22px 13px 40px; } .property-admin-header { align-items: flex-start; flex-direction: column; } .property-admin-form-grid { grid-template-columns: 1fr; padding: 17px; } .property-admin-field--wide { grid-column: auto; } .property-admin-card__head { align-items: flex-start; flex-direction: column; } .property-admin-department-list article { grid-template-columns: minmax(0, 1fr) auto; padding: 13px 16px; } .property-admin-department-list article button { grid-column: 1 / -1; justify-self: start; } }

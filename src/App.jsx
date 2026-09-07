@@ -9,6 +9,7 @@ import LiquidacionesPage from './pages/LiquidacionesPage';
 import ReportesPage from './pages/ReportesPage';
 import GastosPage from './pages/GastosPage';
 import AsistenciaAdminPage from './pages/AsistenciaAdminPage';
+import PropertiesAdminPage from './pages/PropertiesAdminPage';
 
 // 2. Importa tu componente de ruta protegida
 import ProtectedRoute from './components/ProtectedRoute';
@@ -80,6 +81,15 @@ function App() {
         element={
           <ProtectedRoute>
             <AsistenciaAdminPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/propiedades-admin"
+        element={
+          <ProtectedRoute>
+            <PropertiesAdminPage />
           </ProtectedRoute>
         }
       />

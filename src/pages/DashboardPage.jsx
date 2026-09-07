@@ -29,7 +29,14 @@ const ASISTENCIA_ADMIN_APP = {
   icon: '👤',
 };
 
-const DEFAULT_APP_IDS = ['reportes', 'gastos', 'asistencia_admin'];
+const PROPERTIES_ADMIN_APP = {
+  name: 'Propiedades y departamentos',
+  description: 'Crea y modifica propiedades, unidades e información operativa.',
+  href: '/propiedades-admin',
+  icon: '🏢',
+};
+
+const DEFAULT_APP_IDS = ['reportes', 'gastos', 'asistencia_admin', 'properties_admin'];
 
 const ALL_APPS = {
   'planilla_hosts': {
@@ -52,6 +59,9 @@ const ALL_APPS = {
   },
   'asistencia_admin': {
     ...ASISTENCIA_ADMIN_APP,
+  },
+  'properties_admin': {
+    ...PROPERTIES_ADMIN_APP,
   },
 
   'liquidaciones': {
